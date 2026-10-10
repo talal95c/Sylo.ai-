@@ -46,12 +46,12 @@ export default function SyloApp() {
 
       <TopBar mode={sylo.state.mode} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} />
 
-      <aside className="scroll-fade no-scrollbar absolute bottom-[88px] left-4 top-[84px] z-10 flex w-[340px] flex-col gap-3 overflow-y-auto 2xl:w-[372px]">
+      <aside className="scroll-fade no-scrollbar absolute bottom-[88px] left-4 top-[76px] z-10 flex w-[340px] flex-col gap-3 overflow-y-auto 2xl:w-[372px]">
         <PaymentCard state={sylo.state} />
         <DecisionSteps state={sylo.state} />
       </aside>
 
-      <aside className="scroll-fade absolute bottom-[88px] right-4 top-[84px] z-10 flex w-[320px] flex-col 2xl:w-[360px]">
+      <aside className="scroll-fade absolute bottom-[88px] right-4 top-[76px] z-10 flex w-[320px] flex-col 2xl:w-[360px]">
         <EventFeed feed={sylo.state.feed} />
       </aside>
 
