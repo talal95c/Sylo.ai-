@@ -9,6 +9,9 @@ pnpm -C web dev          # http://localhost:3000 (the engine must run on :8000, 
 pnpm -C web typecheck && pnpm -C web test && pnpm -C web lint && pnpm -C web build
 ```
 
+`package.json` pins pnpm 10 (`packageManager`): pnpm 10 and later switch to that version by themselves, and CI installs
+it. Keep the pin on pnpm 10 while CI runs Node 20: pnpm 11 and later need Node.js 22.13 or later.
+
 | File | Role |
 |---|---|
 | `lib/events.ts` | TypeScript mirror of `spec/events.schema.json` |
