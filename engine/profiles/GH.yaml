@@ -1,0 +1,7 @@
+# Country profile: Ghana (beneficiary side of the corridor).
+id: GH
+name: Ghana
+currency: GHS
+supervisor: Bank of Ghana
+fiu: Financial Intelligence Centre (FIC)
+rules: [GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK, GH_WALLET_DAILY_CAP, GH_VASP_LICENSED]

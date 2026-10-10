@@ -1,0 +1,25 @@
+# Sylo.ai code owners — TEMPLATE.
+# At the v0 review (docs/roadmap-and-lanes.md §6.3), replace each @lane-x placeholder with the GitHub
+# username of that lane's owner, then uncomment the rules. The last matching rule wins.
+
+# Lane A — Engine: root files, scripts and CI first, so the folder rules below override it.
+# /*                @lane-a
+# /engine/          @lane-a
+# /scripts/         @lane-a
+# /.github/         @lane-a
+
+# Lane B — Risk & data
+# /ml/              @lane-b
+
+# Lane C — Chain
+# /contracts/       @lane-c
+# /chain/           @lane-c
+
+# Lane D — Experience
+# /web/             @lane-d
+
+# Shared spec: additive changes only, approved by two lanes.
+# /spec/            @lane-a @lane-b @lane-c @lane-d
+
+# Shared docs
+# /docs/            @lane-a @lane-b @lane-c @lane-d

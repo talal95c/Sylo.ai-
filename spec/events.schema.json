@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sylo.ai/spec/events.schema.json",
+  "title": "Sylo.ai event",
+  "description": "One server-sent event. Additive changes only (spec/README.md). Every data object allows additional properties.",
+  "type": "object",
+  "required": ["v", "seq", "id", "ts", "type", "paymentId", "simulated", "data"],
+  "additionalProperties": true,
+  "properties": {
+    "v": { "const": 1 },
+    "seq": { "type": "integer", "minimum": 0 },
+    "id": { "type": "string", "pattern": "^evt-[0-9]{6,}$" },
+    "ts": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "type": {
+      "enum": [
+        "session.reset",
+        "system.mode",
+        "scenario.started",
+        "payment.created",
+        "norms.checked",
+        "risk.scored",
+        "route.selected",
+        "approval.granted",
+        "intent.committed",
+        "leg.sent",
+        "leg.settled",
+        "escrow.deposited",
+        "payment.held",
+        "verification.requested",
+        "verification.recorded",
+        "intent.revoked",
+        "escrow.refunded",
+        "escrow.released",
+        "intent.executed",
+        "payment.credited",
+        "payment.stopped",
+        "attack.attempted",
+        "tx.reverted",
+        "approval.required",
+        "leg.rejected",
+        "case.ready",
+        "case.action",
+        "alert.raised",
+        "cluster.detected",
+        "breaker.on",
+        "breaker.off",
+        "rail.down",
+        "rail.up",
+        "killswitch.on",
+        "guardian.incident",
+        "confidential.transfer",
+        "root.anchored",
+        "traffic.sample"
+      ]
+    },
+    "paymentId": { "type": ["string", "null"] },
+    "simulated": { "type": "boolean" },
+    "data": { "type": "object", "additionalProperties": true }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "system.mode" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/SystemMode" } } } },
+    { "if": { "properties": { "type": { "const": "scenario.started" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ScenarioStarted" } } } },
+    { "if": { "properties": { "type": { "const": "payment.created" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentCreated" } } } },
+    { "if": { "properties": { "type": { "const": "norms.checked" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/NormsChecked" } } } },
+    { "if": { "properties": { "type": { "const": "risk.scored" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RiskScored" } } } },
+    { "if": { "properties": { "type": { "const": "route.selected" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RouteSelected" } } } },
+    { "if": { "properties": { "type": { "const": "approval.granted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ApprovalGranted" } } } },
+    { "if": { "properties": { "type": { "const": "intent.committed" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/IntentCommitted" } } } },
+    { "if": { "properties": { "type": { "const": "leg.sent" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/LegSent" } } } },
+    { "if": { "properties": { "type": { "const": "leg.settled" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/LegSettled" } } } },
+    { "if": { "properties": { "type": { "const": "escrow.deposited" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/EscrowDeposited" } } } },
+    { "if": { "properties": { "type": { "const": "payment.held" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentHeld" } } } },
+    { "if": { "properties": { "type": { "const": "verification.requested" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/VerificationRequested" } } } },
+    { "if": { "properties": { "type": { "const": "verification.recorded" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/VerificationRecorded" } } } },
+    { "if": { "properties": { "type": { "const": "intent.revoked" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/IntentRevoked" } } } },
+    { "if": { "properties": { "type": { "const": "escrow.refunded" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/EscrowMoved" } } } },
+    { "if": { "properties": { "type": { "const": "escrow.released" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/EscrowMoved" } } } },
+    { "if": { "properties": { "type": { "const": "intent.executed" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ChainTx" } } } },
+    { "if": { "properties": { "type": { "const": "payment.credited" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentCredited" } } } },
+    { "if": { "properties": { "type": { "const": "payment.stopped" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentStopped" } } } },
+    { "if": { "properties": { "type": { "const": "attack.attempted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AttackAttempted" } } } },
+    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } }
+  ],
+  "$defs": {
+    "InstitutionId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "Decimal": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
+    "Hash32": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "ExplorerUrl": { "type": ["string", "null"] },
+    "Tier": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "Timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "Amount": {
+      "type": "object",
+      "required": ["value", "currency"],
+      "additionalProperties": true,
+      "properties": { "value": { "$ref": "#/$defs/Decimal" }, "currency": { "type": "string", "minLength": 3, "maxLength": 3 } }
+    },
+    "Hop": {
+      "type": "object",
+      "required": ["from", "to", "kind"],
+      "additionalProperties": true,
+      "properties": {
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "kind": { "enum": ["bank", "chain", "wallet"] }
+      }
+    },
+    "Reason": {
+      "type": "object",
+      "required": ["ref", "text"],
+      "additionalProperties": true,
+      "properties": { "ref": { "type": "string" }, "text": { "type": "string", "minLength": 1 }, "ruleId": { "type": ["string", "null"] } }
+    },
+    "ChainTx": {
+      "type": "object",
+      "required": ["txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": { "txHash": { "$ref": "#/$defs/Hash32" }, "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" } }
+    },
+    "SystemMode": {
+      "type": "object",
+      "required": ["risk", "chain", "llm", "rails", "degraded"],
+      "additionalProperties": true,
+      "properties": {
+        "risk": { "enum": ["rules", "model"] },
+        "chain": { "enum": ["mock", "anvil", "fuji"] },
+        "llm": { "enum": ["off", "cached", "live"] },
+        "rails": { "const": "simulated" },
+        "degraded": { "type": "array", "items": { "type": "string" } },
+        "bootId": { "type": "string" }
+      }
+    },
+    "ScenarioStarted": {
+      "type": "object",
+      "required": ["scenario", "speed", "auto"],
+      "additionalProperties": true,
+      "properties": {
+        "scenario": { "enum": ["legit", "diverted"] },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "auto": { "type": "boolean" }
+      }
+    },
+    "PaymentCreated": {
+      "type": "object",
+      "required": ["uetr", "payer", "beneficiary", "amount", "purpose", "invoiceRef", "provenance"],
+      "additionalProperties": true,
+      "properties": {
+        "uetr": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+        "payer": {
+          "type": "object",
+          "required": ["id", "name", "institutionId"],
+          "additionalProperties": true,
+          "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "institutionId": { "$ref": "#/$defs/InstitutionId" } }
+        },
+        "beneficiary": {
+          "type": "object",
+          "required": ["payeeName", "accountHolder", "accountMasked", "institutionId", "knownPayee", "knownAccount"],
+          "additionalProperties": true,
+          "properties": {
+            "payeeName": { "type": "string" },
+            "accountHolder": { "type": "string" },
+            "accountMasked": { "type": "string" },
+            "institutionId": { "$ref": "#/$defs/InstitutionId" },
+            "knownPayee": { "type": "boolean" },
+            "knownAccount": { "type": "boolean" }
+          }
+        },
+        "amount": { "$ref": "#/$defs/Amount" },
+        "purpose": { "type": "string" },
+        "invoiceRef": { "type": "string" },
+        "provenance": { "type": "string" },
+        "senderDomain": { "type": "string" }
+      }
+    },
+    "NormsChecked": {
+      "type": "object",
+      "required": ["packVersion", "routes", "signals", "taxNotices"],
+      "additionalProperties": true,
+      "properties": {
+        "packVersion": { "type": "string" },
+        "routes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["routeId", "name", "settlement", "hops", "status"],
+            "additionalProperties": true,
+            "properties": {
+              "routeId": { "type": "string" },
+              "name": { "type": "string" },
+              "settlement": { "enum": ["ONCHAIN_ESCROW", "FIAT_HOLD", "NONE"] },
+              "hops": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Hop" } },
+              "status": { "enum": ["PASS", "EXCLUDED"] },
+              "excludedBy": { "type": "string" },
+              "reason": { "type": "string" },
+              "legalRef": { "type": "string" }
+            },
+            "if": { "properties": { "status": { "const": "EXCLUDED" } } },
+            "then": { "required": ["excludedBy", "reason"] }
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "text", "ruleId"],
+            "additionalProperties": true,
+            "properties": { "code": { "type": "string" }, "text": { "type": "string" }, "ruleId": { "type": "string" } }
+          }
+        },
+        "taxNotices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "reference"],
+            "additionalProperties": true,
+            "properties": { "text": { "type": "string" }, "reference": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "RiskScored": {
+      "type": "object",
+      "required": ["score", "tier", "rulesFired", "reasons", "model"],
+      "additionalProperties": true,
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "tier": { "$ref": "#/$defs/Tier" },
+        "rulesFired": { "type": "array", "items": { "type": "string" } },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/Reason" } },
+        "model": { "type": "string" }
+      }
+    },
+    "RouteSelected": {
+      "type": "object",
+      "required": ["routeId", "name", "settlement", "tier", "scores", "reason", "feesEur", "etaLabel", "priceOfSafetyEur"],
+      "additionalProperties": true,
+      "properties": {
+        "routeId": { "type": "string" },
+        "name": { "type": "string" },
+        "settlement": { "enum": ["DIRECT", "ONCHAIN_ESCROW", "FIAT_HOLD"] },
+        "tier": { "$ref": "#/$defs/Tier" },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["routeId", "s", "excludedBy"],
+            "additionalProperties": true,
+            "properties": {
+              "routeId": { "type": "string" },
+              "s": { "type": ["number", "null"] },
+              "excludedBy": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "reason": { "type": "string" },
+        "feesEur": { "type": "number" },
+        "etaLabel": { "type": "string" },
+        "priceOfSafetyEur": { "type": "number" }
+      }
+    },
+    "ApprovalGranted": {
+      "type": "object",
+      "required": ["by", "method", "conditional", "approvalHash"],
+      "additionalProperties": true,
+      "properties": {
+        "by": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "additionalProperties": true,
+            "properties": { "name": { "type": "string" }, "role": { "type": "string" } }
+          }
+        },
+        "method": { "enum": ["SCA", "DUAL_CONTROL"] },
+        "conditional": { "type": "boolean" },
+        "approvalHash": { "$ref": "#/$defs/Hash32" }
+      }
+    },
+    "IntentCommitted": {
+      "type": "object",
+      "required": ["intentHash", "tier", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "intentHash": { "$ref": "#/$defs/Hash32" },
+        "tier": { "$ref": "#/$defs/Tier" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "LegSent": {
+      "type": "object",
+      "required": ["hop", "from", "to", "kind", "rail", "durationMs"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "kind": { "enum": ["bank", "chain", "wallet"] },
+        "rail": { "type": "string" },
+        "durationMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "LegSettled": {
+      "type": "object",
+      "required": ["hop", "at"],
+      "additionalProperties": true,
+      "properties": { "hop": { "type": "integer", "minimum": 0 }, "at": { "$ref": "#/$defs/InstitutionId" } }
+    },
+    "EscrowDeposited": {
+      "type": "object",
+      "required": ["amount", "token", "expiresAt", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "amount": { "$ref": "#/$defs/Decimal" },
+        "token": { "type": "string" },
+        "expiresAt": { "$ref": "#/$defs/Timestamp" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "PaymentHeld": {
+      "type": "object",
+      "required": ["hop", "at", "tier", "headline", "reasons", "protection", "nextStep", "expiresAt"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "at": { "enum": ["escrow", "bank"] },
+        "tier": { "$ref": "#/$defs/Tier" },
+        "headline": { "type": "string" },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/Reason" } },
+        "protection": { "type": "string" },
+        "nextStep": { "type": "string" },
+        "expiresAt": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "VerificationRequested": {
+      "type": "object",
+      "required": ["contactName", "contactMasked", "contactSince", "channel", "simSwapChecked", "simSwapRecent"],
+      "additionalProperties": true,
+      "properties": {
+        "contactName": { "type": "string" },
+        "contactMasked": { "type": "string" },
+        "contactSince": { "type": "string" },
+        "channel": { "enum": ["SMS"] },
+        "simSwapChecked": { "const": true },
+        "simSwapRecent": { "type": "boolean" }
+      }
+    },
+    "VerificationRecorded": {
+      "type": "object",
+      "required": ["result", "answerText", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "result": { "enum": ["CONFIRMED", "DENIED"] },
+        "answerText": { "type": "string" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "IntentRevoked": {
+      "type": "object",
+      "required": ["reasonCode", "by", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "reasonCode": { "enum": ["SUPPLIER_DENIED", "ANALYST_DECISION", "KILL_SWITCH", "EXPIRED"] },
+        "by": { "type": "string" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "EscrowMoved": {
+      "type": "object",
+      "required": ["to", "amount", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "amount": { "$ref": "#/$defs/Decimal" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "PaymentCredited": {
+      "type": "object",
+      "required": ["at", "feesEur", "routeCostEur", "swiftRouteCostEur", "elapsedLabel"],
+      "additionalProperties": true,
+      "properties": {
+        "at": { "$ref": "#/$defs/InstitutionId" },
+        "feesEur": { "type": "number" },
+        "routeCostEur": { "type": "number" },
+        "swiftRouteCostEur": { "type": ["number", "null"] },
+        "elapsedLabel": { "type": "string" }
+      }
+    },
+    "PaymentStopped": {
+      "type": "object",
+      "required": ["headline", "detail"],
+      "additionalProperties": true,
+      "properties": { "headline": { "type": "string" }, "detail": { "type": "string" } }
+    },
+    "AttackAttempted": {
+      "type": "object",
+      "required": ["attack", "description", "by"],
+      "additionalProperties": true,
+      "properties": {
+        "attack": { "enum": ["release_revoked"] },
+        "description": { "type": "string" },
+        "by": { "const": "attacker" }
+      }
+    },
+    "TxReverted": {
+      "type": "object",
+      "required": ["function", "reason", "txHash", "explorerUrl"],
+      "additionalProperties": true,
+      "properties": {
+        "function": { "type": "string" },
+        "reason": { "type": "string" },
+        "txHash": { "oneOf": [{ "$ref": "#/$defs/Hash32" }, { "type": "null" }] },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    }
+  }
+}
