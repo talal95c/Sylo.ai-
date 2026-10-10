@@ -5,6 +5,8 @@
 > **What this is:** the team's merged PRD, rebuilt from the four individual PRDs. It does not depend on any earlier code or architecture. Working name in earlier drafts: *L'Aiguilleur* ("the switchman").
 > **Legend:** ✅ verified against a primary or reputable source (§26) · 🟡 secondary source, mentor statement, or to re-check · 🧪 simulated or assumed in the proof of concept (PoC).
 > **Priorities:** **P0** = in the demo, never cut · **P1** = strengthens the score, built after P0 works · **P2** = roadmap or stretch.
+>
+> **Update v4.1 (Saturday 22:00) — build documents.** The build now follows a globe-first north star (each payment travels as a comet on a 3D globe and stops mid-route when fraud is detected) and four versions. On build matters, these documents win over this PRD: [`docs/project-context.md`](docs/project-context.md) (what we build, rules), [`docs/roadmap-and-lanes.md`](docs/roadmap-and-lanes.md) (versions v0–v4 and who does what; replaces §21.2–21.4), [`docs/v0-build-spec.md`](docs/v0-build-spec.md) (interfaces and repository layout; replaces §15.5), [`docs/setup.md`](docs/setup.md) (tools, MCP, wallets, keys). Changes in substance: the globe as the main view (P0, M13) is built from v0, the first version; the demo settlement token on Fuji is a labelled test token (`tEURC`) because Circle's faucet gives only 20 EURC per request (real EURC is used for a smoke test only); contract verification on Snowtrace goes through Routescan.
 
 ---
 
