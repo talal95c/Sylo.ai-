@@ -1,0 +1,22 @@
+name: ci-ml
+
+on:
+  pull_request:
+    paths: ["ml/**", "spec/**", ".github/workflows/ci-ml.yml"]
+  push:
+    branches: [main]
+    paths: ["ml/**", "spec/**", ".github/workflows/ci-ml.yml"]
+
+jobs:
+  ml:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - run: uv run pytest

@@ -1,0 +1,25 @@
+name: ci-engine
+
+on:
+  pull_request:
+    paths: ["engine/**", "spec/**", "ml/pyproject.toml", "chain/pyproject.toml", ".github/workflows/ci-engine.yml"]
+  push:
+    branches: [main]
+    paths: ["engine/**", "spec/**", "ml/pyproject.toml", "chain/pyproject.toml", ".github/workflows/ci-engine.yml"]
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras
+      - name: Engine tests (norms, risk, router, signer, conformance, scenarios, API)
+        run: uv run pytest
+      - name: Recorded fixtures are up to date
+        run: uv run python -m sylo.record_fixtures --check

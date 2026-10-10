@@ -1,0 +1,26 @@
+# CODEOWNERS — one lane, one set of folders (docs/project-context.md §7).
+# Template: the team fills in the GitHub usernames at the v0 review, then removes the leading "# ".
+# With branch protection ("Require review from Code Owners"), a pull request that touches a folder
+# needs the approval of its lane.
+
+# Lane A — Engine, root files, CI
+# /engine/            @lane-a-username
+# /scripts/           @lane-a-username
+# /Makefile           @lane-a-username
+# /.env.example       @lane-a-username
+# /README.md          @lane-a-username
+# /.github/           @lane-a-username
+
+# Lane B — Risk & data
+# /ml/                @lane-b-username
+
+# Lane C — Chain
+# /contracts/         @lane-c-username
+# /chain/             @lane-c-username
+
+# Lane D — Experience
+# /web/               @lane-d-username
+
+# Shared: additive changes only, approved by two lanes
+# /spec/              @lane-a-username @lane-b-username @lane-c-username @lane-d-username
+# /docs/              @lane-a-username @lane-b-username @lane-c-username @lane-d-username

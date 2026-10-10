@@ -1,0 +1,37 @@
+name: ci-contracts
+
+on:
+  pull_request:
+    paths: ["contracts/**", "chain/**", "spec/eip712.json", "spec/python/**", ".github/workflows/ci-contracts.yml"]
+  push:
+    branches: [main]
+    paths: ["contracts/**", "chain/**", "spec/eip712.json", "spec/python/**", ".github/workflows/ci-contracts.yml"]
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge --version
+      - run: forge build
+      - name: Contract tests (registry, escrow, shared EIP-712 vector)
+        run: forge test -vv
+
+  chain:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - run: uv run pytest
