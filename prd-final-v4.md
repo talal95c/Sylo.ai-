@@ -20,6 +20,7 @@
 | Scope | **One scenario handled end to end**: a diverted supplier payment France → Ghana and the mule network behind it | The brief: "Pick one fraud or incident scenario and handle it perfectly, from alert to response" |
 | Who signs on-chain | The payer approves with strong customer authentication in the bank's app; the bank's services sign the on-chain attestations | A CFO paying through her bank does not hold a crypto wallet |
 | Demo network | Avalanche **Fuji C-Chain** (public explorer) in P0; hosted consortium L1 in P2 | The proof must be visible on a public explorer |
+| Main view | **3D globe as the main view (P0)**: the transaction's route is traced hop by hop across the institution nodes; text feed, proof panel, attack console and phone panels sit around it | Decision of 10 October (evening), changed from v4.0 where the globe was P1. The cross-institution view is the product's central argument and the globe shows it; the text feed stays as the fallback (§8 M13) |
 | Numbers shown | Precision, false-positive rate, time to detect, analyst time saved, zero diversion | What the brief asks for |
 
 ### 0.2 The four source PRDs: what we keep and what we drop
@@ -41,8 +42,8 @@
 | The paying customer is the institution (fintech, PSP, bank); the daily user is its **fraud and compliance analyst** | Fraud risk inside the route score (`ρ·R`) | Contradicts A's separation: a suspicious payment must not become eligible because another rail is cheaper |
 | **Geographic signals**: account region vs supplier region, wallet opened in one region and emptied in another, cash-outs near a border, impossible travel, regional fraud wave; the "gain from geography" measured separately | Lagos – Accra – Abidjan triangle as the main scenario | Becomes pack 2 (Lagos → Accra, P1) and a paper pack (Paris → Abidjan) |
 | **Four response tiers** (low, medium, high, critical) with timings; **regional circuit breaker** (thresholds down 20 points for 24 h, only a human lifts it early); who is notified per country; reporting deadlines; **no tipping-off** | Cost and speed KPIs as headline goals | Kept as illustrative only: the jury scores detection and response, and our rails are simulated |
-| **Seeds A/B** evaluation, baselines (dollar-correspondent routing, cheapest route without risk, **isolated institution**), amount withheld, time to detect | 3D globe as P0 | Moves to P1 (time-boxed); the event-driven text feed and proof panel are P0 |
-| **Event-driven UI**: one server-sent-event stream, each event with its UETR and time; the view only draws events; text feed works without graphics | — | — |
+| **Seeds A/B** evaluation, baselines (dollar-correspondent routing, cheapest route without risk, **isolated institution**), amount withheld, time to detect | — | — |
+| **Event-driven UI**: one server-sent-event stream, each event with its UETR and time; the view only draws events; text feed works without graphics. **3D globe as the main view (P0)**: the network of institutions and rails, and each payment's route traced hop by hop | — | — |
 | Routing mechanics: k-shortest paths (Yen), quote valid 600 s, cut-offs and time zones, **reroute on rail outage**, technical splits labelled | — | — |
 | ISO 20022 `pacs.008` pivot format with UETR and structured addresses; GSMA-style name check | — | — |
 | Sourced West African rail parameters (PAPSS, PI-SPI, NIP, GIP, mobile money, stablecoin spreads) and country compliance (NFIU, FIC, CENTIF, data-protection laws) | — | Used in pack 2 and the paper pack (Appendix A) |
@@ -88,7 +89,7 @@
 | Intent / proof | Light audit | Log on Fuji | Signed intent, registry, adapters check the hash | EIP-712 commitment, attestations, escrow | **Signed intent (C) recorded as an EIP-712 commitment (D)**; adapters check it (C); escrow and registry enforce it (D) |
 | Response tiers | 3 levels | 4 levels + circuit breaker | pass / hold / block | 3 levels + circuit breaker | **4 levels** (B) with escrow at MEDIUM (D), time-lock and dual control (C) |
 | AI | 3 detection agents | LLM summary only | Jev + Mistral | Investigator + intake + watch | **Deterministic rules + calibrated model decide**; one investigator agent (Mistral by default) writes the case file and explanation; intake agent P1; Jev optional P1 |
-| Live view | Dashboard | Globe P0 | Timeline | Proof panel | **Text feed + proof panel P0**; route view / globe P1 (3-hour time-box) |
+| Live view | Dashboard | Globe P0 | Timeline | Proof panel | **Globe as the main view, P0** (route traced node to node); text feed and proof panel P0 beside it |
 | Chain | C-Chain (optional) | Fuji | Local L1, Fuji fallback | Fuji P0, L1 P2 | **Fuji P0**; hosted L1 P2 |
 | Signer | — | — | Payer's browser key | Router service | **Payer approves with strong authentication; bank services sign on-chain** |
 
@@ -201,8 +202,8 @@ Rhône Cosmétiques SAS in Lyon buys shea butter from Savanna Shea Exports Ltd i
 
 | | Content |
 |---|---|
-| **P0** | FR and GH profiles, FR → GH pack; labelled synthetic dataset; risk engine; router; payee registry with provenance; signed intent on Fuji; escrow and revocation; rail adapters that check the intent; out-of-band verification with SIM-swap check; four response tiers; investigator case file; analyst console, text feed, proof panel, attack console, phone panels; evaluation; Scenes 1, 2, 2b |
-| **P1** | Mule-network view and circuit breaker (Scene 3); rail outage and reroute (Scene 5); on-chain guardian with DORA draft (Scene 4); eERC confidential transfer; route view or globe; intake agent with injection tests; Merkle anchoring and auditor view; pack 2 Lagos → Accra from one file; demo clock; Jev semantic check (only if the ablation shows gain) |
+| **P0** | FR and GH profiles, FR → GH pack; labelled synthetic dataset; risk engine; router; payee registry with provenance; signed intent on Fuji; escrow and revocation; rail adapters that check the intent; out-of-band verification with SIM-swap check; four response tiers; investigator case file; analyst console with the **globe as the main view** (route traced hop by hop across institution nodes), text feed, proof panel, attack console, phone panels; evaluation; Scenes 1, 2, 2b |
+| **P1** | Mule-network view and circuit breaker (Scene 3); rail outage and reroute (Scene 5); on-chain guardian with DORA draft (Scene 4); eERC confidential transfer; intake agent with injection tests; Merkle anchoring and auditor view; pack 2 Lagos → Accra from one file; demo clock; Jev semantic check (only if the ablation shows gain) |
 | **P2** | Hosted consortium L1; confidential conditional release (eERC Mode B); supplier-signed account attestation; dual attestation; release challenge window; honeytokens; verifiable credentials; ISO 20022 exports |
 | **Out** | Real rails, real data, real identity checks, holding funds, consumer app, tax calculation |
 
@@ -276,7 +277,7 @@ Rhône Cosmétiques SAS in Lyon buys shea butter from Savanna Shea Exports Ltd i
 - Payer: Rhône Cosmétiques SAS, Lyon; Claire (CFO), Marc (second approver).
 - Supplier: Savanna Shea Exports Ltd (Tamale, office in Tema); nominated bank account in Accra; 7 successful payments from this payer since 2025; known contact Kwame (number on file since 2025).
 - Invoice SSE-2026-118, **EUR 85,000**, goods (shea butter), open Letter of Commitment (LOC).
-- Rails R1–R4 (§11). Screen layout: analyst console + text feed, proof panel with explorer links, **attack console** (buttons the jury can press), **phone panels** for Claire and Kwame.
+- Rails R1–R4 (§11). Screen layout: **globe in the centre** (institutions as nodes, rails as arcs, the payment's route traced hop by hop), analyst console + text feed beside it, proof panel with explorer links, **attack console** (buttons the jury can press), **phone panels** for Claire and Kwame.
 
 ### 7.2 Scene 1 — The legitimate payment passes (≈ 40 s, P0)
 
@@ -367,11 +368,11 @@ Effort in person-hours (h·p) for P0; budget in §21.
 | M10 | Console | Analyst queue and case; payer view (routes, norms, tax notice, approval); text feed via server-sent events; **proof panel**; **attack console**; **phone panels**; metrics page | P0 | Scenes 1, 2, 2b readable without narration | 4.5 |
 | M11 | Evaluation | Baselines, ablations, metrics file | P0 | One script reproduces every number in the pitch | 1.5 |
 | M12 | Attack scripts | Scene 2b attacks behind the attack console | P0 | Each runs in < 10 s; results in the feed | 0.5 |
+| M13 | Globe (main view) | 3D globe with institutions as nodes and rails as arcs; the selected route is drawn hop by hop from `route.selected`, `leg.sent` and `leg.settled`; the trace stops and changes colour on escrow, hold or block; alerts and outages appear on the globe; driven only by the event stream | P0 | < 1 s between an event and its drawing; the text feed shows the same events and still works without WebGL; ≤ 200 animated arcs; assets served locally | 3 |
 | P1-1 | Network | Graph view, cluster alert, regional circuit breaker | P1 | Scene 3 | — |
 | P1-2 | Guardian | On-chain monitor, freeze/pause, DORA incident draft | P1 | Scene 4 | — |
 | P1-3 | Outage | Rail status, outage injection, reroute | P1 | Scene 5 | — |
 | P1-4 | eERC | Confidential transfer for Scene 1 + auditor decryption | P1 (3-h box) | Encrypted amount on explorer; auditor reads EUR 85,000 | — |
-| P1-5 | Route view | Route and alerts on a map or globe, driven only by events | P1 (3-h box) | Same events as the text feed; text feed still works without it | — |
 | P1-6 | Intake agent | Invoice/email → structured fields with provenance; lookalike domain; injection test set | P1 | 20 injected invoices → 0 changes to tier or route | — |
 | P1-7 | Anchoring | Merkle root of the log every 60 s; auditor view | P1 | Inclusion proof verified in the UI | — |
 | P1-8 | Pack 2 | NG profile + NG-GH pack from one file (Appendix A) | P1 | Routes and authorities change; core untouched | — |
@@ -742,7 +743,7 @@ flowchart TB
   end
   AG["Agents<br/>investigator, intake, watch"]
   GUA["Guardian"]
-  WEB["Console<br/>analyst, payer, feed, proof panel, attack console"]
+  WEB["Console<br/>globe (main view), analyst, payer, feed, proof panel, attack console"]
 
   ORD --> INT
   DOC --> AG --> INT
@@ -791,17 +792,17 @@ sequenceDiagram
   API->>Esc: refund(paymentId)
 ```
 
-### 15.3 Event stream (drives the feed, proof panel and route view)
+### 15.3 Event stream (drives the globe, the feed and the proof panel)
 
 One server-sent-event stream for the whole console; each event has an `id` (for resume), the UETR, a timestamp and, where relevant, institution coordinates and the explorer link.
 
 | Event | Shown as |
 |---|---|
-| `norms.checked`, `risk.scored`, `route.selected` | Decision card with reasons and excluded routes |
+| `norms.checked`, `risk.scored`, `route.selected` | Decision card with reasons and excluded routes; the globe draws the selected route, coloured by tier |
 | `approval.required`, `approval.granted` | Payer view state |
 | `intent.committed`, `escrow.deposited`, `verification.recorded`, `intent.revoked`, `escrow.refunded`, `escrow.released` | Proof panel with explorer links |
-| `leg.sent`, `leg.settled`, `leg.rejected` | Feed; rejected legs in red with the reason |
-| `alert.raised`, `breaker.on/off`, `rail.down/up`, `killswitch.on` | Feed and (P1) route view |
+| `leg.sent`, `leg.settled`, `leg.rejected` | Globe: the route advances hop by hop, a rejected leg stops the trace in red. Feed: same events, rejected legs in red with the reason |
+| `alert.raised`, `breaker.on/off`, `rail.down/up`, `killswitch.on` | Feed and globe (rings on the region, rail in red dashes, tinted region) |
 | `tx.reverted` | Proof panel: failed transaction link and revert reason |
 
 ### 15.4 Stack
@@ -815,7 +816,7 @@ One server-sent-event stream for the whole console; each event has an `id` (for 
 | Signing and chain | `eth-account` (EIP-712), `web3.py` | Same language as the API; shared test vector with Solidity |
 | Contracts | Solidity 0.8.x, Foundry, OpenZeppelin 5 | Fuzz and invariant tests |
 | eERC (P1) | Small Node service with the eERC SDK | Proof generation lives in the official SDK |
-| Console | Next.js, Tailwind; route view with react-globe.gl or a 2D map (P1) | Event-driven; globe only renders events |
+| Console | Next.js, Tailwind; main view with react-globe.gl (P0), loaded client-side only (`next/dynamic`, `ssr: false`) | Event-driven; globe only renders events |
 | LLM | Provider-agnostic client, JSON-schema output, response cache | Swap providers without code changes |
 | Run | Docker Compose; optional hosting on AWS credits | One command on the demo machine |
 
@@ -1038,7 +1039,7 @@ Every decision shows: rules fired (norms with legal references), top three model
 
 - Time left: Saturday ≈ 21:00 → code freeze **Sunday 12:00** (jury at 13:00; to confirm) ≈ 15 h.
 - Per person: ≈ 15 h − 4–5 h sleep − 2 h pitch and video − 1 h breaks ≈ **7–8 h of build** → **≈ 30 h·p** for 4 people.
-- **P0 = 29.5 h·p** (§8): no margin. The cut order applies from the first checkpoint.
+- **P0 = 32.5 h·p** (§8), including 3 h·p for the globe as the main view (M13): **about 2.5 h·p over the budget**. The cut order applies from the first checkpoint; nothing else was moved out of P0 to compensate, the team must decide what gives.
 
 ### 21.2 Roles
 
@@ -1047,14 +1048,14 @@ Every decision shows: rules fired (norms with legal references), top three model
 | A — Norms, routing, orchestration | M2, M5, M8 (7.5 h·p) |
 | B — Data, risk, evaluation | M3, M4, M11 (8.5 h·p) |
 | C — Contracts, chain, attacks | M6, M7, M12 (6 h·p), then eERC or guardian (P1) |
-| D — Console, agents, pitch | M10, M9 (6 h·p), M1 shared at kick-off, then deck and video |
+| D — Console, globe, agents, pitch | M10, M13, M9 (9 h·p, above one person's 7–8 h: share M13 or M9), M1 shared at kick-off, then deck and video |
 
 ### 21.3 Milestones
 
 | Time | Milestone |
 |---|---|
 | Sat 21:30 | Interfaces frozen: schemas, events, EIP-712 types, shared test vector, profile format; test AVAX and EURC in wallets |
-| Sun 00:30 | Nominal path end to end: order → norms → rules-only risk → route → approval → intent on Fuji → adapter → text feed |
+| Sun 00:30 | Nominal path end to end: order → norms → rules-only risk → route → approval → intent on Fuji → adapter → text feed; globe shows the network and draws the route |
 | Sun 03:30 | Scene 2 complete (escrow, out-of-band, revoke, refund, phone panels); model trained on seed A; case file |
 | Sun 03:30–07:30 | Sleep in two shifts; one person keeps the build green |
 | Sun 08:30 | Scene 2b with attack console; numbers on seed B; proof panel; P1 items by priority |
@@ -1064,7 +1065,7 @@ Every decision shows: rules fired (norms with legal references), top three model
 
 ### 21.4 Cut order and never-cut list
 
-**P1 build order (if time):** circuit breaker (Scene 3) → guardian (Scene 4) → eERC → route view/globe → outage reroute (Scene 5) → anchoring/auditor view → intake agent → pack 2 → demo clock → Jev.
+**P1 build order (if time):** circuit breaker (Scene 3) → guardian (Scene 4) → eERC → outage reroute (Scene 5) → anchoring/auditor view → intake agent → pack 2 → demo clock → Jev.
 
 **Cut first → last when late:** P2 → P1 items in reverse order above → live LLM (cached case files) → model (fall back to rules + logistic regression).
 
@@ -1139,12 +1140,12 @@ Every decision shows: rules fired (norms with legal references), top three model
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| P0 does not fit the time left | High | High | 29.5 h·p budget; cut order from the first checkpoint; scenes before polish |
+| P0 does not fit the time left | High | High | 32.5 h·p of P0 for ≈ 30 h·p available; cut order from the first checkpoint; scenes before polish |
 | EIP-712 hash mismatch Python ↔ Solidity | Medium | High | Shared test vector frozen at 21:30; tested in both suites |
 | Fuji faucet or RPC trouble | Medium | High | Fund wallets now; two providers; backup video |
 | eERC integration slips | Medium | Medium | 3-hour time-box; public EURC fallback |
 | Model learns a simulator shortcut | Medium | High | Honest noise, unseen seed B, no single-field fraud |
-| Route view/globe slow on the demo machine | Medium | Medium | P1 only; ≤ 200 arcs; assets served locally; text feed always works |
+| Globe (main view, P0) slow or blank on the demo machine | Medium | High | Test on the demo machine on Saturday night; ≤ 200 arcs; assets served locally; text feed always works; backup video |
 | LLM quota or outage during the demo | Medium | Medium | Cached responses labelled; degraded mode |
 | Legal status of R3 for export proceeds | Medium | Medium | Pack flag; same protections on R1 with fiat hold |
 | Simulated costs read as real | Medium | Medium | "Simulated" labels; sources for parameters |

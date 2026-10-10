@@ -54,6 +54,7 @@ Something was kept if it improves what the Track 1 jury scores (detection 30%, r
 | **Four response tiers** with timings; **regional circuit breaker** (thresholds −20 points for 24 h, only a human lifts it early) | Graduated, proportionate response | §12.1, §12.2 |
 | Who is notified per country, reporting deadlines, **no tipping-off** | Compliance criterion | §12.3 |
 | **Seeds A/B** evaluation; baselines including the **isolated institution**; amount withheld; time to detect | Credible, reproducible numbers | §17 |
+| **3D globe as the main view (P0)**: the route of each payment traced hop by hop across institution nodes (decision of 10 October evening; v4.0 had it as P1) | Shows the cross-institution view that is the product's central argument | §0.1, §8 (M13) |
 | **Event-driven UI**: one server-sent-event stream, events carry the UETR; the view only draws events; text feed works without graphics | Reliable demo | §15.3 |
 | Routing mechanics: Yen's k-shortest paths, quote valid 600 s, cut-offs and time zones, **reroute on rail outage**, labelled technical splits | Realistic routing; "Recover" function | §11.3, §7.7 |
 | ISO 20022 `pacs.008` pivot format with UETR; name check | Integration criterion | §16 |
@@ -68,7 +69,6 @@ Something was kept if it improves what the Track 1 jury scores (detection 30%, r
 | Fraud risk inside the route score (`ρ·R(r,p)`) | A suspicious payment could become eligible because another rail is cheaper; contradicts A |
 | Lagos – Accra – Abidjan triangle as the main scenario | Mentor asked for an intercontinental example; Lagos → Accra becomes the P1 extension pack, Paris → Abidjan stays on paper |
 | Cost (≤ 1%) and speed (≥ 75% < 1 h) as headline goals | The jury scores detection and response, and our rails are simulated; shown as illustrative only |
-| 3D globe as P0 | Moves to P1 with a 3-hour time-box; text feed and proof panel are P0 |
 | Rural family-remittance persona | Outside the business-payment scenario |
 | Five roles | We are four |
 
@@ -106,7 +106,7 @@ Something was kept if it improves what the Track 1 jury scores (detection 30%, r
 | Online bandit predictors, convex optimiser, multi-path splitting | No gain for detection or response; costly |
 | Jev as a P0 "System 1" with three live questions; "System 1 / System 2" framing; Track 3 positioning | Track 1 only; Jev becomes an optional P1 feature, kept only if the ablation shows a recall gain |
 | PSP sandbox (Airwallex), registry imports (GLEIF, INPI, Chinese registries), three languages, Supabase row-level roles | Out of scope for ≈ 15 hours |
-| ≈ 134 person-hours of P0 | Does not fit; v4 P0 is 29.5 person-hours |
+| ≈ 134 person-hours of P0 | Does not fit; v4 P0 is 32.5 person-hours with the globe |
 
 ---
 
@@ -148,7 +148,7 @@ Something was kept if it improves what the Track 1 jury scores (detection 30%, r
 | Intent / proof | Light audit | Log on Fuji | Signed intent checked by adapters | EIP-712 + escrow | **Signed intent (C) recorded as EIP-712 (D)**, checked by adapters (C) and contracts (D) |
 | Response | 3 levels | 4 levels + circuit breaker | pass / hold / block | 3 levels + circuit breaker | **4 levels** (B) + escrow (D) + time-lock and dual control (C) |
 | AI | 3 detection agents | LLM summary | Jev + Mistral | Investigator + intake + watch | **Rules + calibrated model decide**; one investigator (Mistral); intake P1; Jev optional P1 |
-| Live view | Dashboard | Globe P0 | Timeline | Proof panel | **Text feed + proof panel P0**; globe P1 |
+| Live view | Dashboard | Globe P0 | Timeline | Proof panel | **Globe as the main view, P0**; text feed and proof panel P0 beside it |
 | Chain | C-Chain, optional | Fuji | Local L1, Fuji fallback | Fuji P0, L1 P2 | **Fuji P0**, hosted L1 P2 |
 | Who signs | — | — | Payer's browser key | Router service | **Payer approves with strong authentication; bank services sign** |
 | Track | Not stated | Track 1 | Track 1 + Track 3 | Track 1 + "Track 3 angle" | **Track 1 only** (mentor) |
