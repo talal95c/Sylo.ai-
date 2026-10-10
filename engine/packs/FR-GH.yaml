@@ -1,0 +1,116 @@
+# Corridor pack France → Ghana. One file per country pair; the engine code does not change per corridor.
+# All rail parameters are simulated (proof-of-concept assumptions).
+id: FR-GH
+version: "2026-10-10"
+profiles: [FR, GH]
+settlementModes: [ONCHAIN_ESCROW, FIAT_HOLD]
+treaty: FR-GH-DTC-1993
+flags:
+  allowVaspPathForExportProceeds: true   # open legal point (PRD §9.3)
+fx:
+  EURGHS: 16.5                            # fixed demo rate, labelled simulated
+weights: { lambda: 0.0007, mu: 0.02, nu: 0.05, sigma: 1 }
+leg:
+  durationsMs: { bank: 1400, chain: 2200, wallet: 1400 }
+
+# {PAYER}, {PAYER_BANK} and {CRED} (the creditor account's institution) are filled per order.
+# When the credited account is a registered account of the payee, one last hop goes to the payee itself.
+routes:
+  - id: R1
+    name: SWIFT correspondent
+    settlement: FIAT_HOLD
+    credits: bank
+    etaLabel: "1–3 days"
+    fees: { fixedEur: 80 }
+    timeDays: 2
+    pFail: 0.01
+    pUnusable: 0
+    hops:
+      - { from: "{PAYER}", to: "{PAYER_BANK}", kind: bank, label: "Payment order to the payer's bank" }
+      - { from: "{PAYER_BANK}", to: corr_uk, kind: bank, label: "SWIFT to the correspondent bank" }
+      - { from: corr_uk, to: "{CRED}", kind: bank, label: "SWIFT credit to the beneficiary bank" }
+  - id: R2
+    name: Payout provider
+    settlement: NONE
+    credits: bank
+    etaLabel: "< 1 h"
+    fees: { fixedEur: 935 }
+    timeDays: 0.041666666666666664   # 1/24
+    pFail: 0.0025
+    pUnusable: 0
+    hops:
+      - { from: "{PAYER}", to: "{PAYER_BANK}", kind: bank, label: "Payment order to the payer's bank" }
+      - { from: "{PAYER_BANK}", to: payout_nl, kind: bank, label: "SEPA Instant to the payout provider" }
+      - { from: payout_nl, to: "{CRED}", kind: bank, label: "Local payout in GHS" }
+  - id: R3
+    name: Euro stablecoin on Avalanche
+    settlement: ONCHAIN_ESCROW
+    credits: bank
+    etaLabel: "≈ 2 h"
+    fees: { fixedEur: 170 }
+    timeDays: 0.08333333333333333    # 2/24
+    pFail: 0.0025
+    pUnusable: 0
+    casp: casp_eu
+    vasp: vasp_gh
+    token: tEURC
+    hops:
+      - { from: "{PAYER}", to: "{PAYER_BANK}", kind: bank, label: "Payment order to the payer's bank" }
+      - { from: "{PAYER_BANK}", to: casp_eu, kind: bank, label: "EUR to the EU crypto provider (EUR → tEURC)" }
+      - { from: casp_eu, to: vasp_gh, kind: chain, label: "tEURC on Avalanche C-Chain" }
+      - { from: vasp_gh, to: "{CRED}", kind: bank, label: "Local credit by the licensed VASP" }
+  - id: R4
+    name: Mobile wallet remittance
+    settlement: NONE
+    credits: wallet
+    etaLabel: "minutes"
+    fees: { pctOfAmount: 0.015 }
+    timeDays: 0.006944444444444444   # 10/1440
+    pFail: 0.03
+    pUnusable: 0.05
+    hops:
+      - { from: "{PAYER}", to: remit_fr, kind: wallet, label: "Remittance provider" }
+      - { from: remit_fr, to: momo_gh, kind: wallet, label: "Mobile wallet credit" }
+
+# Rules are evaluated in this order. PASS, FAIL or NEEDS_DOCUMENT; anything but PASS excludes the route.
+rules:
+  - id: GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK
+    jurisdiction: GH
+    appliesTo: { purpose: GOODS, creditorCountry: GH }
+    legalRef: "Foreign Exchange Act 2006 (Act 723); BoG notice BG/GOV/SEC/2025/34"
+    checks:
+      - { check: route_credits_bank_with_loc, scope: route }
+      - { check: creditor_is_nominated_account, scope: payment, signal: R1 }   # raises a signal, never excludes
+  - id: GH_WALLET_DAILY_CAP
+    jurisdiction: GH
+    routes: [R4]
+    legalRef: "Bank of Ghana mobile money wallet limits (enhanced KYC: GHS 25,000 per day)"
+    checks:
+      - { check: wallet_daily_cap, scope: route }
+  - id: GH_VASP_LICENSED
+    jurisdiction: GH
+    routes: [R3]
+    legalRef: "Virtual Asset Service Providers Act 2025 (Act 1154)"
+    checks:
+      - { check: vasp_licensed, scope: route }
+  - id: EU_MICA_EMT_CASP
+    jurisdiction: FR
+    routes: [R3]
+    legalRef: "Regulation (EU) 2023/1114 (MiCA)"
+    checks:
+      - { check: mica_emt_casp, scope: route }
+  - id: EU_TRAVEL_RULE
+    jurisdiction: FR
+    routes: [R3]
+    legalRef: "Regulation (EU) 2023/1113 (transfers of funds and crypto-assets)"
+    checks:
+      - { check: travel_rule_fields, scope: route }
+  - id: SANCTIONS_SCREEN
+    jurisdiction: both
+    legalRef: "Synthetic sanctions list (simulated)"
+    checks:
+      - { check: sanctions_screen, scope: route, signal: SANCTIONS }
+
+taxNotices:
+  - { reference: FR-GH-DTC-1993, text: no_withholding_goods, when: { purpose: GOODS } }
+  - { reference: DAC8, text: dac8_casp_leg, when: { routeCandidate: R3 } }

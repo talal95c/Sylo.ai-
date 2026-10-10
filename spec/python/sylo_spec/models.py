@@ -159,6 +159,7 @@ class Account(SpecModel):
 class Payee(SpecModel):
     id: str
     legal_name: str
+    short_name: Optional[str] = None  # how the UI names the payee in a sentence
     country: str
     known_domain: str
     accounts: list[Account]
@@ -179,6 +180,7 @@ class Approver(SpecModel):
 class Party(SpecModel):
     id: str
     name: str
+    short_name: Optional[str] = None
     institution_id: str  # the party's own node on the globe
     bank_institution_id: str
     country: str

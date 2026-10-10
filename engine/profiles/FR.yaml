@@ -1,0 +1,19 @@
+# Jurisdiction profile: France (EU rules included). Synthetic demo content, readable by compliance people.
+id: FR
+name: France
+version: "2026-10-10"
+currency: EUR
+reporting:
+  authority: TRACFIN
+  note: Suspicious-transaction reports; never tip off the customer.
+verificationOfPayee:
+  scope: SEPA  # the EU payee name check does not cover a payment to Ghana
+crypto:
+  authorisedCasps: [casp_eu]          # MiCA-authorised crypto-asset service providers (fictional)
+  authorisedEmoneyTokens: [tEURC, EURC]
+  travelRule: true                     # Regulation (EU) 2023/1113
+sanctions:
+  list: synthetic
+  names: ["BLOCKED TRADING CO", "SANCTIONED HOLDINGS LTD"]
+tax:
+  dac8Since: "2026-01-01"

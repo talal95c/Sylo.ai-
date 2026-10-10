@@ -1,0 +1,17 @@
+# Jurisdiction profile: Ghana. Synthetic demo content, readable by compliance people.
+id: GH
+name: Ghana
+version: "2026-10-10"
+currency: GHS
+reporting:
+  authority: FIC
+  deadlineHours: 24
+exportProceeds:
+  nominatedBankRequired: true          # proceeds must reach the exporter's nominated bank with the LOC reference
+crypto:
+  licensedVasps: [vasp_gh]             # VASP Act 2025 (Act 1154); fictional licensee
+wallets:
+  dailyCapGhs: 25000                   # enhanced-KYC mobile wallets
+sanctions:
+  list: synthetic
+  names: ["BLOCKED TRADING CO"]
