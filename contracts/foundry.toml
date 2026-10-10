@@ -1,0 +1,26 @@
+[profile.default]
+src = "src"
+out = "out"
+test = "test"
+script = "script"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+fs_permissions = [{ access = "read", path = "../spec" }, { access = "read-write", path = "./deployments" }]
+
+[lint]
+# Holds last hours, so validator timestamp drift of seconds does not matter; keccak via assembly is a gas-only hint.
+exclude_lints = ["block-timestamp", "asm-keccak256"]
+# Security lints target the deployed contracts, not test and script code.
+ignore = ["test/*.sol", "script/*.sol"]
+
+[fuzz]
+runs = 256
+
+[rpc_endpoints]
+fuji = "${FUJI_RPC_URL}"
+
+[etherscan]
+fuji = { key = "verifyContract", url = "https://api.routescan.io/v2/network/testnet/evm/43113/etherscan", chain = 43113 }
