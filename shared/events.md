@@ -23,6 +23,10 @@ Chaque événement utilise l'enveloppe `EventEnvelope`; pour les événements on
 | `alert.raised` | Alerte fraude transmise à l'équipe ou à la banque concernée. | `{"alertId":"alert_scene2","tier":"MEDIUM","uetr":"uetr-scene2","recipient":"Ama's bank","freezeRequested":true}` |
 | `case.ready` | Dossier analyste cité prêt à examiner. | `{"caseId":"case_scene2","tier":"MEDIUM","summary":"Supplier account change denied by known contact.","explanation":"Three independent signals raised the payment to MEDIUM.","citations":["R-FL-01","R-FL-03","R-NM-01"],"reportDraft":"TRACFIN draft: suspected supplier impersonation.","cached":false}` |
 | `killswitch.on` | Connecteur de rail désactivé après un échec d'intégrité. | `{"rail":"R3","reason":"CommitmentMismatch","scope":"adapter","simulated":true}` |
+| `breaker.on` | P1, non émis en P0 : circuit breaker activé pour un corridor ou une région. | `{"scope":"GH","reason":"fraud_wave","durationHours":24}` |
+| `breaker.off` | P1, non émis en P0 : circuit breaker levé par un analyste. | `{"scope":"GH","by":"analyst"}` |
+| `rail.down` | P1, non émis en P0 : route marquée indisponible après une panne. | `{"rail":"R3","reason":"provider_unavailable"}` |
+| `rail.up` | P1, non émis en P0 : route remise en service. | `{"rail":"R3"}` |
 | `tx.reverted` | Transaction Fuji refusée par le contrat. | `{"txHash":"0x6666666666666666666666666666666666666666666666666666666666666666","contract":"PaymentEscrow","status":"REVERTED","attack":"A","function":"release","revertReason":"PaymentNotReleasable"}` — `explorerUrl`: `https://testnet.snowtrace.io/tx/<hash>` |
 | `log.tampered` | Vérification d'intégrité du journal hash-chaîné a échoué. | `{"seq":42,"expectedHash":"0xexpected","actualHash":"0xactual","reason":"decision payload rewritten"}` |
 | `mode.degraded` | Dépendance indisponible: décision plus stricte, aucun déblocage automatique. | `{"dependency":"rpc","status":"unavailable","policy":"rules_and_humans_only","releaseDisabled":true}` |

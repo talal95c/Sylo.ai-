@@ -41,6 +41,16 @@ class EventBus:
             loop.call_soon_threadsafe(queue.put_nowait, envelope)
         return envelope
 
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [event.copy() for event in self._events]
+
+    def clear(self, *, reset_ids: bool = False) -> None:
+        with self._lock:
+            self._events.clear()
+            if reset_ids:
+                self._next_id = 1
+
     async def stream(self, last_event_id: int | None = None) -> AsyncIterator[dict[str, Any] | None]:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
