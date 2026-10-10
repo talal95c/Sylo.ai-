@@ -1,0 +1,31 @@
+name: ci-ml
+
+on:
+  pull_request:
+    paths: ["ml/**", "spec/**", ".github/workflows/ci-ml.yml"]
+  push:
+    branches: [main]
+    paths: ["ml/**", "spec/**", ".github/workflows/ci-ml.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ml:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+      - run: uv sync --locked
+      - name: Tests (risk conformance, skipped until ModelRisk exists)
+        run: uv run pytest -q

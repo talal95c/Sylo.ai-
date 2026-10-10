@@ -1,0 +1,43 @@
+name: ci-engine
+
+on:
+  pull_request:
+    paths:
+      - "engine/**"
+      - "spec/**"
+      - "ml/pyproject.toml"
+      - "chain/pyproject.toml"
+      - ".github/workflows/ci-engine.yml"
+  push:
+    branches: [main]
+    paths:
+      - "engine/**"
+      - "spec/**"
+      - "ml/pyproject.toml"
+      - "chain/pyproject.toml"
+      - ".github/workflows/ci-engine.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - run: uv sync --all-extras --locked
+      - name: Tests (including the risk and chain conformance suites)
+        run: uv run pytest -q
+      - name: Fixtures are up to date
+        run: uv run python -m sylo.record_fixtures --check

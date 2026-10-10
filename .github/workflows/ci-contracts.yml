@@ -1,0 +1,47 @@
+name: ci-contracts
+
+on:
+  pull_request:
+    paths: ["contracts/**", "chain/**", "spec/eip712.json", ".gitmodules", ".github/workflows/ci-contracts.yml"]
+  push:
+    branches: [main]
+    paths: ["contracts/**", "chain/**", "spec/eip712.json", ".gitmodules", ".github/workflows/ci-contracts.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge --version
+      - name: Build (fails if a contract exceeds the size limit)
+        run: forge build --sizes
+      - name: Tests (including the shared EIP-712 vector)
+        run: forge test -vvv
+
+  chain:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: chain/uv.lock
+      - run: uv sync --locked
+      - name: Tests (chain conformance, skipped until FujiChain exists)
+        run: uv run pytest -q

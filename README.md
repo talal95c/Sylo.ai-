@@ -1,74 +1,58 @@
 # Sylo.ai
 
-> Routeur de paiements transfrontaliers sûr : la route la moins chère quand tout va bien, une fenêtre pour arrêter l'argent quand quelque chose cloche.
+> The cheapest compliant route when everything is fine. A window to stop the money when something is wrong.
 
-Projet présenté au hackathon **Secure Horizons** (ESSEC, 10–11 octobre 2026) sur la **Track 1** (Fintech Security: Guardians of Value), avec une ouverture possible sur la **Track 3**. Le PRD l'appelle de son nom de travail, **L'Aiguilleur**.
+Hackathon project for **Secure Horizons** (ESSEC, 10–11 October 2026), **Track 1 — Fintech Security: Guardians of Value**.
 
-📄 **Document de référence : [`prd-final.md`](./prd-final.md)** (PRD final v3.0, fusion des quatre PRD de l'équipe).
+## What it is
 
----
+Sylo.ai is a decision and control layer above licensed payment rails for cross-border business payments; it never holds the money. Before any money moves, it keeps only the routes that are legal in both countries, scores the fraud risk, picks the cheapest safe route and seals the approved payment on Avalanche as a signed EIP-712 intent. When a payment looks diverted, the money waits in an escrow smart contract until the supplier confirms on a contact we already know, and it flies back to the payer if they say no. The demo shows all of it live on a 3D globe.
 
-## Le problème
+## Quickstart
 
-Un paiement transfrontalier traverse des systèmes qui ne se parlent pas : banques correspondantes, prestataires de paiement, mobile money, stablecoins. Chaque pays a ses propres règles (contrôle des changes, lutte anti-blanchiment, crypto, fiscalité). Chaque institution ne voit que son tronçon du paiement, et les fraudes (faux fournisseur, réseau de mules, prise de contrôle de compte) passent entre ces tronçons. En Europe, la vérification du nom du bénéficiaire s'arrête aux frontières de la zone SEPA : elle ne couvre pas un paiement vers Accra.
+Prerequisites: [uv](https://docs.astral.sh/uv/) (Python 3.12), Node.js ≥ 22.12 with pnpm 10, and [Foundry](https://getfoundry.sh). Details in [`docs/setup.md`](docs/setup.md).
 
-## La solution
-
-Sylo.ai est une couche d'orchestration logicielle posée **au-dessus de rails agréés** : ce n'est pas une banque et elle ne détient pas les fonds. Avant que l'argent ne bouge, chaque paiement suit cet ordre de décision :
-
-```
-1. NORMES   routes légales au départ, en transit et à l'arrivée (la règle la plus stricte gagne)
-2. RISQUE   le niveau de fraude restreint les routes autorisées ; il n'entre jamais dans le score de coût
-3. COÛT     meilleure route restante (frais, change, délai, probabilité d'échec)
-4. COMMIT   bénéficiaire, montant et décision signés (EIP-712) et engagés on-chain
-5. ACTION   exécution, règlement conditionnel ou retenue
+```bash
+make setup      # submodules, Python 3.12, Python packages, web packages
+make dev        # engine on http://localhost:8000, web on http://localhost:3000 (Ctrl-C stops both)
 ```
 
-| Niveau de risque | Réponse |
-| --- | --- |
-| Faible | Meilleure route conforme |
-| Moyen | Séquestre on-chain ou retenue fiat ; les fonds ne sont libérés qu'après une vérification hors bande sur le contact **déjà connu**, précédée d'un contrôle de SIM swap ; sinon remboursement automatique au bout de 24 h |
-| Élevé | Signature bloquée ; le payeur et l'analyste sont alertés |
-| Critique | Blocage, dossier d'enquête et déclaration de soupçon pré-remplie |
+Open <http://localhost:3000> and use the demo buttons at the bottom left:
 
-En plus : un **coupe-circuit** quand une vague de fraude frappe une région, et un **kill switch** quand un connecteur de rail est compromis.
+1. **Run legit payment**: the illegal mobile-wallet route flashes red and disappears, the payment travels five hops with a high violet arc for Avalanche, and the card ends on "Credited".
+2. **Run diverted invoice**: the payment stops on the Avalanche arc behind an escrow lock and the alert explains why.
+3. **Supplier: deny**: the payment is revoked on-chain and the money flies back to Lyon. Or **Supplier: confirm**: the lock opens and the payment reaches the supplier.
+4. **Attack: release revoked payment** (after deny): the smart contract rejects it, on the globe and in the feed.
 
-**Garanties clés**
-- **Pas de substitution** : chaque connecteur de rail vérifie l'empreinte de l'intention signée (`intent_hash`) avant d'exécuter. Un bénéficiaire ou un montant modifié est refusé, et la transaction on-chain échoue (revert).
-- **L'IA ne décide pas** : Jev (Système 1) note la sémantique de la facture au moment de la signature ; Mistral (Système 2) rédige le dossier d'enquête et l'explication. Aucun modèle ne peut libérer de fonds.
-- **Échec sûr** : si l'IA ou la chaîne tombe en panne, le système devient plus strict, jamais plus laxiste.
-- **Preuve** : journal hash-chaîné, et `IntentRegistry` sur Avalanche avec des attestations EIP-712 (`PaymentCommitment`, `VerificationAttestation`, `Revocation`), vérifiables par un tiers sur l'explorer.
+Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
 
-## La démo (3 min)
+## Tests
 
-Corridor principal : **France → Ghana**. Claire, à Lyon, paie 85 000 € en EURC à son fournisseur de beurre de karité, Savanna Shea Exports.
+```bash
+make test            # spec, engine, ml, chain, contracts (forge test) and web (typecheck, tests, build)
+make fixtures-check  # recorded events still match the engine
+make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
+```
 
-1. **Paiement légitime** : le moteur de normes écarte une route et explique pourquoi ; la route conforme la moins chère est choisie et l'engagement apparaît sur l'explorer.
-2. **Facture détournée** : un e-mail « nouvelles coordonnées bancaires » envoie le paiement vers un compte de mule. Résultat : niveau moyen, séquestre, vérification hors bande refusée, révocation et remboursement, chaque étape visible on-chain.
-3. **Tentative de substitution ou de rejeu** : le rail refuse la jambe, la transaction échoue on-chain, et le connecteur est coupé.
-4. **Réseau de mules** : la grappe est détectée et le coupe-circuit régional s'active.
-5. **Bilan** : les indicateurs mesurés sur un jeu de données que le modèle n'a pas vu à l'entraînement.
+## Repository
 
-Bonus (P1) : un second corridor **Lagos → Accra** (PAPSS, mobile money), chargé à partir d'un seul fichier, sans toucher au cœur. Paris → Abidjan reste décrit sur papier.
+| Folder | Lane | Contents |
+|---|---|---|
+| [`spec/`](spec/) | Shared | Event schema, API, EIP-712 vector, geography, fixtures, Python models and conformance suites |
+| [`engine/`](engine/) | A | FastAPI engine: norms, rules-based risk, router, signer, simulated chain, orchestrator, event stream |
+| [`ml/`](ml/) | B | Fraud model package (skeleton in v0) |
+| [`contracts/`](contracts/) | C | `PaymentRegistry`, `PaymentEscrow`, `MockEURC` (Foundry) |
+| [`chain/`](chain/) | C | Fuji adapter package (skeleton in v0) |
+| [`web/`](web/) | D | Next.js demo screen with the globe |
 
-## Architecture
+## Documents
 
-| Couche | Technologies prévues |
-| --- | --- |
-| Console analyste, globe en direct, signature | Next.js, TypeScript, Tailwind, react-globe.gl, viem |
-| Normes, routage, risque, simulateur, évaluation | Python, FastAPI (flux SSE), networkx, CVXPY, scikit-learn |
-| IA | Jev (Système 1), Mistral (Système 2) |
-| Chaîne | Solidity + Foundry : `IntentRegistry`, séquestre ; L1 Avalanche dédiée ou Fuji C-Chain ; eERC pour les transferts confidentiels (P1) |
-| Stockage | Supabase / Postgres |
+- [`docs/project-context.md`](docs/project-context.md): what we build, architecture and rules. Start here.
+- [`docs/roadmap-and-lanes.md`](docs/roadmap-and-lanes.md): who does what in each version.
+- [`docs/v0-build-spec.md`](docs/v0-build-spec.md): exact interfaces between the parts.
+- [`docs/setup.md`](docs/setup.md): tools, wallets and environment variables.
+- [`prd-final-v4.md`](prd-final-v4.md): the product requirements. It supersedes [`prd-final.md`](prd-final.md) (v3, in French); [`prd-merge-recap.md`](prd-merge-recap.md) explains how the team's four PRDs were merged.
 
-## Statut et limites
+## Everything is simulated
 
-- Hackathon, preuve de concept : **tous les rails, les flux et les comptes sont simulés**. Aucune donnée réelle, aucun vrai rail connecté.
-- Les coûts et délais affichés sont illustratifs ; seuls les indicateurs de sécurité sont mesurés.
-- Décisions encore ouvertes (voir §20 du PRD) : durée réelle du build, détenteurs de la clé auditeur et des clés d'attestation, cible chaîne finale (L1 dédiée ou Fuji).
-
-## Contenu du dépôt
-
-| Fichier | Rôle |
-| --- | --- |
-| [`prd-final.md`](./prd-final.md) | PRD final v3.0 : vision, exigences, démo, architecture, conformité, planning |
+All companies, people, banks, accounts and amounts are fictional and synthetic. In v0 the payment rails and the blockchain are simulated and labelled as such on screen; no real money, network or key is involved. Secrets live only in a git-ignored `.env` (see [`.env.example`](.env.example)).

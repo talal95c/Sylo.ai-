@@ -32,7 +32,7 @@ engine:
 	cd engine && $(LOAD_ENV) && uv run uvicorn sylo.main:app --reload --port $${ENGINE_PORT:-8000}
 
 web:
-	pnpm -C web dev
+	cd web && $(LOAD_ENV) && pnpm dev
 
 test: test-spec test-engine test-ml test-chain test-contracts test-web
 
