@@ -57,52 +57,19 @@ interface PointDatum {
   radius: number;
 }
 
-interface CountryFeature {
-  properties: { name: string };
-  geometry: object;
+type LandDot = [lat: number, lng: number, corridor: number];
+type PathPoint = [lat: number, lng: number];
+
+interface ParticleSet {
+  id: string;
+  dots: { lat: number; lng: number }[];
+  color: string;
 }
 
-function isValidRing(value: unknown): value is number[][] {
-  if (!Array.isArray(value)) return false;
-  const vertices = new Set<string>();
-  for (const position of value) {
-    if (
-      !Array.isArray(position) ||
-      typeof position[0] !== "number" ||
-      typeof position[1] !== "number" ||
-      !Number.isFinite(position[0]) ||
-      !Number.isFinite(position[1])
-    ) {
-      return false;
-    }
-    vertices.add(`${position[0]},${position[1]}`);
-  }
-  return vertices.size >= 3;
-}
-
-function validPolygonCoordinates(value: unknown): number[][][] | null {
-  if (!Array.isArray(value)) return null;
-  const [outer, ...holes] = value;
-  if (!isValidRing(outer)) return null;
-  return [outer, ...holes.filter(isValidRing)];
-}
-
-function sanitizeCountryFeatures(features: CountryFeature[]): CountryFeature[] {
-  return features.flatMap((feature) => {
-    const geometry = feature.geometry as { type: string; coordinates: unknown };
-    if (geometry.type === "Polygon") {
-      const coordinates = validPolygonCoordinates(geometry.coordinates);
-      return coordinates ? [{ ...feature, geometry: { ...geometry, coordinates } }] : [];
-    }
-    if (geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) {
-      const coordinates = geometry.coordinates.flatMap((polygon) => {
-        const validPolygon = validPolygonCoordinates(polygon);
-        return validPolygon ? [validPolygon] : [];
-      });
-      return coordinates.length ? [{ ...feature, geometry: { ...geometry, coordinates } }] : [];
-    }
-    return [feature];
-  });
+interface PathDatum {
+  id: string;
+  points: PathPoint[];
+  color: string;
 }
 
 const CORRIDOR_VIEW = { lat: 26, lng: 3, altitude: 1.9 };
@@ -170,6 +137,8 @@ const SHORT_NAME: Record<string, string> = {
   mule_bank: "Volta Rural Bank",
 };
 
+const onePixelPathStroke = () => null;
+
 function rgba(hex: string, alpha: number) {
   const value = hex.replace("#", "");
   const r = parseInt(value.slice(0, 2), 16);
@@ -213,7 +182,8 @@ export default function GlobeCanvas({
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { width, height } = useViewport();
   const reducedMotion = useReducedMotion();
-  const [countries, setCountries] = useState<CountryFeature[]>([]);
+  const [landDots, setLandDots] = useState<LandDot[]>([]);
+  const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
   const [cache] = useState(() => new Map<string, object>());
   const speedRef = useRef(speed);
 
@@ -236,10 +206,15 @@ export default function GlobeCanvas({
 
   useEffect(() => {
     let alive = true;
-    fetch("/geo/countries.geojson")
-      .then((response) => response.json())
-      .then((data: { features: CountryFeature[] }) => {
-        if (alive) setCountries(sanitizeCountryFeatures(data.features));
+    Promise.all([fetch("/geo/land-dots.json"), fetch("/geo/coastline-50m.json")])
+      .then(async ([dotsResponse, coastlineResponse]) => {
+        if (!dotsResponse.ok || !coastlineResponse.ok) return null;
+        return Promise.all([dotsResponse.json(), coastlineResponse.json()]);
+      })
+      .then((data) => {
+        if (!alive || !data) return;
+        setLandDots(data[0] as LandDot[]);
+        setCoastlines(data[1] as PathPoint[][]);
       })
       .catch(() => undefined);
     return () => {
@@ -255,6 +230,46 @@ export default function GlobeCanvas({
     cache.set(key, created);
     return created;
   }
+
+  const particles = useMemo<ParticleSet[]>(() => {
+    const neutral: ParticleSet["dots"] = [];
+    const corridor: ParticleSet["dots"] = [];
+    for (const [lat, lng, isCorridor] of landDots) {
+      (isCorridor ? corridor : neutral).push({ lat, lng });
+    }
+    return [
+      { id: "land", dots: neutral, color: "rgba(30,35,50,0.38)" },
+      { id: "corridor", dots: corridor, color: "rgba(1,43,255,0.75)" },
+    ];
+  }, [landDots]);
+
+  const paths = useMemo<PathDatum[]>(() => {
+    const coastlinePaths = coastlines.map((points, index) => ({
+      id: `coastline-${index}`,
+      points,
+      color: "rgba(10,20,40,0.22)",
+    }));
+    const graticulePaths: PathDatum[] = [];
+    for (let lat = -80; lat <= 80; lat += 20) {
+      const points: PathPoint[] = [];
+      for (let lng = -180; lng <= 180; lng += 4) points.push([lat, lng]);
+      graticulePaths.push({
+        id: `graticule-lat-${lat}`,
+        points,
+        color: "rgba(10,20,40,0.06)",
+      });
+    }
+    for (let lng = -180; lng < 180; lng += 20) {
+      const points: PathPoint[] = [];
+      for (let lat = -90; lat <= 90; lat += 4) points.push([lat, lng]);
+      graticulePaths.push({
+        id: `graticule-lng-${lng}`,
+        points,
+        color: "rgba(10,20,40,0.06)",
+      });
+    }
+    return [...coastlinePaths, ...graticulePaths];
+  }, [coastlines]);
 
   const at = (id: string) => institutions?.[id];
   const chainHop = state.hops.find((hop) => hop.kind === "chain");
@@ -701,15 +716,20 @@ export default function GlobeCanvas({
       atmosphereColor={atmosphereColor}
       atmosphereAltitude={0.16}
       onGlobeReady={onReady}
-      hexPolygonsData={countries}
-      hexPolygonResolution={3}
-      hexPolygonMargin={0.7}
-      hexPolygonUseDots
-      hexPolygonAltitude={0.002}
-      hexPolygonColor={(feature) => {
-        const name = (feature as CountryFeature).properties.name;
-        return name === "France" || name === "Ghana" ? "rgba(1,43,255,0.6)" : "rgba(30,35,50,0.28)";
-      }}
+      particlesData={particles}
+      particlesList="dots"
+      particleLat="lat"
+      particleLng="lng"
+      particleAltitude={0.002}
+      particlesSize={1.8}
+      particlesSizeAttenuation={false}
+      particlesColor="color"
+      pathsData={paths}
+      pathPoints="points"
+      pathPointAlt={0.0015}
+      pathColor="color"
+      pathStroke={onePixelPathStroke}
+      pathTransitionDuration={0}
       arcsData={arcs}
       arcStartLat="startLat"
       arcStartLng="startLng"

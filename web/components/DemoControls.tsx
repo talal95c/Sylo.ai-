@@ -73,23 +73,26 @@ export function DemoControls({
               ? "Credited"
               : "Ready";
   const captionIsError = status === "stopped" || state.attack.attempted || state.attack.reverted;
+  const showFloatingCaption = !busy && phase !== "supplier";
 
   return (
     <>
-      <div className="pointer-events-none absolute bottom-[74px] left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={caption}
-            initial={{ opacity: 0, y: reducedMotion ? 0 : 6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: reducedMotion ? 0 : -6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
-            transition={{ duration: reducedMotion ? 0 : 0.28, ease }}
-            style={captionIsError ? { color: "#FF3B30" } : undefined}
-          >
-            {caption}
-          </motion.span>
-        </AnimatePresence>
-      </div>
+      {showFloatingCaption ? (
+        <div className="pointer-events-none absolute bottom-[74px] left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={caption}
+              initial={{ opacity: 0, y: reducedMotion ? 0 : 6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: reducedMotion ? 0 : -6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
+              transition={{ duration: reducedMotion ? 0 : 0.28, ease }}
+              style={captionIsError ? { color: "#FF3B30" } : undefined}
+            >
+              {caption}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+      ) : null}
       <motion.nav
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
