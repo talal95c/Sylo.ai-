@@ -1,0 +1,1399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sylo.ai/spec/events.schema.json",
+  "title": "Sylo.ai event envelope",
+  "description": "One event of the engine's stream. Changes are additive only: new types, new optional fields. Every data object allows additional properties, so consumers must ignore unknown fields.",
+  "x-version": 1,
+  "type": "object",
+  "required": [
+    "v",
+    "seq",
+    "id",
+    "ts",
+    "type",
+    "paymentId",
+    "simulated",
+    "data"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Increases by one within a session. 0 only for the system.mode message sent on each stream connection."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^evt-[0-9]{6,}$"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "type": {
+      "enum": [
+        "session.reset",
+        "system.mode",
+        "scenario.started",
+        "payment.created",
+        "norms.checked",
+        "risk.scored",
+        "route.selected",
+        "approval.granted",
+        "intent.committed",
+        "leg.sent",
+        "leg.settled",
+        "escrow.deposited",
+        "payment.held",
+        "verification.requested",
+        "verification.recorded",
+        "intent.revoked",
+        "escrow.refunded",
+        "escrow.released",
+        "intent.executed",
+        "payment.credited",
+        "payment.stopped",
+        "attack.attempted",
+        "tx.reverted",
+        "approval.required",
+        "leg.rejected",
+        "case.ready",
+        "case.action",
+        "alert.raised",
+        "cluster.detected",
+        "breaker.on",
+        "breaker.off",
+        "rail.down",
+        "rail.up",
+        "killswitch.on",
+        "guardian.incident",
+        "confidential.transfer",
+        "root.anchored",
+        "traffic.sample"
+      ]
+    },
+    "paymentId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "null for session-level events."
+    },
+    "simulated": {
+      "type": "boolean",
+      "description": "true when the event describes something that did not happen on a real external system (rail legs, mock-chain transactions, telecom mock). Decision events are false."
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "session.reset"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "system.mode"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "risk",
+              "chain",
+              "llm",
+              "rails",
+              "degraded"
+            ],
+            "properties": {
+              "risk": {
+                "enum": [
+                  "rules",
+                  "model"
+                ]
+              },
+              "chain": {
+                "enum": [
+                  "mock",
+                  "fuji"
+                ]
+              },
+              "llm": {
+                "enum": [
+                  "off",
+                  "cached",
+                  "live"
+                ]
+              },
+              "rails": {
+                "const": "simulated"
+              },
+              "degraded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "scenario.started"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "scenario",
+              "speed",
+              "auto"
+            ],
+            "properties": {
+              "scenario": {
+                "enum": [
+                  "legit",
+                  "diverted"
+                ]
+              },
+              "speed": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "auto": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payment.created"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "uetr",
+              "payer",
+              "beneficiary",
+              "amount",
+              "purpose",
+              "invoiceRef",
+              "provenance"
+            ],
+            "properties": {
+              "uetr": {
+                "type": "string"
+              },
+              "payer": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "institutionId"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "institutionId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "beneficiary": {
+                "type": "object",
+                "required": [
+                  "payeeName",
+                  "accountHolder",
+                  "accountMasked",
+                  "institutionId",
+                  "knownPayee",
+                  "knownAccount"
+                ],
+                "properties": {
+                  "payeeName": {
+                    "type": "string"
+                  },
+                  "accountHolder": {
+                    "type": "string"
+                  },
+                  "accountMasked": {
+                    "type": "string"
+                  },
+                  "institutionId": {
+                    "type": "string"
+                  },
+                  "knownPayee": {
+                    "type": "boolean"
+                  },
+                  "knownAccount": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "amount": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "currency"
+                ],
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/amountString"
+                  },
+                  "currency": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "invoiceRef": {
+                "type": "string"
+              },
+              "provenance": {
+                "type": "string"
+              },
+              "senderDomain": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "norms.checked"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "packVersion",
+              "routes",
+              "signals",
+              "taxNotices"
+            ],
+            "properties": {
+              "packVersion": {
+                "type": "string"
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "routeId",
+                    "name",
+                    "settlement",
+                    "hops",
+                    "status"
+                  ],
+                  "properties": {
+                    "routeId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "settlement": {
+                      "$ref": "#/$defs/settlement"
+                    },
+                    "hops": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/hop"
+                      }
+                    },
+                    "status": {
+                      "enum": [
+                        "PASS",
+                        "EXCLUDED"
+                      ]
+                    },
+                    "excludedBy": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "legalRef": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "text",
+                    "ruleId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "ruleId": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "taxNotices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "text",
+                    "reference"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "risk.scored"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "score",
+              "tier",
+              "rulesFired",
+              "reasons",
+              "model"
+            ],
+            "properties": {
+              "score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "tier": {
+                "$ref": "#/$defs/tier"
+              },
+              "rulesFired": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/reason"
+                }
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "route.selected"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "routeId",
+              "name",
+              "settlement",
+              "tier",
+              "scores",
+              "reason",
+              "feesEur",
+              "etaLabel",
+              "priceOfSafetyEur"
+            ],
+            "properties": {
+              "routeId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "settlement": {
+                "$ref": "#/$defs/settlement"
+              },
+              "tier": {
+                "$ref": "#/$defs/tier"
+              },
+              "scores": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "routeId",
+                    "s",
+                    "excludedBy"
+                  ],
+                  "properties": {
+                    "routeId": {
+                      "type": "string"
+                    },
+                    "s": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "excludedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "reason": {
+                "type": "string"
+              },
+              "feesEur": {
+                "type": "number"
+              },
+              "etaLabel": {
+                "type": "string"
+              },
+              "priceOfSafetyEur": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "approval.granted"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "by",
+              "method",
+              "conditional",
+              "approvalHash"
+            ],
+            "properties": {
+              "by": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "role"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "method": {
+                "enum": [
+                  "SCA",
+                  "DUAL_CONTROL"
+                ]
+              },
+              "conditional": {
+                "type": "boolean"
+              },
+              "approvalHash": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "intent.committed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "intentHash",
+              "tier",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "intentHash": {
+                "type": "string"
+              },
+              "tier": {
+                "$ref": "#/$defs/tier"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "leg.sent"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "hop",
+              "from",
+              "to",
+              "kind",
+              "rail",
+              "durationMs"
+            ],
+            "properties": {
+              "hop": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/$defs/hopKind"
+              },
+              "rail": {
+                "type": "string"
+              },
+              "durationMs": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "leg.settled"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "hop",
+              "at"
+            ],
+            "properties": {
+              "hop": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "escrow.deposited"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "amount",
+              "token",
+              "expiresAt",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "amount": {
+                "$ref": "#/$defs/amountString"
+              },
+              "token": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payment.held"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "hop",
+              "at",
+              "tier",
+              "headline",
+              "reasons",
+              "protection",
+              "nextStep",
+              "expiresAt"
+            ],
+            "properties": {
+              "hop": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "at": {
+                "enum": [
+                  "escrow",
+                  "bank"
+                ]
+              },
+              "tier": {
+                "$ref": "#/$defs/tier"
+              },
+              "headline": {
+                "type": "string"
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/reason"
+                }
+              },
+              "protection": {
+                "type": "string"
+              },
+              "nextStep": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "verification.requested"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "contactName",
+              "contactMasked",
+              "contactSince",
+              "channel",
+              "simSwapChecked",
+              "simSwapRecent"
+            ],
+            "properties": {
+              "contactName": {
+                "type": "string"
+              },
+              "contactMasked": {
+                "type": "string"
+              },
+              "contactSince": {
+                "type": "string"
+              },
+              "channel": {
+                "const": "SMS"
+              },
+              "simSwapChecked": {
+                "const": true
+              },
+              "simSwapRecent": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "verification.recorded"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "result",
+              "answerText",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "result": {
+                "enum": [
+                  "CONFIRMED",
+                  "DENIED"
+                ]
+              },
+              "answerText": {
+                "type": "string"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "intent.revoked"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "reasonCode",
+              "by",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "reasonCode": {
+                "enum": [
+                  "SUPPLIER_DENIED",
+                  "ANALYST_DECISION",
+                  "KILL_SWITCH",
+                  "EXPIRED"
+                ]
+              },
+              "by": {
+                "type": "string"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "escrow.refunded"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "to",
+              "amount",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "to": {
+                "type": "string"
+              },
+              "amount": {
+                "$ref": "#/$defs/amountString"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "escrow.released"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "to",
+              "amount",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "to": {
+                "type": "string"
+              },
+              "amount": {
+                "$ref": "#/$defs/amountString"
+              },
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "intent.executed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "txHash": {
+                "$ref": "#/$defs/txHash"
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payment.credited"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "at",
+              "feesEur",
+              "routeCostEur",
+              "swiftRouteCostEur",
+              "elapsedLabel"
+            ],
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "feesEur": {
+                "type": "number"
+              },
+              "routeCostEur": {
+                "type": "number"
+              },
+              "swiftRouteCostEur": {
+                "type": "number"
+              },
+              "elapsedLabel": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payment.stopped"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "headline",
+              "detail"
+            ],
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "attack.attempted"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "attack",
+              "description",
+              "by"
+            ],
+            "properties": {
+              "attack": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tx.reverted"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "function",
+              "reason",
+              "txHash",
+              "explorerUrl"
+            ],
+            "properties": {
+              "function": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "txHash": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/txHash"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "explorerUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  ],
+  "x-reserved": {
+    "description": "Declared for later versions with a free-form data object. Never emitted in v0.",
+    "types": [
+      "approval.required",
+      "leg.rejected",
+      "case.ready",
+      "case.action",
+      "alert.raised",
+      "cluster.detected",
+      "breaker.on",
+      "breaker.off",
+      "rail.down",
+      "rail.up",
+      "killswitch.on",
+      "guardian.incident",
+      "confidential.transfer",
+      "root.anchored",
+      "traffic.sample"
+    ]
+  },
+  "$defs": {
+    "tier": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "settlement": {
+      "enum": [
+        "NONE",
+        "FIAT_HOLD",
+        "ONCHAIN_ESCROW"
+      ]
+    },
+    "hopKind": {
+      "enum": [
+        "bank",
+        "chain",
+        "wallet"
+      ]
+    },
+    "hop": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/hopKind"
+        }
+      },
+      "additionalProperties": true
+    },
+    "reason": {
+      "type": "object",
+      "required": [
+        "ref",
+        "text"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "txHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "amountString": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]{2}$"
+    }
+  }
+}
