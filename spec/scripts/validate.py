@@ -4,7 +4,8 @@
 - every event of every fixture validates against events.schema.json;
 - seq numbers are consecutive inside each file;
 - every institution id used by an event exists in geo/institutions.json;
-- eip712.json is exactly what sylo_spec.eip712 generates.
+- eip712.json is exactly what sylo_spec.eip712 generates;
+- metrics.sample.json (and ml/reports/metrics.json if present) validate against metrics.schema.json.
 
 Run from spec/python: ``uv run python ../scripts/validate.py``.
 """
@@ -73,6 +74,14 @@ def main() -> int:
             for inst in institution_ids(event):
                 if inst not in known:
                     problems.append(f"{where}: unknown institution {inst!r}")
+
+    metrics_schema = json.loads((SPEC / "metrics.schema.json").read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(metrics_schema)
+    metrics_validator = Draft202012Validator(metrics_schema)
+    reports = [SPEC / "metrics.sample.json", SPEC.parent / "ml" / "reports" / "metrics.json"]
+    for path in [p for p in reports if p.exists()]:
+        for err in metrics_validator.iter_errors(json.loads(path.read_text(encoding="utf-8"))):
+            problems.append(f"{path.name}: {err.message}")
 
     try:
         from sylo_spec.eip712 import render_vector
