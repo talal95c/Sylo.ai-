@@ -103,22 +103,88 @@ body {
 
 .globe-label {
   pointer-events: none;
-  transform: translate(8px, -50%);
-  white-space: nowrap;
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: rgba(0, 0, 0, 0.72);
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 999px;
-  padding: 3px 8px;
-  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.2);
+  position: relative;
+  width: 0;
+  height: 0;
+  display: block;
   transition: opacity 300ms ease;
 }
-.globe-label.left {
-  transform: translate(calc(-100% - 8px), -50%);
+.globe-label-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, calc(-100% - 26px));
+  white-space: nowrap;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: rgba(0, 0, 0, 0.78);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.2);
+}
+.globe-label-pill::after {
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 50%;
+  width: 1px;
+  height: 26px;
+  background: rgba(0, 0, 0, 0.18);
+  content: "";
+  transform: translateX(-50%);
+}
+.globe-label.west-europe .globe-label-pill {
+  transform: translate(calc(-50% - 100px), calc(-100% - 26px));
+}
+.globe-label.east-europe .globe-label-pill {
+  transform: translate(calc(-50% + 100px), calc(-100% - 26px));
+}
+.globe-label.east-rhone .globe-label-pill {
+  transform: translate(calc(-50% + 80px), calc(-100% - 26px));
+}
+.globe-label.west-ghana .globe-label-pill {
+  transform: translate(calc(-50% - 70px), calc(-100% - 26px));
+}
+.globe-label.east-ghana .globe-label-pill {
+  transform: translate(calc(-50% + 70px), calc(-100% - 26px));
+}
+.globe-label-city {
+  color: rgba(0, 0, 0, 0.44);
+}
+.globe-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ff3b30;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.globe-live-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ff3b30;
+  box-shadow: 0 0 8px #ff3b30;
+  animation: globe-live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes globe-live-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
 }
 
 .globe-marker {
@@ -207,8 +273,8 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-}
 
-.globe-label.below {
-  transform: translate(-50%, 10px);
+  .globe-live-dot {
+    animation: none !important;
+  }
 }

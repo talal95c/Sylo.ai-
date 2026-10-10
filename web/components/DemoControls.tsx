@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { cx, ease, Spinner } from "./ui";
 
@@ -58,15 +58,45 @@ export function DemoControls({
   const status = state.payment?.status;
   const busy = status === "deciding" || status === "in_transit" || status === "held";
   const phase = available.confirm ? "supplier" : busy ? "busy" : "start";
+  const reducedMotion = useReducedMotion();
+  const caption = state.attack.reverted
+    ? "Rejected by the smart contract"
+    : status === "deciding"
+      ? "Engine deciding…"
+      : status === "in_transit"
+        ? "Payment moving…"
+        : status === "held" || status === "awaiting_supplier"
+          ? "Waiting for Kwame"
+          : status === "stopped"
+            ? "Stopped · refunded"
+            : status === "credited"
+              ? "Credited"
+              : "Ready";
+  const captionIsError = status === "stopped" || state.attack.attempted || state.attack.reverted;
 
   return (
-    <motion.nav
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.7, ease, delay: 0.3 }}
-      aria-label="Demo controls"
-      className="glass absolute bottom-4 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
-    >
+    <>
+      <div className="pointer-events-none absolute bottom-[74px] left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={caption}
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: reducedMotion ? 0 : -6, filter: reducedMotion ? "blur(0px)" : "blur(4px)" }}
+            transition={{ duration: reducedMotion ? 0 : 0.28, ease }}
+            style={captionIsError ? { color: "#FF3B30" } : undefined}
+          >
+            {caption}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+      <motion.nav
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease, delay: 0.3 }}
+        aria-label="Demo controls"
+        className="glass absolute bottom-4 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
+      >
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
           key={phase + String(available.attack)}
@@ -127,6 +157,7 @@ export function DemoControls({
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 8a5.5 5.5 0 1 0 1.7-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="M2.5 2.5V5.5H5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
-    </motion.nav>
+      </motion.nav>
+    </>
   );
 }

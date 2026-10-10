@@ -7,7 +7,7 @@
 {"v":1,"seq":7,"id":"evt-000007","ts":"2026-10-11T09:00:05.000Z","type":"intent.committed","paymentId":"PAY-2026-0001","simulated":true,"data":{"intentHash":"0x9b122cfb557ad8f18f80cedf289bbbaeef1437043821c3968d0ee78953331c8d","tier":"LOW","txHash":"0x191c4096d3536d7c34b9750a84fa9b53c47c8504947510986b5a0367c6b6bed4","explorerUrl":null}}
 {"v":1,"seq":8,"id":"evt-000008","ts":"2026-10-11T09:00:05.300Z","type":"leg.sent","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":0,"from":"payer_rhone","to":"bank_fr","kind":"bank","rail":"SEPA","durationMs":1400}}
 {"v":1,"seq":9,"id":"evt-000009","ts":"2026-10-11T09:00:06.700Z","type":"leg.settled","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":0,"at":"bank_fr"}}
-{"v":1,"seq":10,"id":"evt-000010","ts":"2026-10-11T09:00:07.000Z","type":"leg.sent","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":1,"from":"bank_fr","to":"casp_eu","kind":"bank","rail":"Ghana local transfer","durationMs":1400}}
+{"v":1,"seq":10,"id":"evt-000010","ts":"2026-10-11T09:00:07.000Z","type":"leg.sent","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":1,"from":"bank_fr","to":"casp_eu","kind":"bank","rail":"SEPA","durationMs":1400}}
 {"v":1,"seq":11,"id":"evt-000011","ts":"2026-10-11T09:00:08.400Z","type":"leg.settled","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":1,"at":"casp_eu"}}
 {"v":1,"seq":12,"id":"evt-000012","ts":"2026-10-11T09:00:08.700Z","type":"leg.sent","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":2,"from":"casp_eu","to":"vasp_gh","kind":"chain","rail":"Avalanche C-Chain","durationMs":2200}}
 {"v":1,"seq":13,"id":"evt-000013","ts":"2026-10-11T09:00:10.900Z","type":"leg.settled","paymentId":"PAY-2026-0001","simulated":true,"data":{"hop":2,"at":"vasp_gh"}}

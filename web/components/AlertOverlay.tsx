@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
-import { TIER_COLORS } from "@/lib/colors";
+import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 import { ease, euros, LockIcon, Spinner } from "./ui";
 
 const REF_LABEL: Record<string, string> = { V: "Provenance", B: "Behaviour", R: "Regulation", N: "Network" };
@@ -10,8 +10,9 @@ const REF_LABEL: Record<string, string> = { V: "Provenance", B: "Behaviour", R: 
 export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: () => void }) {
   const held = state.held;
   const status = state.payment?.status;
-  const showHeld = Boolean(held && state.alertOpen);
-  const showOutcome = !showHeld && (status === "credited" || status === "stopped");
+  const terminal = status === "credited" || status === "stopped";
+  const showHeld = Boolean(held && state.alertOpen && !terminal);
+  const showOutcome = terminal;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-[92px] z-20 flex justify-center px-4">
@@ -76,7 +77,9 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             </div>
           </motion.section>
         ) : null}
+      </AnimatePresence>
 
+      <AnimatePresence mode="wait">
         {showOutcome ? (
           <motion.section
             key={`outcome-${status}`}
@@ -89,7 +92,13 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
           >
             <span
               className="grid size-10 shrink-0 place-items-center rounded-full text-white"
-              style={{ background: status === "credited" ? "var(--low)" : "var(--danger)" }}
+              style={{
+                background: status === "credited"
+                  ? "var(--low)"
+                  : state.refunded && !state.attack.reverted
+                    ? REFUND_COLOR
+                    : "var(--danger)",
+              }}
             >
               {status === "credited" ? (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.4 6.4 11.6 13 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>

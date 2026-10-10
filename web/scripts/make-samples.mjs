@@ -6,6 +6,7 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixturesDirectory = path.join(root, "samples/fixtures");
 const startTime = Date.parse("2026-10-11T09:00:00.000Z");
+const euInstitutions = new Set(["payer_rhone", "bank_fr", "casp_eu"]);
 const fixtureHash = (value) =>
   `0x${createHash("sha256").update(value).digest("hex")}`;
 let transactionNumber = 0;
@@ -297,7 +298,7 @@ function addLeg(timeline, hops, index, durationMs) {
       rail:
         hop.kind === "chain"
           ? "Avalanche C-Chain"
-          : index === 0
+          : euInstitutions.has(hop.from) && euInstitutions.has(hop.to)
             ? "SEPA"
             : "Ghana local transfer",
       durationMs,

@@ -12,6 +12,7 @@ export interface GlobeCanvasProps {
   state: ViewState;
   institutions: Record<string, Institution> | null;
   chainAltitude: number;
+  atmosphereColor: string;
 }
 
 interface ArcDatum {
@@ -60,20 +61,64 @@ interface CountryFeature {
   geometry: object;
 }
 
+function isValidRing(value: unknown): value is number[][] {
+  if (!Array.isArray(value)) return false;
+  const vertices = new Set<string>();
+  for (const position of value) {
+    if (
+      !Array.isArray(position) ||
+      typeof position[0] !== "number" ||
+      typeof position[1] !== "number" ||
+      !Number.isFinite(position[0]) ||
+      !Number.isFinite(position[1])
+    ) {
+      return false;
+    }
+    vertices.add(`${position[0]},${position[1]}`);
+  }
+  return vertices.size >= 3;
+}
+
+function validPolygonCoordinates(value: unknown): number[][][] | null {
+  if (!Array.isArray(value)) return null;
+  const [outer, ...holes] = value;
+  if (!isValidRing(outer)) return null;
+  return [outer, ...holes.filter(isValidRing)];
+}
+
+function sanitizeCountryFeatures(features: CountryFeature[]): CountryFeature[] {
+  return features.flatMap((feature) => {
+    const geometry = feature.geometry as { type: string; coordinates: unknown };
+    if (geometry.type === "Polygon") {
+      const coordinates = validPolygonCoordinates(geometry.coordinates);
+      return coordinates ? [{ ...feature, geometry: { ...geometry, coordinates } }] : [];
+    }
+    if (geometry.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) {
+      const coordinates = geometry.coordinates.flatMap((polygon) => {
+        const validPolygon = validPolygonCoordinates(polygon);
+        return validPolygon ? [validPolygon] : [];
+      });
+      return coordinates.length ? [{ ...feature, geometry: { ...geometry, coordinates } }] : [];
+    }
+    return [feature];
+  });
+}
+
 const CORRIDOR_VIEW = { lat: 26, lng: 3, altitude: 1.9 };
-const LABEL_SIDE: Record<string, "left" | "right" | "below"> = {
-  payer_rhone: "left",
-  bank_fr: "left",
-  casp_eu: "right",
-  corr_uk: "left",
-  payout_nl: "right",
-  remit_fr: "right",
-  vasp_gh: "below",
-  bank_gh: "left",
-  momo_gh: "left",
-  supplier_ssx: "right",
-  mule_bank: "right",
+const LABEL_X_OFFSET: Record<string, string> = {
+  payer_rhone: "east-rhone",
+  bank_fr: "west-europe",
+  casp_eu: "east-europe",
+  vasp_gh: "west-ghana",
+  mule_bank: "east-ghana",
 };
+const GHANA_LABEL_IDS = new Set([
+  "vasp_gh",
+  "bank_gh",
+  "momo_gh",
+  "supplier_ssx",
+  "mule_bank",
+]);
 const SHORT_NAME: Record<string, string> = {
   payer_rhone: "Rhône Cosmétiques",
   bank_fr: "Banque Hexagone",
@@ -121,7 +166,12 @@ function useReducedMotion() {
   );
 }
 
-export default function GlobeCanvas({ state, institutions, chainAltitude }: GlobeCanvasProps) {
+export default function GlobeCanvas({
+  state,
+  institutions,
+  chainAltitude,
+  atmosphereColor,
+}: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { width, height } = useViewport();
   const reducedMotion = useReducedMotion();
@@ -131,10 +181,12 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
   const material = useMemo(
     () =>
       new THREE.MeshPhongMaterial({
-        color: "#f4f6fa",
-        emissive: "#eef1f7",
-        emissiveIntensity: 0.55,
-        shininess: 4,
+        color: "#ffffff",
+        transparent: true,
+        opacity: 0.85,
+        emissive: "#f5f7ff",
+        emissiveIntensity: 0.4,
+        shininess: 8,
       }),
     [],
   );
@@ -144,7 +196,7 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
     fetch("/geo/countries.geojson")
       .then((response) => response.json())
       .then((data: { features: CountryFeature[] }) => {
-        if (alive) setCountries(data.features);
+        if (alive) setCountries(sanitizeCountryFeatures(data.features));
       })
       .catch(() => undefined);
     return () => {
@@ -341,29 +393,45 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
   const htmlData = useMemo<HtmlDatum[]>(() => {
     if (!institutions) return [];
     const list: HtmlDatum[] = [];
-    const labelIds = state.selectedRouteId
-      ? [...involved]
+    const focusedHop =
+      state.hops.find((hop) => hop.state === "active") ??
+      [...state.hops].reverse().find((hop) => hop.state !== "pending") ??
+      state.hops[0];
+    const fallbackLabelIds = state.payment
+      ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
       : state.routes.length
         ? ["payer_rhone", "bank_fr", "corr_uk", "casp_eu", "vasp_gh", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
         : ["payer_rhone", "supplier_ssx"];
+    const labelIds = focusedHop
+      ? [...new Set([focusedHop.from, focusedHop.to])]
+      : fallbackLabelIds;
+    const liveTarget =
+      state.payment?.status === "in_transit"
+        ? state.hops.find((hop) => hop.state === "active")?.to
+        : undefined;
     for (const id of labelIds) {
       const institution = institutions[id];
       if (!institution) continue;
-      const side = LABEL_SIDE[id] ?? "right";
+      const hasGhanaPair =
+        focusedHop &&
+        GHANA_LABEL_IDS.has(focusedHop.from) &&
+        GHANA_LABEL_IDS.has(focusedHop.to);
+      const offset = hasGhanaPair
+        ? id === focusedHop.from
+          ? "west-ghana"
+          : "east-ghana"
+        : LABEL_X_OFFSET[id] ?? "center";
+      const isLive = liveTarget === id;
       list.push(
-        stable(`lbl-${id}`, side, () => ({
+        stable(`lbl-${id}`, `${offset}:${isLive}`, () => ({
           id: `lbl-${id}`,
           lat: institution.lat,
           lng: institution.lng,
           altitude: 0.01,
-          className: `globe-label ${side === "left" ? "left" : ""}`,
-          html: `<span>${SHORT_NAME[id] ?? institution.name}</span> <span style="color:rgba(0,0,0,.4)">${institution.city}</span>`,
+          className: `globe-label ${offset}`,
+          html: `<span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
         })),
       );
-      if (side === "below") {
-        const last = list[list.length - 1];
-        last.className = "globe-label below";
-      }
     }
 
     if (lockPoint && state.selectedRouteId && chainHop && !state.held) {
@@ -416,7 +484,7 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, involved, state.selectedRouteId, state.routes.length, state.scenario, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
 
   const rings = useMemo<RingDatum[]>(() => {
     if (!institutions) return [];
@@ -495,6 +563,9 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
       autoRotateSpeed: number;
       enableZoom: boolean;
     };
+    const frontLight = new THREE.DirectionalLight("#ffffff", 0.55);
+    frontLight.position.set(-60, 80, 150);
+    globe.scene().add(new THREE.AmbientLight("#ffffff", 0.45), frontLight);
     controls.autoRotate = !reducedMotion;
     controls.autoRotateSpeed = 0.35;
     controls.enableZoom = false;
@@ -510,17 +581,17 @@ export default function GlobeCanvas({ state, institutions, chainAltitude }: Glob
       globeImageUrl={null}
       globeMaterial={material}
       showAtmosphere
-      atmosphereColor="#a9bcff"
+      atmosphereColor={atmosphereColor}
       atmosphereAltitude={0.16}
       onGlobeReady={onReady}
       hexPolygonsData={countries}
       hexPolygonResolution={3}
-      hexPolygonMargin={0.62}
+      hexPolygonMargin={0.7}
       hexPolygonUseDots
       hexPolygonAltitude={0.002}
       hexPolygonColor={(feature) => {
         const name = (feature as CountryFeature).properties.name;
-        return name === "France" || name === "Ghana" ? "rgba(1, 43, 255, 0.55)" : "rgba(10, 20, 40, 0.22)";
+        return name === "France" || name === "Ghana" ? "rgba(1,43,255,0.6)" : "rgba(30,35,50,0.28)";
       }}
       arcsData={arcs}
       arcStartLat="startLat"

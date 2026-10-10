@@ -171,6 +171,7 @@ export function createReplaySource(): Source {
   async function playFixture(
     file: string,
     resetClock: boolean,
+    firstEventDelayMs?: number,
   ): Promise<void> {
     cancelPending();
     const token = generation;
@@ -179,12 +180,19 @@ export function createReplaySource(): Source {
     if (resetClock) lastTimestamp = null;
     const offset = lastSeq + 1 - events[0].seq;
 
-    for (const event of events) {
+    for (const [index, event] of events.entries()) {
       if (token !== generation || !callbacks) return;
       const timestamp = Date.parse(event.ts);
       const elapsed =
-        lastTimestamp === null ? 0 : Math.max(0, timestamp - lastTimestamp);
-      await wait(elapsed / speed, token);
+        lastTimestamp === null
+          ? 0
+          : Math.max(0, timestamp - lastTimestamp);
+      await wait(
+        (firstEventDelayMs !== undefined && index === 0
+          ? firstEventDelayMs
+          : elapsed) / speed,
+        token,
+      );
       if (token !== generation || !callbacks) return;
       const seq = event.seq + offset;
       callbacks.onEvent({
@@ -216,6 +224,7 @@ export function createReplaySource(): Source {
       return playFixture(
         answer === "deny" ? fixtureFiles.deny : fixtureFiles.confirm,
         false,
+        800,
       );
     },
     attack(paymentId) {
