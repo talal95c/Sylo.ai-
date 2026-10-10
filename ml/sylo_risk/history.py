@@ -12,12 +12,17 @@ import pandas as pd
 class HistoryEntry:
     count: int
     median_amount: float
+    pair_payments_24h: int = 0
 
 
 class HistoryIndex:
     def __init__(self, entries: Mapping[str, Mapping[str, Any]] | None = None) -> None:
         self.entries: dict[str, HistoryEntry] = {
-            key: HistoryEntry(int(value["count"]), float(value["median_amount"]))
+            key: HistoryEntry(
+                int(value["count"]),
+                float(value["median_amount"]),
+                int(value.get("pair_payments_24h", 0)),
+            )
             for key, value in (entries or {}).items()
         }
 
@@ -30,7 +35,11 @@ class HistoryIndex:
 
     def to_dict(self) -> dict[str, dict[str, int | float]]:
         return {
-            key: {"count": item.count, "median_amount": item.median_amount}
+            key: {
+                "count": item.count,
+                "median_amount": item.median_amount,
+                "pair_payments_24h": item.pair_payments_24h,
+            }
             for key, item in sorted(self.entries.items())
         }
 
@@ -46,11 +55,14 @@ def build_history(rows: pd.DataFrame | Iterable[Mapping[str, Any]], max_day: int
         return HistoryIndex(DEMO_HISTORY)
     if "day" in frame:
         frame = frame.loc[frame["day"] <= max_day]
-    grouped = frame.groupby(["payer_id", "payee_id"], sort=True)["amount_eur"].agg(["count", "median"])
+    grouped = frame.groupby(["payer_id", "payee_id"], sort=True)["amount_eur"].agg(
+        ["count", "median"]
+    )
     entries = {
         HistoryIndex.key(str(payer), str(payee)): {
             "count": int(record["count"]),
             "median_amount": float(record["median"]),
+            "pair_payments_24h": 0,
         }
         for (payer, payee), record in grouped.iterrows()
         if record["median"] > 0
@@ -61,12 +73,18 @@ def build_history(rows: pd.DataFrame | Iterable[Mapping[str, Any]], max_day: int
 
 def history_from_row(row: Mapping[str, Any]) -> dict[str, dict[str, int | float]]:
     count = int(row.get("history_count", 0) or 0)
+    pair_payments_24h = int(row.get("pair_payments_24h", 0) or 0)
     median = row.get("history_median_amount")
-    if count <= 0 or median is None or pd.isna(median) or float(median) <= 0:
+    if count <= 0 and pair_payments_24h <= 0:
         return {}
     return {
         HistoryIndex.key(str(row["payer_id"]), str(row["payee_id"])): {
             "count": count,
-            "median_amount": float(median),
+            "median_amount": (
+                float(median)
+                if median is not None and not pd.isna(median) and float(median) > 0
+                else float("nan")
+            ),
+            "pair_payments_24h": pair_payments_24h,
         }
     }

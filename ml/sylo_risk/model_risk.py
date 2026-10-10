@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,21 @@ def _reason_text(feature: str, value: float, order: PaymentOrder, ctx: RiskConte
     return None
 
 
+def _oob_resolvable(raw: dict[str, float], score: int, sanctions_hit: bool = False) -> bool:
+    history_ratio = raw["amount_vs_history"]
+    undeclared_under_cap = bool(raw["under_cap"] and not raw["declared_split"])
+    return (
+        score < 90
+        and not sanctions_hit
+        and not raw["sim_swap_72h"]
+        and not raw["new_device_24h"]
+        and not raw["session_foreign"]
+        and not undeclared_under_cap
+        and raw["pair_payments_24h"] == 0
+        and (math.isnan(history_ratio) or history_ratio <= 3.0)
+    )
+
+
 class ModelRisk:
     """RiskPort backed by the committed, calibrated model bundle."""
 
@@ -107,23 +123,24 @@ class ModelRisk:
         thresholds = self._artifact["thresholds"]
         score = probability_to_score(probability, thresholds["t_med"], thresholds["t_high"])
 
-        positive = sorted(
-            (
-                (float(contribution), feature[0], raw[feature[0]])
-                for contribution, feature in zip(shap_values[:-1], FEATURES)
-                if contribution > 1e-10
-            ),
-            reverse=True,
-        )
         reasons: list[RiskReason] = []
-        for _, feature, value in positive:
-            explanation = _reason_text(feature, value, order, ctx)
-            if explanation is None:
-                continue
-            family, text = explanation
-            reasons.append(RiskReason(ref=family, text=text, rule_id=None))
-            if len(reasons) == 3:
-                break
+        if score >= 40:
+            positive = sorted(
+                (
+                    (float(contribution), feature[0], raw[feature[0]])
+                    for contribution, feature in zip(shap_values[:-1], FEATURES)
+                    if contribution > 1e-10
+                ),
+                reverse=True,
+            )
+            for _, feature, value in positive:
+                explanation = _reason_text(feature, value, order, ctx)
+                if explanation is None:
+                    continue
+                family, text = explanation
+                reasons.append(RiskReason(ref=family, text=text, rule_id=None))
+                if len(reasons) == 3:
+                    break
 
         return RiskResult(
             score=score,
@@ -132,4 +149,5 @@ class ModelRisk:
             rules_fired=[],
             reasons=reasons,
             model=self.name,
+            oob_resolvable=_oob_resolvable(raw, score, ctx.sanctions_hit),
         )

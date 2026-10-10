@@ -30,6 +30,42 @@ TYPOLOGY_RATES = {"T1": 0.003, "T2": 0.002, "T3": 0.003, "T4": 0.002}
 TRUSTED_PROVENANCE = ("verified_registry", "payment_history", "psp_attestation")
 
 
+def _temporal_history(
+    payer_ids: np.ndarray,
+    payee_ids: np.ndarray,
+    days: np.ndarray,
+    amounts: np.ndarray,
+    history_mask: np.ndarray | None = None,
+    target_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    size = len(payer_ids)
+    history_mask = np.ones(size, dtype=bool) if history_mask is None else history_mask
+    target_mask = np.ones(size, dtype=bool) if target_mask is None else target_mask
+    history_count = np.zeros(size, dtype=np.int32)
+    history_median = np.full(size, np.nan, dtype=float)
+    pair_payments_24h = np.zeros(size, dtype=np.int16)
+    positions = np.arange(size)
+    pairs = pd.DataFrame(
+        {"payer_id": payer_ids, "payee_id": payee_ids, "position": positions}
+    )
+    for group in pairs.groupby(["payer_id", "payee_id"], sort=False).indices.values():
+        pair_positions = np.asarray(group, dtype=int)
+        targets = pair_positions[target_mask[pair_positions]]
+        if not len(targets):
+            continue
+        history = pair_positions[history_mask[pair_positions]]
+        target_days = np.unique(days[targets])
+        for day in target_days:
+            current = targets[days[targets] == day]
+            previous = history[days[history] < day]
+            if len(previous):
+                history_count[current] = len(previous)
+                history_median[current] = float(np.median(amounts[previous]))
+            same_day = np.sort(pair_positions[days[pair_positions] == day])
+            pair_payments_24h[current] = np.searchsorted(same_day, current, side="left")
+    return history_count, history_median, pair_payments_24h
+
+
 def _make_integrity_cases(seed: str, output: Path) -> None:
     cases = {
         "I1": ("creditor_account_id", "acc-nominated", "acc-substituted"),
@@ -70,21 +106,19 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     payer_banks = np.asarray(PAYER_BANKS)[rng.integers(0, len(PAYER_BANKS), size=n_rows)]
     payee_number = payer_number % 1200
     payee_ids = np.char.add("payee-", np.char.zfill(payee_number.astype(str), 4)).astype(object)
-    payee_ids[is_t2] = np.char.add("new-payee-", np.char.zfill(np.flatnonzero(is_t2).astype(str), 6))
-    cluster_number = rng.integers(0, 100, size=n_rows)
+    cluster_count = max(10, round(n_rows * 0.0002))
+    cluster_number = rng.integers(0, cluster_count, size=n_rows)
     cluster_ids = np.full(n_rows, "", dtype=object)
     cluster_ids[is_t3] = np.asarray(
         [f"{seed}-cluster-{number:03d}" for number in cluster_number[is_t3]], dtype=object
     )
     payee_ids[is_t3] = np.char.add("mule-", np.char.zfill(cluster_number[is_t3].astype(str), 3))
 
-    # Ordinary repeat suppliers dominate. A small slice is a first payment through an email invoice.
+    # Most beneficiary details come from a known, previously used supplier account.
     provenance = np.asarray(rng.choice(TRUSTED_PROVENANCE, n_rows, p=(0.68, 0.19, 0.13)), dtype=object)
     sender_domain = np.empty(n_rows, dtype=object)
     known_domain = np.asarray([f"exporter{number:04d}.gh" for number in payee_number], dtype=object)
     sender_domain[:] = known_domain
-    first_invoice = (typology == "none") & (rng.random(n_rows) < 0.015)
-    provenance[first_invoice] = "invoice_pdf_email"
 
     evasive_rate = 0.50 if seed == "C" else 0.30
     evasive = np.zeros(n_rows, dtype=bool)
@@ -104,81 +138,151 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
         ("payment_history", "verified_registry"), size=int(is_t3.sum()), p=(0.8, 0.2)
     )
 
-    account_age_days = rng.lognormal(mean=np.log(900), sigma=0.55, size=n_rows).clip(60, 5000)
-    successful_payments = rng.integers(2, 50, size=n_rows)
-    account_owned_by_payee = np.ones(n_rows, dtype=bool)
-    nominated = np.ones(n_rows, dtype=bool)
-    name_match = rng.uniform(0.92, 1.0, size=n_rows)
-    sim_swap = np.zeros(n_rows, dtype=bool)
-    new_device = np.zeros(n_rows, dtype=bool)
+    account_age_days = rng.lognormal(mean=np.log(900), sigma=1.7, size=n_rows).clip(1, 10_000)
+    successful_payments = rng.poisson(20, size=n_rows)
+    account_owned_by_payee = rng.random(n_rows) < 0.97
+    nominated = rng.random(n_rows) < 0.85
+    name_match = np.clip(rng.beta(18, 1.5, size=n_rows), 0.4, 1.0)
+    sim_swap = rng.random(n_rows) < 0.005
+    new_device = rng.random(n_rows) < 0.05
     session_country = np.full(n_rows, "FR", dtype=object)
+    foreign_session = rng.random(n_rows) < 0.04
+    session_country[foreign_session] = rng.choice(
+        ("GH", "GB", "DE"), size=int(foreign_session.sum())
+    )
     amount = rng.lognormal(mean=np.log(80_000), sigma=0.45, size=n_rows).clip(500, 500_000)
-    norms = np.full(n_rows, "", dtype=object)
+    norms = np.where(rng.random(n_rows) < 0.005, "R1", "").astype(object)
     declared_split = np.zeros(n_rows, dtype=bool)
     known_bank_region = rng.integers(0, len(GH_REGIONS), size=n_rows)
     account_institution = np.asarray(
         [f"gh-bank-{number:02d}" for number in known_bank_region], dtype=object
     )
+    natural_border = (typology == "none") & (rng.random(n_rows) < 0.03)
+    border_banks = np.asarray(("gh-bank-06", "gh-bank-07", "mule_bank"), dtype=object)
+    account_institution[natural_border] = rng.choice(
+        border_banks, size=int(natural_border.sum())
+    )
     supplier_region = rng.integers(0, len(GH_REGIONS), size=n_rows)
     supplier_institution = np.asarray(
         [f"gh-supplier-{number:02d}" for number in supplier_region], dtype=object
     )
+    payee_names = np.asarray(
+        [f"Ghana Exporter {number:04d}" for number in payee_number], dtype=object
+    )
+    account_holder_names = np.asarray(
+        [f"Account holder {index:06d}" for index in range(n_rows)], dtype=object
+    )
+    natural_under_cap = (typology == "none") & (rng.random(n_rows) < 0.005)
+    amount[natural_under_cap] = rng.uniform(
+        9_500, 10_000, size=int(natural_under_cap.sum())
+    )
 
-    # Standard T1 supplier impersonation; evasive cases retain untrusted provenance but fewer signals.
+    legitimate_indices = np.flatnonzero(typology == "none")
+    onboarding_rate = 0.06 if seed == "C" else 0.04
+    onboarding_count = round(onboarding_rate * len(legitimate_indices))
+    onboarding = rng.choice(legitimate_indices, size=onboarding_count, replace=False)
+    is_onboarding = np.zeros(n_rows, dtype=bool)
+    is_onboarding[onboarding] = True
+    payee_ids[onboarding] = [
+        f"{seed}-payee-onboarding-{index:06d}" for index in onboarding
+    ]
+    payee_names[onboarding] = [
+        f"New Ghana Supplier {index:06d}" for index in onboarding
+    ]
+    known_domain[onboarding] = [
+        f"new-exporter{index:06d}.gh" for index in onboarding
+    ]
+    onboarding_owned = rng.random(len(onboarding)) < 0.5
+    account_owned_by_payee[onboarding] = onboarding_owned
+    successful_payments[onboarding] = 0
+    account_age_days[onboarding] = rng.uniform(30, 3_000, size=len(onboarding))
+    onboarding_provenance = np.where(
+        rng.random(len(onboarding)) < 0.70, "invoice_pdf_email", "user_input"
+    )
+    provenance[onboarding] = onboarding_provenance
+    sender_is_known = rng.random(len(onboarding)) < 0.85
+    sender_domain[onboarding] = np.where(
+        sender_is_known, known_domain[onboarding], "gmail.com"
+    )
+
+    # T1 supplier impersonation includes both obvious and vendor-master-poisoned cases.
     t1_evasive = evasive[is_t1]
     ordinary_t1 = t1_indices[~t1_evasive]
     evasive_indices = t1_indices[t1_evasive]
     account_owned_by_payee[t1_indices] = False
+    account_owned_by_payee[ordinary_t1] = rng.random(len(ordinary_t1)) < 0.10
+    account_owned_by_payee[evasive_indices] = rng.random(len(evasive_indices)) < 0.35
     nominated[t1_indices] = False
-    account_age_days[ordinary_t1] = rng.uniform(1, 30, size=len(ordinary_t1))
-    account_age_days[evasive_indices] = rng.uniform(60, 200, size=len(evasive_indices))
+    nominated[ordinary_t1] = rng.random(len(ordinary_t1)) < 0.10
+    nominated[evasive_indices] = rng.random(len(evasive_indices)) < 0.20
+    account_age_days[ordinary_t1] = rng.lognormal(
+        mean=np.log(18), sigma=0.8, size=len(ordinary_t1)
+    ).clip(1, 60)
+    account_age_days[evasive_indices] = rng.uniform(60, 400, size=len(evasive_indices))
     successful_payments[t1_indices] = 0
-    name_match[ordinary_t1] = rng.uniform(0.2, 0.7, size=len(ordinary_t1))
-    near_name = rng.random(len(ordinary_t1)) < 0.25
+    successful_payments[evasive_indices] = rng.integers(0, 4, size=len(evasive_indices))
+    name_match[ordinary_t1] = rng.uniform(0.2, 0.75, size=len(ordinary_t1))
+    near_name = rng.random(len(ordinary_t1)) < 0.30
     name_match[ordinary_t1[near_name]] = rng.uniform(0.85, 1.0, size=int(near_name.sum()))
-    name_match[evasive_indices] = rng.uniform(0.9, 1.0, size=len(evasive_indices))
-    successful_payments[evasive_indices] = rng.integers(1, 5, size=len(evasive_indices))
-    lookalike = rng.random(len(ordinary_t1)) < 0.70
+    name_match[evasive_indices] = rng.uniform(0.85, 1.0, size=len(evasive_indices))
+    lookalike = rng.random(len(ordinary_t1)) < 0.60
     lookalike_indices = ordinary_t1[lookalike]
-    domain_suffix = "-invoice.com" if seed != "C" else "-billing.co"
+    domain_suffix = "-invoice.com" if seed != "C" else "-billing.co.uk"
     sender_domain[lookalike_indices] = [
         f"exporter{payee_number[index]:04d}{domain_suffix}" for index in lookalike_indices
     ]
     sender_domain[ordinary_t1[~lookalike]] = "secure-invoice-mail.com"
-    sender_domain[evasive_indices] = known_domain[evasive_indices]
-    t1_r1 = rng.random(len(t1_indices)) < 0.85
-    if len(evasive_indices):
-        t1_r1[np.flatnonzero(t1_evasive)] = rng.random(len(evasive_indices)) < 0.30
-    norms[t1_indices[t1_r1]] = "R1"
-    t1_border = rng.random(len(t1_indices)) < 0.60
-    t1_border[np.flatnonzero(t1_evasive)] = rng.random(len(evasive_indices)) < 0.25
+    sender_known = rng.random(len(evasive_indices)) < 0.60
+    sender_domain[evasive_indices] = np.where(
+        sender_known, known_domain[evasive_indices], "gmail.com"
+    )
+    norms[t1_indices] = ""
+    norms[ordinary_t1[rng.random(len(ordinary_t1)) < 0.80]] = "R1"
+    norms[evasive_indices[rng.random(len(evasive_indices)) < 0.30]] = "R1"
+    t1_border = np.zeros(len(t1_indices), dtype=bool)
+    t1_border[~t1_evasive] = rng.random(len(ordinary_t1)) < 0.50
+    t1_border[t1_evasive] = rng.random(len(evasive_indices)) < 0.15
     t1_bank_idx = t1_indices[t1_border]
-    account_institution[t1_bank_idx] = "mule_bank"
+    account_institution[t1_bank_idx] = rng.choice(
+        border_banks, size=len(t1_bank_idx)
+    )
     amount[is_t1] = rng.lognormal(mean=np.log(82_000), sigma=0.5, size=int(is_t1.sum()))
 
-    # Account takeover: new destination, a payer-session signal, and an anomalous value.
+    # Account takeover adds a new account to a previously known payer/payee relationship.
     t2_indices = np.flatnonzero(is_t2)
     account_owned_by_payee[t2_indices] = False
-    nominated[t2_indices] = False
-    account_age_days[t2_indices] = rng.uniform(1, 45, size=len(t2_indices))
+    nominated[t2_indices] = rng.random(len(t2_indices)) < 0.10
+    account_age_days[t2_indices] = rng.lognormal(
+        mean=np.log(20), sigma=0.8, size=len(t2_indices)
+    ).clip(1, 90)
     successful_payments[t2_indices] = 0
-    sim_swap[t2_indices] = rng.random(len(t2_indices)) < 0.55
-    new_device[t2_indices] = rng.random(len(t2_indices)) < 0.65
-    foreign_t2 = rng.random(len(t2_indices)) < 0.40
-    session_country[t2_indices[foreign_t2]] = rng.choice(("GH", "GB", "DE"), size=int(foreign_t2.sum()))
-    amount[t2_indices] = rng.uniform(140_000, 360_000, size=len(t2_indices))
+    sim_swap[t2_indices] = rng.random(len(t2_indices)) < 0.45
+    new_device[t2_indices] = rng.random(len(t2_indices)) < 0.55
+    foreign_t2 = rng.random(len(t2_indices)) < 0.30
+    session_country[t2_indices] = "FR"
+    session_country[t2_indices[foreign_t2]] = rng.choice(
+        ("GH", "GB", "DE"), size=int(foreign_t2.sum())
+    )
+    provenance[t2_indices] = np.where(
+        rng.random(len(t2_indices)) < 0.75, "payment_history", "invoice_pdf_email"
+    )
 
-    # Mule accounts are young and geographically concentrated in the border region.
+    # Mule accounts belong to the mule payee but are concentrated near a border.
     t3_indices = np.flatnonzero(is_t3)
-    account_age_days[t3_indices] = rng.uniform(1, 13.9, size=len(t3_indices))
-    successful_payments[t3_indices] = 0
-    name_match[t3_indices] = rng.uniform(0.45, 0.82, size=len(t3_indices))
-    account_institution[t3_indices] = "mule_bank"
-    amount[t3_indices] = rng.uniform(5_000, 70_000, size=len(t3_indices))
+    account_owned_by_payee[t3_indices] = True
+    account_age_days[t3_indices] = rng.lognormal(
+        mean=np.log(30), sigma=0.8, size=len(t3_indices)
+    ).clip(1, 60)
+    successful_payments[t3_indices] = rng.integers(0, 7, size=len(t3_indices))
+    name_match[t3_indices] = rng.uniform(0.5, 0.95, size=len(t3_indices))
+    t3_border = rng.random(len(t3_indices)) < 0.70
+    account_institution[t3_indices[t3_border]] = rng.choice(
+        border_banks, size=int(t3_border.sum())
+    )
 
-    # Structuring uses repeated undeclared transfers just below a EUR 10k cap.
-    amount[is_t4] = rng.uniform(9_500, 9_999, size=int(is_t4.sum()))
-    norms[is_t4] = "R4"
+    # Structuring is represented by repeated transfers below the cap, not a norm signal.
+    amount[is_t4] = rng.uniform(9_000, 10_000, size=int(is_t4.sum()))
+    norms[is_t4] = ""
 
     # Honest counterexamples: one or two risk-like signals with countervailing context.
     hard_negative = np.zeros(n_rows, dtype=bool)
@@ -189,38 +293,44 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     bank_change = negative_indices[negative_type == 0]
     account_age_days[bank_change] = rng.uniform(5, 25, size=len(bank_change))
     successful_payments[bank_change] = 0
-    provenance[bank_change] = "invoice_pdf_email"
+    provenance[bank_change] = "payment_history"
+    account_owned_by_payee[bank_change] = True
+    nominated[bank_change] = True
     name_match[bank_change] = rng.uniform(0.96, 1.0, size=len(bank_change))
     sender_domain[bank_change] = known_domain[bank_change]
     account_institution[bank_change] = np.asarray(
         [f"gh-bank-{number:02d}" for number in known_bank_region[bank_change]], dtype=object
     )
+    norms[bank_change] = ""
     trading_name = negative_indices[negative_type == 1]
     name_match[trading_name] = rng.uniform(0.6, 0.85, size=len(trading_name))
     travel = negative_indices[negative_type == 2]
     session_country[travel] = rng.choice(("GH", "GB", "DE"), size=len(travel))
     new_supplier = negative_indices[negative_type == 3]
+    payee_ids[new_supplier] = [
+        f"{seed}-payee-hard-negative-{index:06d}" for index in new_supplier
+    ]
+    payee_names[new_supplier] = [
+        f"Verified New Ghana Supplier {index:06d}" for index in new_supplier
+    ]
+    known_domain[new_supplier] = [
+        f"verified-new-exporter{index:06d}.gh" for index in new_supplier
+    ]
     provenance[new_supplier] = "invoice_pdf_email"
     account_age_days[new_supplier] = rng.uniform(365, 1800, size=len(new_supplier))
     nominated[new_supplier] = True
+    account_owned_by_payee[new_supplier] = True
     name_match[new_supplier] = rng.uniform(0.9, 1.0, size=len(new_supplier))
+    known_sender = rng.random(len(new_supplier)) < 0.85
+    sender_domain[new_supplier] = np.where(
+        known_sender, known_domain[new_supplier], "gmail.com"
+    )
     seasonal = negative_indices[negative_type == 4]
     amount[seasonal] *= 2.0
     split = negative_indices[negative_type == 5]
-    amount[split] = rng.uniform(9_500, 9_999, size=len(split))
+    amount[split] = rng.uniform(9_000, 10_000, size=len(split))
     declared_split[split] = True
     norms[split] = ""
-
-    if seed == "C":
-        amount *= 1.5
-
-    # Stable known history on repeat payer/payee pairs; training replaces this with seed-A aggregates.
-    history_median = amount.copy()
-    history_count = rng.integers(4, 18, size=n_rows)
-    no_history = is_t2 | first_invoice
-    history_median[no_history] = np.nan
-    history_count[no_history] = 0
-    history_median[is_t4] = 9_750.0
 
     account_ids = np.asarray(
         [f"acc-{str(payee_ids[index])}-nominated" for index in range(n_rows)], dtype=object
@@ -232,21 +342,92 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     account_ids[t3_indices] = [
         f"{seed}-account-{str(cluster_ids[index])}" for index in t3_indices
     ]
-    day = rng.integers(1, 31, size=n_rows)
-    day[t3_indices] = cluster_number[t3_indices] % 30 + 1
-    t4_indices = np.flatnonzero(is_t4)
-    for pair_number, start in enumerate(range(0, len(t4_indices), 2)):
-        pair = t4_indices[start : start + 2]
-        payer_ids[pair] = f"payer-struct-{pair_number:04d}"
-        payee_ids[pair] = f"payee-struct-{pair_number:04d}"
-        day[pair] = int(rng.integers(1, 31))
-    account_ids[t4_indices] = [
-        f"acc-{str(payee_ids[index])}-nominated" for index in t4_indices
+    account_ids[onboarding] = [
+        f"{seed}-account-onboarding-{index:06d}" for index in onboarding
     ]
     account_ids[bank_change] = [
         f"{seed}-account-verified-change-{index:06d}" for index in bank_change
     ]
-    amount_vs_history = amount / history_median
+
+    day = rng.integers(1, 31, size=n_rows)
+    cluster_start_day = rng.integers(1, 30, size=cluster_count)
+    day[t3_indices] = np.minimum(
+        cluster_start_day[cluster_number[t3_indices]]
+        + rng.integers(0, 2, size=len(t3_indices)),
+        30,
+    )
+
+    t4_indices = np.flatnonzero(is_t4)
+    t4_groups: list[np.ndarray] = []
+    cursor = 0
+    remaining = len(t4_indices)
+    while remaining:
+        group_size = remaining if remaining <= 4 else int(rng.integers(2, 5))
+        if remaining - group_size == 1:
+            group_size -= 1
+        t4_groups.append(t4_indices[cursor : cursor + group_size])
+        cursor += group_size
+        remaining -= group_size
+    if t4_groups:
+        prior_candidates = np.flatnonzero(
+            (typology == "none")
+            & (~is_onboarding)
+            & (~hard_negative)
+            & account_owned_by_payee
+            & nominated
+            & (day < 30)
+        )
+        prior_rows = rng.choice(prior_candidates, size=len(t4_groups), replace=False)
+        for group, prior in zip(t4_groups, prior_rows):
+            payer_ids[group] = payer_ids[prior]
+            payee_ids[group] = payee_ids[prior]
+            payer_banks[group] = payer_banks[prior]
+            payee_names[group] = payee_names[prior]
+            known_domain[group] = known_domain[prior]
+            supplier_institution[group] = supplier_institution[prior]
+            account_ids[group] = account_ids[prior]
+            account_holder_names[group] = account_holder_names[prior]
+            bene_bank = account_institution[prior]
+            account_institution[group] = bene_bank
+            account_owned_by_payee[group] = account_owned_by_payee[prior]
+            successful_payments[group] = successful_payments[prior]
+            account_age_days[group] = account_age_days[prior]
+            name_match[group] = name_match[prior]
+            nominated[group] = nominated[prior]
+            provenance[group] = provenance[prior]
+            sender_domain[group] = sender_domain[prior]
+            day[group] = int(rng.integers(int(day[prior]) + 1, 31))
+            norms[group] = ""
+            declared_split[group] = False
+
+    if seed == "C":
+        amount *= 1.5
+
+    # T2 account-takeover amounts are scaled against actual prior pair history when available.
+    _, t2_history_median, _ = _temporal_history(
+        payer_ids,
+        payee_ids,
+        day,
+        amount,
+        history_mask=~is_t2,
+        target_mask=is_t2,
+    )
+    t2_ratios = rng.uniform(1.0, 4.0, size=len(t2_indices))
+    normal_level = rng.random(len(t2_indices)) < 0.20
+    t2_ratios[normal_level] = rng.uniform(0.9, 1.1, size=int(normal_level.sum()))
+    known_history = np.isfinite(t2_history_median[t2_indices])
+    amount[t2_indices[known_history]] = (
+        t2_history_median[t2_indices[known_history]] * t2_ratios[known_history]
+    )
+    no_t2_history = t2_indices[~known_history]
+    amount[no_t2_history] = rng.lognormal(
+        mean=np.log(80_000), sigma=0.45, size=len(no_t2_history)
+    ) * (1.5 if seed == "C" else 1.0)
+
+    history_count, history_median, pair_payments_24h = _temporal_history(
+        payer_ids, payee_ids, day, amount
+    )
+    amount_vs_history = amount / np.where(history_median > 0, history_median, np.nan)
     payer_id_array = payer_ids.astype(object)
     frame = pd.DataFrame(
         {
@@ -258,12 +439,12 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
             "payer_country": "FR",
             "payer_bank": payer_banks,
             "payee_id": payee_ids,
-            "payee_name": [f"Ghana Exporter {number:04d}" for number in payee_number],
+            "payee_name": payee_names,
             "payee_country": "GH",
             "supplier_institution_id": supplier_institution,
             "known_domain": known_domain,
             "account_id": account_ids,
-            "account_holder_name": [f"Account holder {index:06d}" for index in range(n_rows)],
+            "account_holder_name": account_holder_names,
             "bene_bank_institution_id": account_institution,
             "account_owned_by_payee": account_owned_by_payee,
             "successful_payments": successful_payments,
@@ -282,6 +463,7 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
             "history_count": history_count,
             "history_median_amount": history_median,
             "amount_vs_history": amount_vs_history,
+            "pair_payments_24h": pair_payments_24h,
             "label": label,
             "typology": typology,
             "evasive": evasive,

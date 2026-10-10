@@ -14,25 +14,14 @@ import pandas as pd
 from sklearn.isotonic import IsotonicRegression
 
 from .features import FEATURES, FEATURE_NAMES, MONOTONE_CONSTRAINTS, features_from_frame, to_matrix
-from .history import HistoryIndex, build_history
+from .history import build_history
 from .scores import probability_to_score
 from .sim.generator import generate_dataset
 
 
-def _attach_history(frame: pd.DataFrame, history: HistoryIndex) -> pd.DataFrame:
-    output = frame.copy()
-    medians: list[float] = []
-    counts: list[int] = []
-    for payer, payee in zip(output["payer_id"], output["payee_id"]):
-        entry = history.get(str(payer), str(payee))
-        medians.append(entry.median_amount if entry else np.nan)
-        counts.append(entry.count if entry else 0)
-    output["history_median_amount"] = medians
-    output["history_count"] = counts
-    return output
-
-
-def _thresholds(probabilities: np.ndarray, labels: np.ndarray) -> tuple[float, float, float, float]:
+def _thresholds(
+    probabilities: np.ndarray, labels: np.ndarray
+) -> tuple[float, float, float, float, bool]:
     legit = labels == 0
     legit_scores = np.sort(probabilities[legit])
     if not len(legit_scores):
@@ -43,27 +32,28 @@ def _thresholds(probabilities: np.ndarray, labels: np.ndarray) -> tuple[float, f
     values = np.unique(probabilities)
     candidates = values[values > t_med]
     t_high: float | None = None
+    precision_target_met = False
     for value in candidates:
         predicted = probabilities >= value
         precision = float(labels[predicted].mean()) if predicted.any() else 0.0
         if precision >= 0.90:
             t_high = float(value)
+            precision_target_met = True
             break
     if t_high is None:
-        for value in values:
+        candidate_precisions: list[tuple[float, float]] = []
+        for value in candidates:
             predicted = probabilities >= value
             precision = float(labels[predicted].mean()) if predicted.any() else 0.0
-            fpr = float(np.mean(probabilities[legit] >= value))
-            if precision >= 0.90 and fpr <= 0.02:
-                t_med = float(np.nextafter(value, -np.inf))
-                t_high = float(value)
-                break
-    if t_high is None:
-        raise ValueError("validation predictions cannot support distinct medium/high thresholds")
+            candidate_precisions.append((precision, float(value)))
+        if candidate_precisions:
+            _, t_high = max(candidate_precisions, key=lambda result: (result[0], -result[1]))
+        else:
+            t_high = float(np.nextafter(t_med, np.inf))
     fpr_medium = float(np.mean(probabilities[legit] >= t_med))
     predicted = probabilities >= t_high
     precision_high = float(labels[predicted].mean()) if predicted.any() else 0.0
-    return t_med, t_high, fpr_medium, precision_high
+    return t_med, t_high, fpr_medium, precision_high, precision_target_met
 
 
 def evaluate(
@@ -93,7 +83,7 @@ def train_model(frame: pd.DataFrame, model_dir: Path | None = None) -> dict[str,
     model_dir.mkdir(parents=True, exist_ok=True)
 
     history = build_history(frame, max_day=20)
-    prepared = _attach_history(frame, history)
+    prepared = frame.copy()
     features = features_from_frame(prepared)
     prepared.loc[:, FEATURE_NAMES] = features
     train_mask = prepared["day"] <= 20
@@ -127,8 +117,11 @@ def train_model(frame: pd.DataFrame, model_dir: Path | None = None) -> dict[str,
     valid_labels = validation_rows["label"].to_numpy(dtype=int)
     calibrator = IsotonicRegression(out_of_bounds="clip")
     calibrated = calibrator.fit_transform(raw_validation, valid_labels)
-    t_med, t_high, _, _ = _thresholds(calibrated, valid_labels)
+    t_med, t_high, _, precision_high, precision_target_met = _thresholds(
+        calibrated, valid_labels
+    )
     metrics = evaluate(calibrated, validation_rows, t_med, t_high)
+    metrics["precision_high"] = precision_high
 
     version_date = datetime.now(timezone.utc).strftime("%Y%m%d")
     version = f"gbm-{version_date}"
@@ -141,7 +134,11 @@ def train_model(frame: pd.DataFrame, model_dir: Path | None = None) -> dict[str,
             {"name": name, "family": family, "monotone": monotone}
             for name, family, monotone in FEATURES
         ],
-        "thresholds": {"t_med": t_med, "t_high": t_high},
+        "thresholds": {
+            "t_med": t_med,
+            "t_high": t_high,
+            "precision_target_met": precision_target_met,
+        },
         "isotonic": {
             "x": calibrator.X_thresholds_.tolist(),
             "y": calibrator.y_thresholds_.tolist(),

@@ -15,6 +15,7 @@ GH_REGIONS = (
     "Upper East",
     "Volta",
     "Western",
+    "Savannah",
 )
 BORDER_REGIONS = frozenset({"Upper East", "Volta"})
 _REGION_CODES = {f"{index:02d}": region for index, region in enumerate(GH_REGIONS)}

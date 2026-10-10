@@ -38,10 +38,8 @@ FEATURES: list[tuple[str, str, int]] = [
     ("amount_vs_history", "H", 0),
     ("under_cap", "S", 1),
     ("declared_split", "S", -1),
+    ("pair_payments_24h", "S", 1),
     ("norm_R1", "R", 1),
-    ("norm_R2", "R", 1),
-    ("norm_R3", "R", 1),
-    ("norm_R4", "R", 1),
 ]
 FEATURE_NAMES = [feature[0] for feature in FEATURES]
 MONOTONE_CONSTRAINTS = [feature[2] for feature in FEATURES]
@@ -125,9 +123,10 @@ def _derive(values: Mapping[str, Any]) -> dict[str, float]:
         "bene_bank_region_mismatch": mismatch,
         "log_amount": math.log1p(max(0.0, amount)),
         "amount_vs_history": amount / median if median > 0 else math.nan,
-        "under_cap": float(9500 <= amount < 10_000),
+        "under_cap": float(9000 <= amount < 10_000),
         "declared_split": float(bool(values.get("declared_split", False))),
-        **{f"norm_R{number}": float(f"R{number}" in norms) for number in range(1, 5)},
+        "pair_payments_24h": float(max(0.0, float(values.get("pair_payments_24h") or 0))),
+        "norm_R1": float("R1" in norms),
     }
 
 
@@ -157,6 +156,7 @@ def raw_from_order(
             "supplier_institution_id": payee.institution_id if payee else None,
             "amount_eur": order.amount.as_float,
             "history_median_amount": _history_value(entry, "median_amount"),
+            "pair_payments_24h": _history_value(entry, "pair_payments_24h", 0),
             "declared_split": order.purpose == "DECLARED_SPLIT",
             "norm_signals": ctx.norm_signals,
         }
@@ -207,13 +207,13 @@ def features_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
     output["amount_vs_history"] = frame["amount_eur"] / frame["history_median_amount"].where(
         frame["history_median_amount"] > 0
     )
-    output["under_cap"] = ((frame["amount_eur"] >= 9500) & (frame["amount_eur"] < 10_000)).astype(float)
+    output["under_cap"] = ((frame["amount_eur"] >= 9000) & (frame["amount_eur"] < 10_000)).astype(float)
     output["declared_split"] = frame["declared_split"].astype(float)
+    output["pair_payments_24h"] = frame["pair_payments_24h"].fillna(0).astype(float)
     norm_values = frame["norm_signals"].fillna("")
-    for number in range(1, 5):
-        output[f"norm_R{number}"] = norm_values.map(
-            lambda value: float(f"R{number}" in set(filter(None, re.split(r"[,| ]+", value))))
-        )
+    output["norm_R1"] = norm_values.map(
+        lambda value: float("R1" in set(filter(None, re.split(r"[,| ]+", value))))
+    )
     return output.loc[:, FEATURE_NAMES]
 
 
