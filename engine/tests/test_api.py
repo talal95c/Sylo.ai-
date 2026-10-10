@@ -85,6 +85,10 @@ def test_legit_scenario_over_the_stream(base_url):
     tail = _read_stream(base_url, until="payment.credited", headers={"Last-Event-ID": "17"})
     assert [e["seq"] for e in tail] == [0, 18, 19]
 
+    # an id from a previous engine process (larger than anything this one sent) is ignored
+    stale = _read_stream(base_url, until="payment.credited", headers={"Last-Event-ID": "999"})
+    assert [e["seq"] for e in stale] == list(range(0, LEGIT_EVENTS + 1))
+
     view = httpx.get(f"{base_url}/v1/payments/PAY-2026-0001").json()
     assert view == {"paymentId": "PAY-2026-0001", "status": "credited", "tier": "LOW", "routeId": "R3", "chainStatus": "EXECUTED", "lastSeq": 19}
 

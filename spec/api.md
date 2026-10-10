@@ -23,5 +23,6 @@ Events are described in [`events.schema.json`](./events.schema.json).
 
 - `seq` increases by one for every stored event and never restarts while the engine runs. `/v1/reset` clears the session buffer; the `session.reset` event is the first event of the new session.
 - The `system.mode` message sent on each connection has `seq: 0`, `id: "evt-000000"` and is not stored.
+- A `Last-Event-ID` larger than the engine's last `seq` (the engine restarted) is ignored: the whole session is sent.
 - `status` in `GET /v1/payments/{id}` is one of `deciding`, `committed`, `in_transit`, `held`, `awaiting_supplier`, `revoked`, `refunded`, `stopped`, `released`, `credited`.
   `chainStatus` is the registry status name (`NONE`, `COMMITTED`, `CONFIRMED`, `DENIED`, `REVOKED`, `EXECUTED`).

@@ -96,6 +96,8 @@ def create_app(core: Optional[Core] = None) -> FastAPI:
     async def stream(request: Request) -> EventSourceResponse:
         header = request.headers.get("last-event-id", "")
         after = int(header) if header.isdigit() else None
+        if after is not None and after > bus.last_seq:
+            after = None  # the id comes from a previous engine process: send the whole session
 
         async def events() -> AsyncIterator[dict[str, str]]:
             queue = bus.subscribe()  # subscribe first, so nothing is lost between the buffer and the live events
