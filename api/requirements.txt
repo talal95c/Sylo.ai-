@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic>=2
-pyyaml
-eth-account
-web3
-httpx
-pytest

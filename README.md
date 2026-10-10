@@ -1,216 +1,74 @@
 # Sylo.ai
 
-> **La route la moins chère et conforme quand tout va bien. Une fenêtre pour arrêter l'argent quand quelque chose cloche.**
+> Routeur de paiements transfrontaliers sûr : la route la moins chère quand tout va bien, une fenêtre pour arrêter l'argent quand quelque chose cloche.
 
-Projet de l'équipe au hackathon **Secure Horizons** (ESSEC Cergy, 10–11 octobre 2026), **Track 1 — Fintech Security: Guardians of Value** (Track 1 uniquement, confirmé par le mentor).
+Projet présenté au hackathon **Secure Horizons** (ESSEC, 10–11 octobre 2026) sur la **Track 1** (Fintech Security: Guardians of Value), avec une ouverture possible sur la **Track 3**. Le PRD l'appelle de son nom de travail, **L'Aiguilleur**.
 
-- 📄 **Référence unique : [`prd-final-v4.md`](./prd-final-v4.md)** (PRD fusionné v4, en anglais). En cas de doute, le PRD v4 fait foi.
-- 🧾 Ce qui a été gardé/rejeté des 4 PRD sources : [`prd-merge-recap.md`](./prd-merge-recap.md). `prd-final.md` (v3) est **historique** : ne plus s'en servir.
-- 👥 Répartition de la nuit et tâches de chacun : [`docs/equipe/`](./docs/equipe/) (commencer par [`plan.md`](./docs/equipe/plan.md)).
-
-> **Pour les agents IA (Devin, Claude, Cursor, Copilot…)** : lisez ce README en entier, puis le fichier de tâches de la personne pour qui vous travaillez (`docs/equipe/taches-<prénom>.md`), puis les sections du PRD v4 qu'il cite. Respectez les **interfaces partagées** (§7) et ne modifiez pas les dossiers des autres (§6). Tout ce qui est simulé doit être **étiqueté « simulé »** dans l'interface. Jamais de secret dans le dépôt.
+📄 **Document de référence : [`prd-final.md`](./prd-final.md)** (PRD final v3.0, fusion des quatre PRD de l'équipe).
 
 ---
 
-## 1. Le problème (en 4 phrases)
+## Le problème
 
-Un paiement d'entreprise **Lyon → Accra** traverse plusieurs institutions qui ne partagent pas ce qu'elles voient (banque française, prestataire de paiement ou CASP crypto, banque ghanéenne, mobile money). La fraude la plus coûteuse pour les entreprises est **l'usurpation de fournisseur (BEC)** : un faux e-mail « nos coordonnées bancaires ont changé » détourne le paiement d'une facture vers un **compte de mule**, vidé en quelques minutes. Les moteurs anti-fraude des banques la ratent parce que **c'est le vrai client qui autorise le paiement**. En Europe, la vérification du nom du bénéficiaire (VoP) **s'arrête à la frontière SEPA**, et au Ghana les banques n'ont récupéré qu'environ **5 %** des montants fraudés en 2025.
+Un paiement transfrontalier traverse des systèmes qui ne se parlent pas : banques correspondantes, prestataires de paiement, mobile money, stablecoins. Chaque pays a ses propres règles (contrôle des changes, lutte anti-blanchiment, crypto, fiscalité). Chaque institution ne voit que son tronçon du paiement, et les fraudes (faux fournisseur, réseau de mules, prise de contrôle de compte) passent entre ces tronçons. En Europe, la vérification du nom du bénéficiaire s'arrête aux frontières de la zone SEPA : elle ne couvre pas un paiement vers Accra.
 
-## 2. La solution
+## La solution
 
-Sylo.ai est une **couche de décision et de contrôle au-dessus de rails de paiement agréés**. Elle ne détient pas les fonds. Avant que l'argent ne bouge, chaque paiement suit cet ordre (PRD §6.2) :
-
-```
-1. NORMES   ne garder que les routes légales dans les deux pays (la règle la plus stricte gagne)
-2. RISQUE   score de fraude → niveau (LOW / MEDIUM / HIGH / CRITICAL) → restreint les routes autorisées
-3. COÛT     meilleure route restante (frais, change, délai, probabilité d'échec, risque opérationnel du rail)
-4. COMMIT   intention approuvée (bénéficiaire, montant, décision) signée en EIP-712 et enregistrée sur Avalanche Fuji
-5. ACTION   exécuter / régler sous condition (séquestre ou retenue) / retenir pour un analyste / bloquer et déclarer
-```
-
-**Principe directeur** : l'intention approuvée par le payeur est la source de vérité ; chaque composant ne peut que la restreindre ou la vérifier. *Les modèles proposent, les règles disposent, les humains décident.*
-
-**Deux risques séparés** : le **risque de fraude** (du paiement) décide si l'argent peut partir et par quelles routes ; le **risque de route** (panne, connecteur compromis) n'aide qu'à choisir le rail. **Le risque de fraude n'entre jamais dans le score de coût.**
-
-| Niveau | Réponse (PRD §12.1) |
-|---|---|
-| LOW (0–39) | Commit + exécution sur la meilleure route |
-| MEDIUM (40–69) | Commit + **séquestre on-chain** (route R3) ou retenue fiat (R1) ; contrôle SIM swap puis vérification **hors bande** sur le contact **déjà connu** du fournisseur ; libération si confirmé, révocation + remboursement si refusé, remboursement auto à 24 h |
-| HIGH (70–89) | Aucune route, approbation bloquée, dossier d'enquête, l'analyste décide |
-| CRITICAL (90–100) | Blocage, demande de gel à la banque bénéficiaire, brouillon de déclaration de soupçon (jamais de « tipping-off ») |
-
-**Garanties** : pas de substitution (chaque adaptateur de rail recalcule le hash de l'intention et refuse tout écart ; le contrat d'escrow revert) · pas de rejeu (nonces) · journal hash-chaîné · l'IA ne libère jamais de fonds · si une dépendance tombe, le système devient **plus strict**, jamais plus laxiste.
-
-## 3. La démo (ce que le jury voit)
-
-Corridor **France → Ghana**. Claire (CFO de Rhône Cosmétiques, Lyon) paie la facture SSE-2026-118 de **85 000 €** à Savanna Shea Exports (beurre de karité, Tamale/Tema). Kwame est le contact connu du fournisseur ; Julien est l'analyste fraude de la banque de Claire ; Marc co-approuve au-dessus de 20 000 €.
-
-| Scène | Prio | Ce qui se passe | Preuve visible |
-|---|---|---|---|
-| **1 — Le paiement légitime passe** (≈ 40 s) | P0 | Normes : R4 (mobile money) exclue par la règle ghanéenne sur les recettes d'export ; risque LOW ; R3 (EURC via CASP UE + VASP ghanéen) choisie ; Claire + Marc approuvent ; commit puis règlement | `PaymentCommitted` sur Snowtrace |
-| **2 — La facture détournée est stoppée** (≈ 80 s) | P0 | E-mail lookalike `savanna-shea.com` → nouveau compte « K. MENSAH VENTURES » à Aflao. Approbation bloquée → MEDIUM (≥ 3 raisons citées) → R3 + séquestre → contrôle SIM swap → Kwame refuse sur son téléphone → Julien révoque → remboursement ; dossier Mistral cité en < 60 s | `PaymentCommitted` → `Deposited` → `VerificationRecorded(DENIED)` → `PaymentRevoked` → `Refunded` |
-| **2b — Le jury essaie de tricher** (≈ 25 s) | P0 | Console d'attaque à 3 boutons : **A** libérer le paiement révoqué ; **B** changer le bénéficiaire en transit ; **C** rejouer / réécrire une décision | Tx en échec sur l'explorer, refus dans le fil, bannière rouge de hash |
-| 3 — Le réseau de mules + coupe-circuit régional | P1 | Seulement si le checkpoint 03:30 est vert | — |
-| 4, 5 — Guardian on-chain, panne de rail | P1 | Pas cette nuit | — |
-
-**Chiffres affichés** (seed B jamais vue à l'entraînement) : rappel, précision au niveau HIGH, taux de faux positifs, temps de détection, temps analyste gagné, **taux de détournement = 0** sur les attaques d'intégrité. Coûts et délais = **illustratifs** (rails simulés).
-
-## 4. Périmètre de cette nuit (sam. 21:00 → dim. 06:00)
-
-- **P0 uniquement** (PRD §4.2, §8 modules M1–M12), en version allégée (voir [`docs/equipe/plan.md`](./docs/equipe/plan.md)).
-- **Never cut** : normes FR-GH avec exclusion R4 ; approbation bloquée sur coordonnées non fiables ; intention sur Fuji ; adaptateurs qui refusent les écarts ; escrow + vérification + révocation + remboursement ; scènes 1, 2, 2b ; chiffres mesurés ; playbook + slide conformité.
-- **Hors périmètre** : vrais rails, vraies données, vraies vérifications d'identité, détention de fonds, app grand public, calcul fiscal (la fiscalité est **affichée** en information, jamais calculée), globe 3D, eERC, L1 dédiée, Jev.
-- **Freeze code : 05:00.** 05:00–06:00 : vidéo de secours + répétitions.
-
-## 5. Architecture
+Sylo.ai est une couche d'orchestration logicielle posée **au-dessus de rails agréés** : ce n'est pas une banque et elle ne détient pas les fonds. Avant que l'argent ne bouge, chaque paiement suit cet ordre de décision :
 
 ```
-            Ordre de paiement (JSON façon pacs.008) + facture/e-mail (fixtures)
-                                      │
-┌──────────────────────────── API Sylo.ai (/api, FastAPI) ─────────────────────────────┐
-│ Intake + registre bénéficiaires + provenance + name check                            │
-│   → Normes (profils FR/GH + pack FR-GH en YAML)                                      │
-│   → Risque (/ml : features + règles R-* + LightGBM calibré + top raisons)            │
-│   → Routeur (éligibilité par niveau + score S, fraude exclue du score)               │
-│   → Approbation (Claire, + Marc ≥ 20 k€) → Signer EIP-712 → Orchestrateur            │
-│   → Adaptateurs R1–R4 simulés (vérifient intent hash, nonce, statut on-chain)         │
-│   → Réponse (4 niveaux, kill switch, mode dégradé) → Journal hash-chaîné → flux SSE   │
-│   Agent enquêteur (Mistral) : dossier cité + explication ≤ 120 mots (après décision) │
-└───────────────┬──────────────────────────────────────────────┬───────────────────────┘
-                │ web3.py                                        │ SSE GET /v1/stream
-     ┌──────────▼──────────┐                         ┌───────────▼───────────────┐
-     │ Avalanche Fuji       │                         │ Console (/web, Next.js)   │
-     │ PaymentRegistry      │                         │ payeur · fil · analyste · │
-     │ PaymentEscrow        │                         │ preuve · attaques · tél.  │
-     │ MockEURC (à confirmer)│                        └───────────────────────────┘
-     └──────────────────────┘
-Monde simulé : annuaire + banque nominée, télécom (SIM swap), canal hors bande (téléphones), rails, générateur de données.
+1. NORMES   routes légales au départ, en transit et à l'arrivée (la règle la plus stricte gagne)
+2. RISQUE   le niveau de fraude restreint les routes autorisées ; il n'entre jamais dans le score de coût
+3. COÛT     meilleure route restante (frais, change, délai, probabilité d'échec)
+4. COMMIT   bénéficiaire, montant et décision signés (EIP-712) et engagés on-chain
+5. ACTION   exécution, règlement conditionnel ou retenue
 ```
 
-Séquence MEDIUM détaillée : PRD §15.2. Événements : PRD §15.3.
+| Niveau de risque | Réponse |
+| --- | --- |
+| Faible | Meilleure route conforme |
+| Moyen | Séquestre on-chain ou retenue fiat ; les fonds ne sont libérés qu'après une vérification hors bande sur le contact **déjà connu**, précédée d'un contrôle de SIM swap ; sinon remboursement automatique au bout de 24 h |
+| Élevé | Signature bloquée ; le payeur et l'analyste sont alertés |
+| Critique | Blocage, dossier d'enquête et déclaration de soupçon pré-remplie |
 
-| Couche | Choix |
-|---|---|
-| API, normes, orchestration, signature | Python 3.12, FastAPI (SSE natif), Pydantic, `eth-account` (EIP-712), `web3.py` |
-| Règles et profils | YAML + petit évaluateur Python |
-| ML | scikit-learn / LightGBM, NetworkX |
-| Stockage | En mémoire / SQLite (un fichier, reset en une commande) |
-| Contrats | Solidity 0.8.x, Foundry, OpenZeppelin 5 ; réseau **Fuji C-Chain (chainId 43113)** ; Anvil en local pour le dev uniquement |
-| Console | Next.js (App Router), TypeScript, Tailwind, framer-motion |
-| LLM | Mistral (client agnostique, sortie JSON, cache de réponses) |
+En plus : un **coupe-circuit** quand une vague de fraude frappe une région, et un **kill switch** quand un connecteur de rail est compromis.
 
-## 6. Structure du dépôt et propriétaires
+**Garanties clés**
+- **Pas de substitution** : chaque connecteur de rail vérifie l'empreinte de l'intention signée (`intent_hash`) avant d'exécuter. Un bénéficiaire ou un montant modifié est refusé, et la transaction on-chain échoue (revert).
+- **L'IA ne décide pas** : Jev (Système 1) note la sémantique de la facture au moment de la signature ; Mistral (Système 2) rédige le dossier d'enquête et l'explication. Aucun modèle ne peut libérer de fonds.
+- **Échec sûr** : si l'IA ou la chaîne tombe en panne, le système devient plus strict, jamais plus laxiste.
+- **Preuve** : journal hash-chaîné, et `IntentRegistry` sur Avalanche avec des attestations EIP-712 (`PaymentCommitment`, `VerificationAttestation`, `Revocation`), vérifiables par un tiers sur l'explorer.
 
-| Dossier | Contenu | Propriétaire |
-|---|---|---|
-| `/api` | FastAPI : intake, registre, normes (`api/norms/`), routeur, approbation, orchestrateur, adaptateurs (`api/adapters/`), réponse, journal, signer et client chaîne (`api/chain/`), flux SSE, agent enquêteur (`api/agents/`) | **Devin** |
-| `/api/profiles`, `/api/packs` | `FR.yaml`, `GH.yaml`, `FR-GH.yaml` | **Devin** (relecture juridique : Youssef) |
-| `/shared` | Types, liste d'événements, fixtures des scènes, vecteur de test EIP-712 | **Devin** (le vecteur : Youssef) |
-| `/contracts` | Foundry : `PaymentRegistry.sol`, `PaymentEscrow.sol`, `MockEURC.sol`, tests, scripts de déploiement, `deployments/fuji.json` | **Youssef** |
-| `/ml` | Simulateur seedé, features, règles, modèle, calibration, évaluation, `score.py`, `metrics.json` | **Oscar** |
-| `/web` | Console Next.js | **Talal** |
-| `/docs` | Playbook, slide conformité, fiche défense, model card, script de démo, deck | **Omama** (+ chacun pour sa partie) |
-| `/scripts`, `Makefile` | Lancement démo, reset, attaques, éval | **Devin** |
+## La démo (3 min)
 
-Règle : on ne modifie pas le dossier d'un autre sans lui dire. Un changement d'interface (§7) = message à toute l'équipe **avant** de pousser.
+Corridor principal : **France → Ghana**. Claire, à Lyon, paie 85 000 € en EURC à son fournisseur de beurre de karité, Savanna Shea Exports.
 
-## 7. Interfaces partagées (le contrat entre les modules)
+1. **Paiement légitime** : le moteur de normes écarte une route et explique pourquoi ; la route conforme la moins chère est choisie et l'engagement apparaît sur l'explorer.
+2. **Facture détournée** : un e-mail « nouvelles coordonnées bancaires » envoie le paiement vers un compte de mule. Résultat : niveau moyen, séquestre, vérification hors bande refusée, révocation et remboursement, chaque étape visible on-chain.
+3. **Tentative de substitution ou de rejeu** : le rail refuse la jambe, la transaction échoue on-chain, et le connecteur est coupé.
+4. **Réseau de mules** : la grappe est détectée et le coupe-circuit régional s'active.
+5. **Bilan** : les indicateurs mesurés sur un jeu de données que le modèle n'a pas vu à l'entraînement.
 
-Figées à **22:00**. Ce sont elles qui permettent de travailler en parallèle.
+Bonus (P1) : un second corridor **Lagos → Accra** (PAPSS, mobile money), chargé à partir d'un seul fichier, sans toucher au cœur. Paris → Abidjan reste décrit sur papier.
 
-| Interface | Où | Produit par → utilisé par |
-|---|---|---|
-| Types `PaymentOrder`, `Payee`, `Decision`, `PaymentLeg`, `LogEntry` (PRD §16.1) | `shared/types.py`, `shared/types.ts` | Devin → tous |
-| Liste des événements SSE + exemple de payload pour chacun | `shared/events.md` | Devin → Talal |
-| Flux d'événements attendus par scène (sert de **mock front** et de **test d'acceptation back**) | `shared/fixtures/events-scene1.jsonl`, `events-scene2.jsonl`, `events-scene2b.jsonl` | Devin → Talal |
-| Données des scènes : ordres, registre bénéficiaires, compte mule, mocks télécom/annuaire | `shared/fixtures/scene1.json`, `scene2.json` | Devin → tous |
-| Vecteur EIP-712 : domaine + un `PaymentIntent` + digest attendu | `shared/eip712_vector.json` | Youssef → Devin (Foundry et `eth-account` doivent donner le même hash) |
-| Adresses, ABI, URL explorer | `contracts/deployments/fuji.json` | Youssef → Devin, Talal |
-| Fonction de risque | `ml/score.py` : `score(order: dict, ctx: dict) -> dict` | Oscar → Devin |
-| Chiffres du pitch | `ml/metrics.json` (seed B) | Oscar → Talal, Omama |
+## Architecture
 
-**Enveloppe d'un événement SSE** (tous les événements) :
+| Couche | Technologies prévues |
+| --- | --- |
+| Console analyste, globe en direct, signature | Next.js, TypeScript, Tailwind, react-globe.gl, viem |
+| Normes, routage, risque, simulateur, évaluation | Python, FastAPI (flux SSE), networkx, CVXPY, scikit-learn |
+| IA | Jev (Système 1), Mistral (Système 2) |
+| Chaîne | Solidity + Foundry : `IntentRegistry`, séquestre ; L1 Avalanche dédiée ou Fuji C-Chain ; eERC pour les transferts confidentiels (P1) |
+| Stockage | Supabase / Postgres |
 
-```json
-{ "id": 42, "type": "risk.scored", "ts": "2026-10-11T00:12:03.120Z",
-  "paymentId": "pay_scene2", "uetr": "…", "scene": "2",
-  "data": { … }, "explorerUrl": null }
-```
+## Statut et limites
 
-Types d'événements (PRD §15.3) : `norms.checked`, `risk.scored`, `route.selected`, `approval.required`, `approval.granted`, `intent.committed`, `escrow.deposited`, `simswap.checked`, `oob.requested`, `verification.recorded`, `intent.revoked`, `escrow.refunded`, `escrow.released`, `leg.sent`, `leg.settled`, `leg.rejected`, `alert.raised`, `case.ready`, `killswitch.on`, `tx.reverted`, `log.tampered`, `mode.degraded`.
+- Hackathon, preuve de concept : **tous les rails, les flux et les comptes sont simulés**. Aucune donnée réelle, aucun vrai rail connecté.
+- Les coûts et délais affichés sont illustratifs ; seuls les indicateurs de sécurité sont mesurés.
+- Décisions encore ouvertes (voir §20 du PRD) : durée réelle du build, détenteurs de la clé auditeur et des clés d'attestation, cible chaîne finale (L1 dédiée ou Fuji).
 
-**API** (`http://localhost:8000/v1`, JSON, en-tête `Idempotency-Key` sur les POST) — PRD §16.2, plus les routes de pilotage de la démo :
+## Contenu du dépôt
 
-| Méthode | Chemin | Rôle |
-|---|---|---|
-| POST | `/payments` | Soumettre un ordre → décision, approbations et vérifications requises |
-| POST | `/payments/{id}/approve` | Approbation payeur (`{"by":"claire"}` puis `{"by":"marc"}` si double contrôle) |
-| GET | `/payments/{id}` | Statut jambe par jambe, statut registre, liens explorer |
-| GET | `/payments/{id}/proof` | Données EIP-712, signatures, événements, recalcul pour l'auditeur |
-| POST | `/payees/{id}/verify` | Réponse hors bande de Kwame (`{"result":"DENIED"}` ou `"CONFIRMED"`) |
-| GET, POST | `/cases`, `/cases/{id}/actions` | File analyste ; `CONFIRM` / `REVOKE` / `REFUND` / `FREEZE` / `ESCALATE` / `REPORT` |
-| POST | `/sim/scene/{n}` | Lancer la scène 1 ou 2 (crée l'ordre depuis les fixtures) |
-| POST | `/sim/attack/{A\|B\|C}` | Boutons de la console d'attaque (scène 2b) |
-| POST | `/sim/reset` | Remettre la démo à zéro |
-| GET | `/stream` | Flux SSE (reprise via `Last-Event-ID`) |
-| GET | `/metrics` | Contenu de `ml/metrics.json` |
-
-## 8. Lancer le projet
-
-> Prévu pour la nuit ; les commandes deviennent réelles au fil des pushes (voir le statut dans `docs/equipe/plan.md`).
-
-Prérequis : Python 3.12, Node 20+ et pnpm, Foundry (`curl -L https://foundry.paradigm.xyz | bash && foundryup`).
-
-```bash
-cp .env.example .env          # remplir : MISTRAL_API_KEY, RPC Fuji, clés de rôle (jamais committées)
-make setup                    # dépendances api + ml + web + contracts
-make data SEED=A && make train && make eval SEED=B   # régénère ml/metrics.json
-make demo                     # API sur :8000 + console sur :3000
-make reset                    # remet la démo à zéro
-cd contracts && forge test    # tests des contrats
-```
-
-Variables d'environnement (`.env`, gitignoré) : `MISTRAL_API_KEY`, `FUJI_RPC_URL`, `FUJI_RPC_URL_2`, `RELAYER_PRIVATE_KEY`, `ROUTER_PRIVATE_KEY`, `VERIFIER_PRIVATE_KEY`, `ANALYST_PRIVATE_KEY`, `NEXT_PUBLIC_API_URL=http://localhost:8000`, `NEXT_PUBLIC_MOCK=1` (console sur faux flux).
-
-## 9. Conventions
-
-- **Langue** : docs en français, code et identifiants en anglais, noms d'événements/règles identiques au PRD (`R-FL-01`, `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK`, …).
-- **Git** : petits commits, `git pull --rebase` avant de pousser sur `main` ; branche seulement pour un gros changement. Messages : `api: …`, `web: …`, `ml: …`, `contracts: …`, `docs: …`.
-- **Secrets** : uniquement dans `.env` ; les clés privées Fuji circulent en message privé, jamais dans le dépôt ni dans un chat de groupe.
-- **Honnêteté** : tout ce qui est simulé porte un badge « simulé » ; les réponses LLM en cache portent « cached » ; aucun chiffre du pitch n'est écrit à la main (tout sort de `ml/metrics.json`).
-- **Fail-safe** : une dépendance en panne (LLM, RPC, modèle) → mode dégradé plus strict + bannière ; rien n'est libéré par défaut.
-
-## 10. Glossaire
-
-| Terme | Sens |
-|---|---|
-| **BEC** | *Business Email Compromise* : usurpation par e-mail (ici, faux fournisseur) |
-| **Mule** | Compte qui reçoit l'argent fraudé et le fait sortir vite (ici vers 6 wallets mobile money, cash-out près de la frontière togolaise) |
-| **Hors bande (OOB)** | Vérification par un autre canal que celui de la demande : on appelle le contact **déjà connu** du fournisseur, jamais celui donné dans l'e-mail |
-| **SIM swap** | Le fraudeur récupère le numéro de la victime ; on le vérifie (API CAMARA simulée) avant de faire confiance au téléphone de Kwame |
-| **Provenance** | D'où vient chaque coordonnée : `verified_registry` (fiable) vs `invoice_pdf_email` (non fiable) |
-| **Route R1–R4** | R1 SWIFT · R2 prestataire SEPA Instant + payout GHS · R3 EURC sur Avalanche via CASP UE + VASP ghanéen (séquestre possible) · R4 mobile money (exclue pour les recettes d'export) |
-| **Signal de norme R1–R4** | ⚠️ À ne pas confondre avec les routes : R1 = recettes d'export versées hors banque nominée (P0) ; R2–R4 en P1 (PRD §9.3) |
-| **EIP-712** | Standard de signature de données typées : le hash d'un `PaymentIntent` est le même en Python et en Solidity, et le contrat vérifie qui a signé |
-| **Escrow / séquestre** | Le contrat `PaymentEscrow` garde les EURC ; `release` n'est possible que si le registre dit `CONFIRMED` ; sinon remboursement |
-| **UETR** | Identifiant unique de bout en bout d'un paiement ISO 20022 ; présent dans chaque événement |
-| **pacs.008** | Message ISO 20022 de virement ; notre ordre JSON en reprend la forme |
-| **SSE** | *Server-Sent Events* : flux unidirectionnel serveur → navigateur ; la console ne fait que dessiner ces événements |
-| **Seed A / seed B** | Deux générations indépendantes du jeu synthétique : A pour entraîner/régler, B (jamais vue) pour les chiffres du pitch |
-| **Calibration** | Transformer la sortie du modèle en vraie probabilité (isotonic), affichée en score 0–100 |
-| **Kill switch** | Coupure d'un connecteur de rail compromis après des refus répétés |
-| **Tipping-off** | Prévenir la personne visée par une déclaration de soupçon : interdit |
-
-## 11. Équipe
-
-| Qui | Rôle cette nuit | Tâches |
-|---|---|---|
-| **Devin** (agent IA) | Back-end : API, orchestration, normes, routage, signer, SSE, agent Mistral, intégration | [`taches-devin.md`](./docs/equipe/taches-devin.md) |
-| **Talal** | Front-end : console de démo | [`taches-talal.md`](./docs/equipe/taches-talal.md) |
-| **Youssef** | Chaîne : contrats, Fuji, vecteur EIP-712, attaques on-chain | [`taches-youssef.md`](./docs/equipe/taches-youssef.md) |
-| **Oscar** | Données, risque, évaluation | [`taches-oscar.md`](./docs/equipe/taches-oscar.md) |
-| **Omama** | Pitch, livrables, contenu de démo, mentors, QA | [`taches-omama.md`](./docs/equipe/taches-omama.md) |
-
-## 12. Statut et limites
-
-Preuve de concept de hackathon : **tous les rails, flux, comptes et contrôles d'identité sont simulés**, aucune donnée réelle. Seuls les indicateurs de sécurité sont mesurés ; coûts et délais sont illustratifs. Questions ouvertes : PRD v4 §25.
+| Fichier | Rôle |
+| --- | --- |
+| [`prd-final.md`](./prd-final.md) | PRD final v3.0 : vision, exigences, démo, architecture, conformité, planning |
