@@ -1,0 +1,25 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# node / web
+node_modules/
+.next/
+web/public/spec/
+
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# contracts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# ml
+ml/data/
+ml/models/*.bin
+
+.DS_Store
