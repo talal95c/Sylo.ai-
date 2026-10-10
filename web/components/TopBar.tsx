@@ -5,35 +5,36 @@ import type { SystemModeData } from "@/lib/events";
 import type { SourceKind } from "@/lib/source";
 import { cx, Dot, ease } from "./ui";
 
-export function ModeBanner({ mode, sourceKind }: { mode: SystemModeData | null; sourceKind: SourceKind }) {
+export function ModeBanner({ mode }: { mode: SystemModeData | null }) {
   const value = mode ?? { risk: "rules", chain: "mock", llm: "off", rails: "simulated", degraded: [] };
-  const chips = [
-    ["Risk", value.risk === "rules" ? "Rules" : "Model"],
-    ["Chain", value.chain === "mock" ? "Simulated" : "Fuji"],
-    ["Rails", "Simulated"],
+  const degraded = value.degraded.map((item) => item.toLowerCase());
+  const items = [
+    {
+      label: `Risk · ${String(value.risk).toLowerCase()}`,
+      color: degraded.some((item) => item.includes("risk")) ? "var(--medium)" : "var(--low)",
+    },
+    {
+      label: `Chain · ${value.chain === "mock" ? "simulated" : String(value.chain).toLowerCase()}`,
+      color: value.chain === "mock" || degraded.some((item) => item.includes("chain")) ? "var(--medium)" : "var(--low)",
+    },
+    {
+      label: `Rails · ${String(value.rails).toLowerCase()}`,
+      color: value.rails === "simulated" || degraded.some((item) => item.includes("rail")) ? "var(--medium)" : "var(--low)",
+    },
   ];
   return (
-    <div className="flex items-center gap-1.5" role="status" aria-label="System mode">
-      {chips.map(([key, label], index) => (
-        <span
-          key={key}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 text-[11.5px] text-ink-2"
-        >
-          <span className="font-mono text-[10px] text-ink-3">{String(index + 1).padStart(3, "0")}</span>
-          <span className="text-ink-3">{key}</span>
-          <span className="font-medium text-ink">{label}</span>
+    <div
+      className="flex h-8 items-center divide-x divide-[var(--line-strong)] rounded-full border border-[var(--line)] bg-white/70"
+      role="status"
+      aria-label="System mode"
+      title={value.degraded.length ? `Degraded: ${value.degraded.join(", ")}` : undefined}
+    >
+      {items.map(({ label, color }) => (
+        <span key={label} className="inline-flex h-full items-center gap-2 whitespace-nowrap px-3 text-[12px] text-ink-2">
+          <span className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />
+          {label}
         </span>
       ))}
-      {value.degraded.length ? (
-        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-50 px-2.5 text-[11.5px] font-medium text-amber-700">
-          <Dot color="var(--medium)" pulse /> Degraded: {value.degraded.join(", ")} · stricter mode
-        </span>
-      ) : null}
-      {sourceKind === "replay" ? (
-        <span className="inline-flex h-7 items-center rounded-full bg-[var(--surface-2)] px-2.5 text-[11.5px] text-ink-2">
-          Recorded events
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -54,10 +55,10 @@ export function TopBar({
       initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, ease }}
-      className="glass absolute left-4 right-4 top-4 z-30 flex h-14 items-center justify-between rounded-full py-2 pl-5 pr-2"
+      className="glass absolute left-4 right-4 top-4 z-30 grid h-14 select-none grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-2xl px-4 sm:px-5"
     >
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2.5">
           <span className="relative grid size-6 place-items-center">
             <span className="absolute inset-0 rounded-full" style={{ background: "var(--iridescent)" }} />
             <span className="absolute inset-[5px] rounded-full bg-white" />
@@ -65,23 +66,28 @@ export function TopBar({
           </span>
           <span className="text-[17px] font-semibold tracking-[-0.04em]">Sylo.ai</span>
         </div>
-        <span className="hidden h-5 w-px bg-[var(--line-strong)] lg:block" />
-        <span className="hidden text-[13px] text-ink-2 lg:block">Lyon → Ghana · cross-border payment control</span>
+        <span className="hidden h-5 w-px shrink-0 bg-[var(--line-strong)] sm:block" />
+        <span className="hidden whitespace-nowrap text-[13px] text-ink-2 sm:block">Lyon → Ghana</span>
       </div>
 
-      <div className="hidden xl:block">
-        <ModeBanner mode={mode} sourceKind={sourceKind} />
+      <div className="hidden whitespace-nowrap xl:block">
+        <ModeBanner mode={mode} />
       </div>
 
-      <div className="flex items-center gap-3">
-        {notice ? (
+      <div className="flex min-w-0 items-center justify-end gap-2.5">
+        {notice && sourceKind === "replay" ? (
           <motion.span
             initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            className="hidden items-center gap-2 text-[12px] text-amber-700 md:flex"
+            title={notice}
+            className="hidden items-center gap-1.5 whitespace-nowrap text-[11px] text-amber-700 md:flex"
           >
-            <Dot color="var(--medium)" pulse /> {notice}
+            <Dot color="var(--medium)" pulse /> Engine offline · replay
           </motion.span>
+        ) : sourceKind === "replay" ? (
+          <span className="hidden whitespace-nowrap text-[10.5px] text-ink-3 sm:block" title="Recorded events">
+            Recorded events
+          </span>
         ) : null}
         <div className="flex h-10 items-center rounded-full bg-[var(--surface-2)] p-1" role="radiogroup" aria-label="Event source">
           {(["live", "replay"] as const).map((kind) => (
