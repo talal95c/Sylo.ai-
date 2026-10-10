@@ -37,7 +37,12 @@ export default function SyloApp() {
             "radial-gradient(60% 55% at 50% 48%, #eef2ff 0%, rgba(250,250,250,0) 70%), radial-gradient(40% 40% at 80% 10%, rgba(255,204,253,0.25) 0%, rgba(250,250,250,0) 70%), #fafafa",
         }}
       />
-      <GlobeStage state={sylo.state} institutions={geo?.institutions ?? null} chainAltitude={geo?.chainAltitude ?? 0.45} />
+      <GlobeStage
+        state={sylo.state}
+        institutions={geo?.institutions ?? null}
+        chainAltitude={geo?.chainAltitude ?? 0.45}
+        speed={sylo.speed}
+      />
 
       <TopBar mode={sylo.state.mode} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} />
 

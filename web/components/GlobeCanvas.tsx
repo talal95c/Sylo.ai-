@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import * as THREE from "three";
-import type { Institution } from "@/lib/geo";
+import type { GeoPoint, Institution } from "@/lib/geo";
 import { greatCircleMidpoint } from "@/lib/geo";
 import type { ViewState } from "@/lib/store";
 import { ACCENT, DANGER_COLOR, HOP_COLORS, REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
@@ -13,6 +13,7 @@ export interface GlobeCanvasProps {
   institutions: Record<string, Institution> | null;
   chainAltitude: number;
   atmosphereColor: string;
+  speed: number;
 }
 
 interface ArcDatum {
@@ -105,6 +106,42 @@ function sanitizeCountryFeatures(features: CountryFeature[]): CountryFeature[] {
 }
 
 const CORRIDOR_VIEW = { lat: 26, lng: 3, altitude: 1.9 };
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function angularDistanceDegrees(a: GeoPoint, b: GeoPoint) {
+  const radians = Math.PI / 180;
+  const latitudeDelta = (b.lat - a.lat) * radians;
+  const longitudeDelta = (b.lng - a.lng) * radians;
+  const latitudeA = a.lat * radians;
+  const latitudeB = b.lat * radians;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(longitudeDelta / 2) ** 2;
+  const bounded = clamp(haversine, 0, 1);
+  return (2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded))) / radians;
+}
+
+function hopView(
+  from: GeoPoint,
+  to: GeoPoint,
+  chainAltitude: number,
+  isChain = false,
+) {
+  const midpoint = greatCircleMidpoint(from, to);
+  const distance = angularDistanceDegrees(from, to);
+  const routeAltitude = clamp(0.55 + distance / 32, 0.75, 1.75);
+  const altitude = isChain
+    ? Math.max(routeAltitude, chainAltitude * 3.2)
+    : routeAltitude;
+  return {
+    lat: midpoint.lat - altitude * 3,
+    lng: midpoint.lng,
+    altitude,
+  };
+}
+
 const LABEL_X_OFFSET: Record<string, string> = {
   payer_rhone: "east-rhone",
   bank_fr: "west-europe",
@@ -171,12 +208,18 @@ export default function GlobeCanvas({
   institutions,
   chainAltitude,
   atmosphereColor,
+  speed,
 }: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { width, height } = useViewport();
   const reducedMotion = useReducedMotion();
   const [countries, setCountries] = useState<CountryFeature[]>([]);
   const [cache] = useState(() => new Map<string, object>());
+  const speedRef = useRef(speed);
+
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   const material = useMemo(
     () =>
@@ -342,8 +385,8 @@ export default function GlobeCanvas({
       push(`${base}-comet`, hop.from, hop.to, `comet-${duration}-${state.released}`, {
         color: [rgba(hop.kind === "chain" ? kindColor : ACCENT, 0), hop.kind === "chain" ? kindColor : ACCENT],
         altitude,
-        stroke: 0.75,
-        dashLength: duration ? 0.35 : 1,
+        stroke: hop.kind === "chain" ? 0.75 : 0.9,
+        dashLength: duration ? (hop.kind === "chain" ? 0.35 : 0.45) : 1,
         dashGap: duration ? 1 : 0,
         dashInitialGap: duration ? 1 : 0,
         animateTime: duration,
@@ -402,8 +445,19 @@ export default function GlobeCanvas({
       : state.routes.length
         ? ["payer_rhone", "bank_fr", "corr_uk", "casp_eu", "vasp_gh", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
         : ["payer_rhone", "supplier_ssx"];
+    const payerFocused = ["scenario.started", "route.selected", "payment.stopped"].includes(
+      state.lastEvent?.type ?? "",
+    );
+    const supplierFocused = state.lastEvent?.type === "verification.requested";
     const labelIds = focusedHop
-      ? [...new Set([focusedHop.from, focusedHop.to])]
+      ? [
+          ...new Set([
+            focusedHop.from,
+            focusedHop.to,
+            ...(payerFocused ? ["payer_rhone"] : []),
+            ...(supplierFocused ? ["supplier_ssx"] : []),
+          ]),
+        ]
       : fallbackLabelIds;
     const liveTarget =
       state.payment?.status === "in_transit"
@@ -484,7 +538,7 @@ export default function GlobeCanvas({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
 
   const rings = useMemo<RingDatum[]>(() => {
     if (!institutions) return [];
@@ -518,43 +572,105 @@ export default function GlobeCanvas({
     const globe = globeRef.current;
     if (!globe) return;
     const controls = globe.controls() as unknown as { autoRotate: boolean; autoRotateSpeed: number };
-    const ms = (value: number) => (reducedMotion ? 0 : value);
     if (!lastEvent || lastEvent.type === "session.reset") {
       controls.autoRotate = !reducedMotion;
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!state.scenario) return;
+    controls.autoRotate = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const ms = (value: number) => (reducedMotion ? 0 : value);
+    const schedule = (delay: number, callback: () => void) => {
+      timers.push(setTimeout(callback, ms(delay)));
+    };
+    const focus = (point: GeoPoint | undefined, altitude: number, duration: number, latitudeOffset = 0) => {
+      if (!point) return;
+      globe.pointOfView(
+        { lat: point.lat + latitudeOffset, lng: point.lng, altitude },
+        ms(duration),
+      );
+    };
+    const pointAt = (id: string) => institutions?.[id];
+    const focusLock = (altitude: number, duration: number, latitudeOffset = 0) => {
+      if (!lockPoint) return;
+      focus(lockPoint, altitude, duration, latitudeOffset);
+    };
+    const pullBack = (delay: number) => {
+      schedule(delay, () => {
+        globe.pointOfView(CORRIDOR_VIEW, ms(1800));
+        schedule(1800 + 2000, () => {
+          controls.autoRotate = !reducedMotion;
+        });
+      });
+    };
     const data = lastEvent.data as Record<string, unknown>;
     switch (lastEvent.type) {
       case "scenario.started":
-      case "escrow.refunded":
-        controls.autoRotate = false;
-        globe.pointOfView(CORRIDOR_VIEW, ms(1000));
+        focus(pointAt("payer_rhone"), 0.85, 1600);
+        break;
+      case "norms.checked":
+        globe.pointOfView(CORRIDOR_VIEW, ms(1400));
+        break;
+      case "route.selected":
+        focus(pointAt("payer_rhone"), 0.85, 1400);
         break;
       case "leg.sent": {
         const from = institutions?.[String(data.from)];
         const to = institutions?.[String(data.to)];
         if (from && to) {
-          const mid = greatCircleMidpoint(from, to);
-          globe.pointOfView({ lat: mid.lat - 6, lng: mid.lng, altitude: 1.75 }, ms(1200));
+          const target = hopView(from, to, chainAltitude, data.kind === "chain");
+          const duration = clamp(
+            (typeof data.durationMs === "number" ? data.durationMs : 1400) * 0.6,
+            900,
+            1800,
+          );
+          globe.pointOfView(target, ms(duration / Math.max(1, speedRef.current)));
         }
         break;
       }
       case "payment.held":
-        if (lockPoint) globe.pointOfView({ lat: lockPoint.lat - 14, lng: lockPoint.lng, altitude: 1.7 }, ms(1000));
+        focusLock(1.25, 1200, -8);
+        break;
+      case "verification.requested":
+        focus(pointAt("supplier_ssx"), 0.9, 1400);
+        break;
+      case "intent.revoked":
+        focusLock(1.25, 1000);
+        break;
+      case "escrow.refunded": {
+        const payer = pointAt("payer_rhone");
+        if (payer && lockPoint) {
+          globe.pointOfView(hopView(payer, lockPoint, chainAltitude), ms(1600));
+        }
+        break;
+      }
+      case "payment.stopped":
+        focus(pointAt("payer_rhone"), 0.9, 1400);
+        pullBack(4000);
+        break;
+      case "escrow.released":
+        focusLock(1.25, 1000);
         break;
       case "payment.credited":
-      case "payment.stopped":
-        globe.pointOfView(CORRIDOR_VIEW, ms(1400));
-        timer = setTimeout(() => {
-          controls.autoRotate = !reducedMotion;
-        }, 4000);
+        focus(
+          typeof data.at === "string" ? pointAt(data.at) : undefined,
+          0.85,
+          1400,
+        );
+        pullBack(3500);
+        break;
+      case "attack.attempted":
+        focusLock(1.2, 900);
+        break;
+      case "tx.reverted":
+        focusLock(1.2, 900);
+        pullBack(4000);
         break;
     }
     return () => {
-      if (timer) clearTimeout(timer);
+      timers.forEach(clearTimeout);
     };
-  }, [lastEvent, institutions, lockPoint, reducedMotion]);
+  }, [lastEvent, state.scenario, institutions, lockPoint, reducedMotion, chainAltitude]);
 
   function onReady() {
     const globe = globeRef.current;
