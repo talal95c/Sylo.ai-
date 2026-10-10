@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import type { SystemModeData } from "@/lib/events";
 import type { SourceKind } from "@/lib/source";
 import { cx, Dot, ease } from "./ui";
@@ -58,14 +59,14 @@ export function TopBar({
       className="glass absolute left-4 right-4 top-4 z-30 grid h-14 select-none grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-2xl px-4 sm:px-5"
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex shrink-0 items-center gap-2.5">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5" title="Home">
           <span className="relative grid size-6 place-items-center">
             <span className="absolute inset-0 rounded-full" style={{ background: "var(--iridescent)" }} />
             <span className="absolute inset-[5px] rounded-full bg-white" />
             <span className="relative size-1.5 rounded-full bg-ink" />
           </span>
           <span className="text-[17px] font-semibold tracking-[-0.04em]">Sylo.ai</span>
-        </div>
+        </Link>
         <span className="hidden h-5 w-px shrink-0 bg-[var(--line-strong)] sm:block" />
         <span className="hidden whitespace-nowrap text-[13px] text-ink-2 sm:block">Lyon → Ghana</span>
       </div>
