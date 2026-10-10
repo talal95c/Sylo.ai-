@@ -11,6 +11,8 @@ Sylo.ai is a hackathon project (Secure Horizons, ESSEC, Track 1 — Fintech Secu
 
 [`prd-final-v4.md`](prd-final-v4.md) is the product reference; the `docs/` files win on build details.
 
+Team split (4 bricks, who owns what, orchestrator prompts): [`docs/equipe/`](docs/equipe/README.md) — it wins over the lane table below where they differ (the Mistral investigator agent moved from Lane A to Lane B).
+
 ## Lanes and folders
 
 | Lane | Folders you may edit |
