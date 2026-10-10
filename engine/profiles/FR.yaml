@@ -1,0 +1,9 @@
+# Country profile: France (EU rules apply to the payer side of the corridor).
+id: FR
+name: France
+currency: EUR
+supervisor: ACPR / Banque de France
+fiu: TRACFIN
+rules: [EU_MICA_EMT_CASP, EU_TRAVEL_RULE, SANCTIONS_SCREEN]
+notes:
+  - "Verification of Payee covers SEPA only (Regulation (EU) 2024/886): it does not check a Ghanaian account."

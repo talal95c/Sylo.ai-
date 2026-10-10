@@ -1,0 +1,113 @@
+# Corridor pack France -> Ghana. All parameters are synthetic and labelled "simulated" in the UI.
+# Route score: S(r) = fees + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk
+# Fraud risk is never an input of S.
+id: FR-GH
+version: "2026-10-10"
+profiles: [FR, GH]
+
+fx:
+  EUR_GHS: 16.5            # fixed demo rate (simulated)
+
+routeModel:
+  lambda: 0.0007           # cost of capital, per euro per day
+  mu: 0.02                 # cost of a failed payment, per euro
+  nu: 0.05                 # cost of a credit the beneficiary cannot use, per euro
+  sigma: 1.0               # weight of route (operational) risk; routeRisk = 0 in v0
+
+# "{CRED}" is the institution of the creditor account. When that account belongs to the payee,
+# bank routes continue to the payee's own node (bank_gh -> supplier_ssx).
+routes:
+  - id: R1
+    name: SWIFT correspondent
+    settlement: FIAT_HOLD
+    feesEur: 80
+    minutes: 2880
+    pFail: 0.01
+    pUnusable: 0
+    etaLabel: "1–3 days"
+    hops:
+      - [payer_rhone, bank_fr, bank]
+      - [bank_fr, corr_uk, bank]
+      - [corr_uk, "{CRED}", bank]
+  - id: R2
+    name: Payout provider
+    settlement: NONE
+    feesEur: 935
+    minutes: 60
+    pFail: 0.0025
+    pUnusable: 0
+    etaLabel: "≈ 1 h"
+    hops:
+      - [payer_rhone, bank_fr, bank]
+      - [bank_fr, payout_nl, bank]
+      - [payout_nl, "{CRED}", bank]
+  - id: R3
+    name: Euro stablecoin on Avalanche
+    settlement: ONCHAIN_ESCROW
+    feesEur: 170
+    minutes: 120
+    pFail: 0.0025
+    pUnusable: 0
+    etaLabel: "≈ 2 h"
+    hops:
+      - [payer_rhone, bank_fr, bank]
+      - [bank_fr, casp_eu, bank]
+      - [casp_eu, vasp_gh, chain]
+      - [vasp_gh, "{CRED}", bank]
+  - id: R4
+    name: Mobile wallet remittance
+    settlement: NONE
+    feesPct: 0.015
+    minutes: 10
+    pFail: 0.03
+    pUnusable: 0.05
+    etaLabel: "minutes"
+    creditsWallet: true
+    hops:
+      - [payer_rhone, remit_fr, wallet]
+      - [remit_fr, momo_gh, wallet]
+
+# Evaluated in this order; the first failing rule is shown as the reason a route is excluded.
+rules:
+  - id: GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK
+    jurisdiction: GH
+    check: export_proceeds_route
+    when: { purpose: GOODS, creditorCountry: GH }
+    signal: { code: R1, check: nominated_account }
+    legalRef: "Foreign Exchange Act 2006 (Act 723); Bank of Ghana Notice BG/GOV/SEC/2025/34 (export proceeds and LOCs)"
+  - id: GH_WALLET_DAILY_CAP
+    jurisdiction: GH
+    check: wallet_daily_cap
+    routes: [R4]
+    params: { capGhs: 25000 }
+    legalRef: "Bank of Ghana mobile money wallet limits (enhanced-KYC wallets)"
+  - id: GH_VASP_LICENSED
+    jurisdiction: GH
+    check: vasp_licensed
+    routes: [R3]
+    params: { licensed: [vasp_gh] }
+    legalRef: "Virtual Asset Service Providers Act 2025 (Act 1154), Bank of Ghana"
+  - id: EU_MICA_EMT_CASP
+    jurisdiction: EU
+    check: casp_authorised
+    routes: [R3]
+    params: { casps: [casp_eu], tokens: [EURC] }
+    legalRef: "Regulation (EU) 2023/1114 (MiCA): e-money tokens and crypto-asset service providers"
+  - id: EU_TRAVEL_RULE
+    jurisdiction: EU
+    check: travel_rule_fields
+    routes: [R3]
+    legalRef: "Regulation (EU) 2023/1113 (transfer of funds and crypto-assets)"
+  - id: SANCTIONS_SCREEN
+    jurisdiction: ALL
+    check: sanctions_screen
+    params: { list: ["NORTHWIND MULE TRADING LTD", "ACME SHELL HOLDINGS SA"] }
+    legalRef: "Synthetic sanctions list (simulated)"
+
+# Information only: tax notices never change a decision.
+taxNotices:
+  - reference: FR-GH-DTC-1993
+    text: "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention (1993) in force."
+  - reference: DAC8
+    whenRoutePasses: R3
+    text: "The EU crypto-asset provider reports this leg under DAC8 (since 1 January 2026)."
