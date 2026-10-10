@@ -1,0 +1,57 @@
+scoring:
+  costOfCapitalPerDay: 0.0007
+  failureWeight: 0.02
+  unusableWeight: 0.05
+  routeRiskWeight: 1.0
+  quoteValiditySeconds: 600
+  amountCapEUR: null
+  parameterNote: "pFail, pUnusable and routeRisk are illustrative PoC assumptions; §11.2 does not specify them."
+routes:
+  - id: R1
+    path: French bank → SWIFT correspondent → Ghanaian nominated bank
+    status: UP
+    baseCostEUR: 80
+    costRate: 0
+    timeDays: 2
+    conditionalSettlement: FIAT_HOLD
+    pFail: 0.01
+    pUnusable: 0
+    routeRisk: 0
+    creditsNominatedBank: true
+    licensedVasp: false
+  - id: R2
+    path: French bank → licensed payout provider (SEPA Instant) → GHS payout
+    status: UP
+    baseCostEUR: 0
+    costRate: 0.011
+    timeDays: 0.0416666667
+    conditionalSettlement: null
+    pFail: 0
+    pUnusable: 0
+    routeRisk: 0
+    creditsNominatedBank: true
+    licensedVasp: false
+  - id: R3
+    path: French bank → EU CASP → Avalanche → Ghana-licensed VASP → bank
+    status: UP
+    baseCostEUR: 0
+    costRate: 0.002
+    timeDays: 0.0833333333
+    conditionalSettlement: ONCHAIN_ESCROW
+    pFail: 0.0022
+    pUnusable: 0
+    routeRisk: 0
+    creditsNominatedBank: true
+    licensedVasp: true
+  - id: R4
+    path: Remittance provider → mobile wallet
+    status: UP
+    baseCostEUR: 0
+    costRate: 0.015
+    timeDays: 0.0104166667
+    conditionalSettlement: null
+    pFail: 0.01
+    pUnusable: 0.02
+    routeRisk: 0
+    creditsNominatedBank: false
+    licensedVasp: false

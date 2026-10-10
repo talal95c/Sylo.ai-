@@ -21,6 +21,8 @@ def score(order: dict, ctx: dict) -> dict:
                  rulesFired: [str], topReasons: [{"ref": str, "text": str}], modelVersion: str}"""
 ```
 
+Seuils retenus : LOW 0–39, MEDIUM 40–79, HIGH 80–94, CRITICAL 95–100, pour que le score 74 de la scène 2 reste MEDIUM.
+
 `ctx` (`RiskContext`, point de départ à ajuster ensemble à 21:30 — une clé par signal du §10.1) :
 
 | Famille | Clés |

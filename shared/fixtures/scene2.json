@@ -105,7 +105,7 @@
   "expectedRisk": {
     "score": 74,
     "tier": "MEDIUM",
-    "rulesFired": ["R-FL-01", "R-FL-03", "R-NM-01"],
+    "rulesFired": ["R-PV-01", "R-FL-01", "R-FL-03", "R-NM-01"],
     "topReasons": [
       {"ref": "R-FL-01", "text": "New payee and untrusted invoice email for a high-value payment."},
       {"ref": "R-FL-03", "text": "Account holder name match is only 0.21."},
