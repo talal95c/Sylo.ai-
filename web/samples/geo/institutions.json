@@ -1,0 +1,107 @@
+{
+  "institutions": [
+    {
+      "id": "payer_rhone",
+      "name": "Rhône Cosmétiques SAS",
+      "kind": "business",
+      "city": "Lyon",
+      "country": "FR",
+      "lat": 45.764,
+      "lng": 4.8357
+    },
+    {
+      "id": "bank_fr",
+      "name": "Banque Hexagone",
+      "kind": "bank",
+      "city": "Paris",
+      "country": "FR",
+      "lat": 48.8566,
+      "lng": 2.3522
+    },
+    {
+      "id": "casp_eu",
+      "name": "EuroLedger CASP",
+      "kind": "casp",
+      "city": "Frankfurt",
+      "country": "DE",
+      "lat": 50.1109,
+      "lng": 8.6821
+    },
+    {
+      "id": "corr_uk",
+      "name": "Thames Correspondent Bank",
+      "kind": "correspondent",
+      "city": "London",
+      "country": "GB",
+      "lat": 51.5072,
+      "lng": -0.1276
+    },
+    {
+      "id": "payout_nl",
+      "name": "Meridian Payouts",
+      "kind": "payout_provider",
+      "city": "Amsterdam",
+      "country": "NL",
+      "lat": 52.3676,
+      "lng": 4.9041
+    },
+    {
+      "id": "remit_fr",
+      "name": "QuickRemit",
+      "kind": "remittance",
+      "city": "Marseille",
+      "country": "FR",
+      "lat": 43.2965,
+      "lng": 5.3698
+    },
+    {
+      "id": "vasp_gh",
+      "name": "Kente Digital Assets (licensed VASP)",
+      "kind": "vasp",
+      "city": "Accra",
+      "country": "GH",
+      "lat": 5.6037,
+      "lng": -0.187
+    },
+    {
+      "id": "bank_gh",
+      "name": "Gold Coast Commercial Bank (nominated bank)",
+      "kind": "bank",
+      "city": "Kumasi",
+      "country": "GH",
+      "lat": 6.6885,
+      "lng": -1.6244
+    },
+    {
+      "id": "momo_gh",
+      "name": "AccraPay Wallets",
+      "kind": "wallet_operator",
+      "city": "Takoradi",
+      "country": "GH",
+      "lat": 4.8845,
+      "lng": -1.7554
+    },
+    {
+      "id": "supplier_ssx",
+      "name": "Savanna Shea Exports Ltd",
+      "kind": "business",
+      "city": "Tamale",
+      "country": "GH",
+      "lat": 9.4034,
+      "lng": -0.8424
+    },
+    {
+      "id": "mule_bank",
+      "name": "Volta Rural Bank, Aflao branch",
+      "kind": "bank",
+      "city": "Aflao",
+      "country": "GH",
+      "lat": 6.1186,
+      "lng": 1.1903
+    }
+  ],
+  "chain": {
+    "name": "Avalanche C-Chain (Fuji)",
+    "arcAltitude": 0.45
+  }
+}
