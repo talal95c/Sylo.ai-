@@ -97,6 +97,16 @@ class MockChain:
     def _now(self) -> float:
         return float(self._clock())
 
+    def _signer(self, message, signature: bytes, expected: str) -> str:
+        """Recover the signer; like the contract, any invalid signature is `UnauthorizedSigner`."""
+        try:
+            signer = eip712.recover(self._domain, message, signature)
+        except Exception as err:  # malformed signature
+            raise ChainReverted("UnauthorizedSigner") from err
+        if signer != expected:
+            raise ChainReverted("UnauthorizedSigner")
+        return signer
+
     def _use_nonce(self, signer: str, nonce: int) -> None:
         if (signer, nonce) in self._nonces:
             raise ChainReverted("NonceUsed")
@@ -129,9 +139,7 @@ class MockChain:
                 raise ChainReverted("InvalidTransition")
             if self._now() > intent.valid_until:
                 raise ChainReverted("IntentExpired")
-            signer = eip712.recover(self._domain, intent, router_sig)
-            if signer != self._router:
-                raise ChainReverted("UnauthorizedSigner")
+            signer = self._signer(intent, router_sig, self._router)
             self._use_nonce(signer, intent.nonce)
             self._payments[intent.payment_id] = _Payment(
                 digest=eip712.digest(self._domain, intent),
@@ -173,9 +181,7 @@ class MockChain:
                 raise ChainReverted("InvalidTransition")
             if att.intent_hash != payment.digest:
                 raise ChainReverted("CommitmentMismatch")
-            signer = eip712.recover(self._domain, att, verifier_sig)
-            if signer != self._verifier:
-                raise ChainReverted("UnauthorizedSigner")
+            signer = self._signer(att, verifier_sig, self._verifier)
             self._use_nonce(signer, att.nonce)
             payment.status = Status.CONFIRMED if att.result == VerificationResult.CONFIRMED else Status.DENIED
             return self._tx()
@@ -185,9 +191,7 @@ class MockChain:
             payment = self._payments.get(rev.payment_id)
             if payment is None or payment.status not in (Status.COMMITTED, Status.CONFIRMED, Status.DENIED):
                 raise ChainReverted("InvalidTransition")
-            signer = eip712.recover(self._domain, rev, analyst_sig)
-            if signer != self._analyst:
-                raise ChainReverted("UnauthorizedSigner")
+            signer = self._signer(rev, analyst_sig, self._analyst)
             self._use_nonce(signer, rev.nonce)
             payment.status = Status.REVOKED
             return self._tx()

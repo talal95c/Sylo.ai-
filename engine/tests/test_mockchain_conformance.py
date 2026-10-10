@@ -67,3 +67,16 @@ def test_an_attacker_release_reverts_with_a_visible_failed_transaction():
     with pytest.raises(ChainReverted) as info:
         chain.release(payment_id_bytes("nothing"), caller="attacker")
     assert info.value.reason == "PaymentNotReleasable" and info.value.tx is not None and info.value.tx.simulated
+
+
+def test_a_malformed_or_foreign_signature_is_an_unauthorized_signer():
+    chain = MockChain()
+    intent = _intent(1_900_000_000.0, tier=Tier.LOW)
+    for bad in (b"", b"\x00" * 65, b"\x01" * 64 + b"\x1b"):
+        with pytest.raises(ChainReverted, match="UnauthorizedSigner"):
+            chain.commit(intent, bad)
+    # signed with the right key but for another registry (other domain): still unauthorized
+    other = eip712.Eip712Domain(chain_id=1, verifying_contract="0x0000000000000000000000000000000000000002")
+    with pytest.raises(ChainReverted, match="UnauthorizedSigner"):
+        chain.commit(intent, eip712.sign(other, intent, dev_key("router_signer").private_key))
+    assert chain.status(intent.payment_id) == Status.NONE

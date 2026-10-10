@@ -17,6 +17,7 @@ __pycache__/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+contracts/deployments/31337.json
 
 # ml
 ml/data/
