@@ -79,7 +79,8 @@
     { "if": { "properties": { "type": { "const": "payment.credited" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentCredited" } } } },
     { "if": { "properties": { "type": { "const": "payment.stopped" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentStopped" } } } },
     { "if": { "properties": { "type": { "const": "attack.attempted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AttackAttempted" } } } },
-    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } }
+    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } },
+    { "if": { "properties": { "type": { "const": "case.ready" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/CaseReady" } } } }
   ],
   "$defs": {
     "InstitutionId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
@@ -227,7 +228,8 @@
         "tier": { "$ref": "#/$defs/Tier" },
         "rulesFired": { "type": "array", "items": { "type": "string" } },
         "reasons": { "type": "array", "items": { "$ref": "#/$defs/Reason" } },
-        "model": { "type": "string" }
+        "model": { "type": "string" },
+        "oobResolvable": { "type": "boolean", "description": "v1, optional. True when an out-of-band confirmation by the real supplier can lift the risk (beneficiary identity only). Absent means false." }
       }
     },
     "RouteSelected": {
@@ -418,6 +420,49 @@
         "reason": { "type": "string" },
         "txHash": { "oneOf": [{ "$ref": "#/$defs/Hash32" }, { "type": "null" }] },
         "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "CaseReady": {
+      "description": "System 2 case file (Lane B CasePort). Advisory: the web draws it, no decision reads it.",
+      "type": "object",
+      "required": ["summary", "citations", "llm"],
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "sentences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "refs"],
+            "additionalProperties": true,
+            "properties": { "text": { "type": "string", "minLength": 1 }, "refs": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["at", "eventId", "text"],
+            "additionalProperties": true,
+            "properties": { "at": { "$ref": "#/$defs/Timestamp" }, "eventId": { "type": "string" }, "text": { "type": "string" } }
+          }
+        },
+        "typology": { "type": "string" },
+        "recommendedAction": { "enum": ["CONFIRM_REVOCATION", "RELEASE_AFTER_CONFIRMATION", "ESCALATE_AML", "NO_ACTION"] },
+        "explanation": { "type": "string" },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "source"],
+            "additionalProperties": true,
+            "properties": { "ref": { "type": "string" }, "source": { "type": "string" } }
+          }
+        },
+        "reportDraft": { "type": ["string", "null"] },
+        "llm": { "enum": ["off", "cached", "live"] },
+        "promptVersion": { "type": "string" },
+        "model": { "type": "string" }
       }
     }
   }
