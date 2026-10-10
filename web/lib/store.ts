@@ -1,5 +1,7 @@
 import type {
+  ApprovalGrantedData,
   NormsRoute,
+  RouteSelectedData,
   PaymentCreditedData,
   PaymentHeldData,
   PaymentStoppedData,
@@ -61,6 +63,7 @@ export interface ViewState {
     feesEur?: number;
     etaLabel?: string;
     routeReason?: string;
+    routeCostEur?: number;
     intentHash?: string;
     intentTxHash?: string;
     intentSimulated?: boolean;
@@ -73,6 +76,8 @@ export interface ViewState {
   };
   routes: NormsRoute[];
   selectedRouteId: string | null;
+  routeScores: RouteSelectedData["scores"];
+  approval: ApprovalGrantedData | null;
   hops: HopView[];
   held: PaymentHeldData | null;
   alertOpen: boolean;
@@ -98,6 +103,8 @@ export const initialState: ViewState = {
   risk: null,
   routes: [],
   selectedRouteId: null,
+  routeScores: [],
+  approval: null,
   hops: [],
   held: null,
   alertOpen: false,
@@ -208,10 +215,13 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
             }
           : null,
       };
-    case "route.selected":
+    case "route.selected": {
+      const scores = (data.scores ?? []) as RouteSelectedData["scores"];
+      const ownScore = scores.find((score) => score.routeId === data.routeId)?.s;
       return {
         ...next,
         selectedRouteId: String(data.routeId),
+        routeScores: scores,
         hops: selectedHops(next.routes, String(data.routeId)),
         payment: next.payment
           ? {
@@ -221,10 +231,14 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
               feesEur: Number(data.feesEur),
               etaLabel: String(data.etaLabel),
               routeReason: String(data.reason),
+              routeCostEur: ownScore ?? undefined,
               tier: data.tier as Tier,
             }
           : null,
       };
+    }
+    case "approval.granted":
+      return { ...next, approval: data as unknown as ApprovalGrantedData };
     case "intent.committed":
       return {
         ...next,

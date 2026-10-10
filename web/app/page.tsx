@@ -1,3 +1,5 @@
+import SyloApp from "@/components/SyloApp";
+
 export default function Home() {
-  return <main>Sylo.ai</main>;
+  return <SyloApp />;
 }
