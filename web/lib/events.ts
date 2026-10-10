@@ -28,6 +28,7 @@ export interface SystemMode {
   llm: "off" | "cached" | "live";
   rails: "simulated";
   degraded: string[];
+  bootId?: string;
 }
 
 export interface ScenarioStarted {

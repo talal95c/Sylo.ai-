@@ -97,6 +97,18 @@ describe("reducer rules", () => {
     expect(next.lastSeq).toBe(state.lastSeq);
   });
 
+  it("forgets the view when the engine restarts (new bootId), not when it reconnects to the same engine", () => {
+    const mode = (bootId: string): SyloEvent => ({ v: 1, seq: 0, id: "evt-000000", ts: "2026-10-11T09:00:00.000Z", type: "system.mode", paymentId: null, simulated: false, data: { risk: "rules", chain: "mock", llm: "off", rails: "simulated", degraded: [], bootId } });
+    const held = fixture("scene2-diverted").reduce(reduce, reduce(initialState(), mode("boot-a")));
+    expect(reduce(held, mode("boot-a")).payment.status).toBe("awaiting_supplier");
+    const restarted = reduce(held, mode("boot-b"));
+    expect(restarted.payment.status).toBe("idle");
+    expect(restarted.feed).toHaveLength(0);
+    expect(restarted.lastSeq).toBe(0);
+    expect(restarted.run).toBe(held.run + 1);
+    expect(restarted.mode?.bootId).toBe("boot-b");
+  });
+
   it("session.reset clears the view but keeps the engine mode", () => {
     const withMode = reduce(play("scene1-legit"), { v: 1, seq: 0, id: "evt-000000", ts: "2026-10-11T09:00:00.000Z", type: "system.mode", paymentId: null, simulated: false, data: { risk: "rules", chain: "mock", llm: "off", rails: "simulated", degraded: [] } });
     const reset = reduce(withMode, { v: 1, seq: 30, id: "evt-000030", ts: "2026-10-11T09:01:00.000Z", type: "session.reset", paymentId: null, simulated: false, data: {} });

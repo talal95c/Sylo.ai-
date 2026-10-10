@@ -154,8 +154,12 @@ export function resetView(state: ViewState): ViewState {
 
 export function reduce(state: ViewState, event: SyloEvent): ViewState {
   switch (event.type) {
-    case "system.mode":
-      return { ...state, mode: event.data as SystemMode };
+    case "system.mode": {
+      const mode = event.data as SystemMode;
+      // A new bootId means the engine restarted: the session the view shows no longer exists.
+      const restarted = Boolean(state.mode?.bootId && mode.bootId && mode.bootId !== state.mode.bootId);
+      return restarted ? { ...resetView(state), mode } : { ...state, mode };
+    }
     case "session.reset":
       return { ...resetView(state), lastSeq: event.seq };
     case "scenario.started":
