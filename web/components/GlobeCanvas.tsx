@@ -545,6 +545,7 @@ export default function GlobeCanvas({
         break;
       case "payment.credited":
       case "payment.stopped":
+        globe.pointOfView(CORRIDOR_VIEW, ms(1400));
         timer = setTimeout(() => {
           controls.autoRotate = !reducedMotion;
         }, 4000);
