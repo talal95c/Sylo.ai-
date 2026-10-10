@@ -6,6 +6,8 @@ import type { SystemModeData } from "@/lib/events";
 import type { SourceKind } from "@/lib/source";
 import { cx, Dot, ease } from "./ui";
 
+export type DemoView = "globe" | "nodes";
+
 type IconName = "risk" | "chain" | "rails";
 
 function ModeIcon({ name, color }: { name: IconName; color: string }) {
@@ -71,16 +73,40 @@ export function ModeBanner({ mode }: { mode: SystemModeData | null }) {
   );
 }
 
+function ViewIcon({ name }: { name: DemoView }) {
+  const p = { stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden className="shrink-0">
+      {name === "globe" ? (
+        <>
+          <circle cx="8" cy="8" r="6.25" {...p} />
+          <path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.5 3.8 2.5 6.25S9.7 12.5 8 14.25C6.3 12.5 5.5 10.45 5.5 8S6.3 3.5 8 1.75Z" {...p} />
+        </>
+      ) : (
+        <>
+          <rect x="1.75" y="2.25" width="5" height="4" rx="1.2" {...p} />
+          <rect x="9.25" y="9.75" width="5" height="4" rx="1.2" {...p} />
+          <path d="M6.75 4.25h1.5a1.5 1.5 0 0 1 1.5 1.5v4" {...p} />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function TopBar({
   mode,
   sourceKind,
   notice,
   onSource,
+  view,
+  onView,
 }: {
   mode: SystemModeData | null;
   sourceKind: SourceKind;
   notice?: string;
   onSource: (kind: SourceKind) => void;
+  view: DemoView;
+  onView: (view: DemoView) => void;
 }) {
   return (
     <motion.header
@@ -100,6 +126,32 @@ export function TopBar({
         </Link>
         <span className="hidden h-4 w-px shrink-0 bg-[var(--line-strong)] sm:block" />
         <span className="hidden whitespace-nowrap text-[12px] text-ink-2 sm:block">Lyon → Ghana</span>
+        <div className="flex h-8 items-center rounded-full bg-[var(--surface-2)] p-1" role="tablist" aria-label="Demo view">
+          {(["globe", "nodes"] as const).map((tab) => (
+            <button
+              key={tab}
+              role="tab"
+              aria-selected={view === tab}
+              onClick={() => onView(tab)}
+              className={cx(
+                "relative h-6 rounded-full px-2.5 text-[12px] font-medium capitalize transition-colors",
+                view === tab ? "text-ink" : "text-ink-3 hover:text-ink-2",
+              )}
+            >
+              {view === tab ? (
+                <motion.span
+                  layoutId="view-pill"
+                  className="absolute inset-0 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+                  transition={{ duration: 0.35, ease }}
+                />
+              ) : null}
+              <span className="relative flex items-center gap-1.5">
+                <ViewIcon name={tab} />
+                {tab}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="hidden whitespace-nowrap xl:block">

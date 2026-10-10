@@ -348,3 +348,21 @@ body {
     display: none;
   }
 }
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+.flow-dash {
+  animation: flow-dash 700ms linear infinite;
+}
+.flow-dots {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.11) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-dash {
+    animation: none;
+  }
+}
