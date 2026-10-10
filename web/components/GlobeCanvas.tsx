@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import * as THREE from "three";
 import type { GeoPoint, Institution } from "@/lib/geo";
@@ -38,6 +38,7 @@ interface HtmlDatum {
   altitude: number;
   html: string;
   className: string;
+  keepVisible?: boolean;
 }
 
 interface RingDatum {
@@ -73,6 +74,7 @@ interface PathDatum {
 }
 
 const CORRIDOR_VIEW = { lat: 26, lng: 3, altitude: 1.9 };
+const BASE_PARTICLE_SIZE = 1.8;
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
@@ -98,7 +100,7 @@ function hopView(
 ) {
   const midpoint = greatCircleMidpoint(from, to);
   const distance = angularDistanceDegrees(from, to);
-  const routeAltitude = clamp(0.55 + distance / 32, 0.75, 1.75);
+  const routeAltitude = clamp(0.8 + distance / 32, 1, 1.75);
   const altitude = isChain
     ? Math.max(routeAltitude, chainAltitude * 3.2)
     : routeAltitude;
@@ -184,8 +186,10 @@ export default function GlobeCanvas({
   const reducedMotion = useReducedMotion();
   const [landDots, setLandDots] = useState<LandDot[]>([]);
   const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
+  const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
   const [cache] = useState(() => new Map<string, object>());
   const speedRef = useRef(speed);
+  const lastZoomUpdateRef = useRef(0);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -455,6 +459,7 @@ export default function GlobeCanvas({
       state.hops.find((hop) => hop.state === "active") ??
       [...state.hops].reverse().find((hop) => hop.state !== "pending") ??
       state.hops[0];
+    const protectedHop = state.hops.find((hop) => hop.state === "active") ?? focusedHop;
     const fallbackLabelIds = state.payment
       ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
       : state.routes.length
@@ -491,13 +496,15 @@ export default function GlobeCanvas({
           : "east-ghana"
         : LABEL_X_OFFSET[id] ?? "center";
       const isLive = liveTarget === id;
+      const keepVisible = protectedHop?.from === id || protectedHop?.to === id;
       list.push(
-        stable(`lbl-${id}`, `${offset}:${isLive}`, () => ({
+        stable(`lbl-${id}`, `${offset}:${isLive}:${keepVisible}`, () => ({
           id: `lbl-${id}`,
           lat: institution.lat,
           lng: institution.lng,
           altitude: 0.01,
           className: `globe-label ${offset}`,
+          keepVisible,
           html: `<span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
         })),
       );
@@ -554,6 +561,43 @@ export default function GlobeCanvas({
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+
+  const handleGlobeZoom = useCallback(
+    (pov: { lat: number; lng: number; altitude: number }) => {
+      const now = performance.now();
+      if (now - lastZoomUpdateRef.current < 100) return;
+      lastZoomUpdateRef.current = now;
+      const nextSize = BASE_PARTICLE_SIZE * clamp(1.9 / pov.altitude, 1, 1.7);
+      setParticleSize((current) => (Math.abs(current - nextSize) < 0.01 ? current : nextSize));
+
+      const globe = globeRef.current;
+      if (!globe) return;
+      for (const label of htmlData) {
+        if (!label.className.startsWith("globe-label ")) continue;
+        const element = document.querySelector<HTMLElement>(
+          `.globe-label[data-globe-label-id="${label.id}"]`,
+        );
+        if (!element) continue;
+        const screen = globe.getScreenCoords(label.lat, label.lng, label.altitude);
+        const pill = element.querySelector<HTMLElement>(".globe-label-pill");
+        const aboveTopBar = screen.y - 26 - (pill?.offsetHeight ?? 24) < 100;
+        const underSidePanel =
+          width >= 1280 && (screen.x < 372 || screen.x > width - 352);
+        const keepVisible = label.keepVisible ?? false;
+        const hidden = underSidePanel && !keepVisible;
+        element.classList.toggle("flip", aboveTopBar || (underSidePanel && keepVisible));
+        element.classList.toggle("panel-hidden", hidden);
+        element.style.opacity =
+          (element.dataset.globeVisible === "false" && !keepVisible) || hidden ? "0" : "1";
+      }
+    },
+    [htmlData, width],
+  );
+
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (globe) handleGlobeZoom(globe.pointOfView());
+  }, [handleGlobeZoom]);
 
   const rings = useMemo<RingDatum[]>(() => {
     if (!institutions) return [];
@@ -621,13 +665,13 @@ export default function GlobeCanvas({
     const data = lastEvent.data as Record<string, unknown>;
     switch (lastEvent.type) {
       case "scenario.started":
-        focus(pointAt("payer_rhone"), 0.85, 1600);
+        focus(pointAt("payer_rhone"), 1.15, 1600);
         break;
       case "norms.checked":
         globe.pointOfView(CORRIDOR_VIEW, ms(1400));
         break;
       case "route.selected":
-        focus(pointAt("payer_rhone"), 0.85, 1400);
+        focus(pointAt("payer_rhone"), 1.15, 1400);
         break;
       case "leg.sent": {
         const from = institutions?.[String(data.from)];
@@ -643,14 +687,29 @@ export default function GlobeCanvas({
         }
         break;
       }
-      case "payment.held":
-        focusLock(1.25, 1200, -8);
+      case "payment.held": {
+        const compactViewport = window.innerHeight < 840;
+        focusLock(1.4, 1200, compactViewport ? -11.5 : -5.5);
         break;
-      case "verification.requested":
-        focus(pointAt("supplier_ssx"), 0.9, 1400);
+      }
+      case "verification.requested": {
+        const supplier = pointAt("supplier_ssx");
+        if (!lockPoint || !supplier) break;
+        const target = hopView(lockPoint, supplier, chainAltitude, true);
+        const compactViewport = window.innerHeight < 840;
+        const altitude = Math.max(
+          1.4,
+          target.altitude * (compactViewport ? 3 : 2.25),
+        );
+        const latitudeOffset = altitude * (compactViewport ? 14 : 8.5);
+        globe.pointOfView(
+          { ...target, lat: target.lat - latitudeOffset, altitude },
+          ms(1400),
+        );
         break;
+      }
       case "intent.revoked":
-        focusLock(1.25, 1000);
+        focusLock(1.4, 1000);
         break;
       case "escrow.refunded": {
         const payer = pointAt("payer_rhone");
@@ -660,25 +719,25 @@ export default function GlobeCanvas({
         break;
       }
       case "payment.stopped":
-        focus(pointAt("payer_rhone"), 0.9, 1400);
+        focus(pointAt("payer_rhone"), 1.15, 1400);
         pullBack(4000);
         break;
       case "escrow.released":
-        focusLock(1.25, 1000);
+        focusLock(1.4, 1000);
         break;
       case "payment.credited":
         focus(
           typeof data.at === "string" ? pointAt(data.at) : undefined,
-          0.85,
+          1.15,
           1400,
         );
         pullBack(3500);
         break;
       case "attack.attempted":
-        focusLock(1.2, 900);
+        focusLock(1.35, 900);
         break;
       case "tx.reverted":
-        focusLock(1.2, 900);
+        focusLock(1.35, 900);
         pullBack(4000);
         break;
     }
@@ -716,12 +775,13 @@ export default function GlobeCanvas({
       atmosphereColor={atmosphereColor}
       atmosphereAltitude={0.16}
       onGlobeReady={onReady}
+      onZoom={handleGlobeZoom}
       particlesData={particles}
       particlesList="dots"
       particleLat="lat"
       particleLng="lng"
       particleAltitude={0.002}
-      particlesSize={1.8}
+      particlesSize={particleSize}
       particlesSizeAttenuation={false}
       particlesColor="color"
       pathsData={paths}
@@ -767,11 +827,20 @@ export default function GlobeCanvas({
         const item = datum as HtmlDatum;
         const element = document.createElement("div");
         element.className = item.className;
+        if (item.className.startsWith("globe-label ")) {
+          element.dataset.globeLabelId = item.id;
+          element.dataset.keepVisible = String(item.keepVisible ?? false);
+        }
         element.innerHTML = item.html;
         return element;
       }}
       htmlElementVisibilityModifier={(element, visible) => {
-        element.style.opacity = visible ? "1" : "0";
+        element.dataset.globeVisible = String(visible);
+        element.style.opacity =
+          (visible || element.dataset.keepVisible === "true") &&
+          element.classList.contains("panel-hidden") === false
+            ? "1"
+            : "0";
       }}
       enablePointerInteraction={false}
     />
