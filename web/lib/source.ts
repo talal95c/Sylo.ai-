@@ -156,7 +156,8 @@ export function createReplaySource(): Source {
     resolveTimer = null;
   }
 
-  function wait(milliseconds: number, token: number): Promise<void> {
+  function waitUntil(deadline: number, token: number): Promise<void> {
+    const milliseconds = Math.max(0, deadline - performance.now());
     if (token !== generation || milliseconds <= 0) return Promise.resolve();
     return new Promise((resolve) => {
       resolveTimer = resolve;
@@ -179,6 +180,7 @@ export function createReplaySource(): Source {
     if (token !== generation || !callbacks || events.length === 0) return;
     if (resetClock) lastTimestamp = null;
     const offset = lastSeq + 1 - events[0].seq;
+    let deadline = performance.now();
 
     for (const [index, event] of events.entries()) {
       if (token !== generation || !callbacks) return;
@@ -187,12 +189,11 @@ export function createReplaySource(): Source {
         lastTimestamp === null
           ? 0
           : Math.max(0, timestamp - lastTimestamp);
-      await wait(
+      deadline +=
         (firstEventDelayMs !== undefined && index === 0
           ? firstEventDelayMs
-          : elapsed) / speed,
-        token,
-      );
+          : elapsed) / speed;
+      await waitUntil(deadline, token);
       if (token !== generation || !callbacks) return;
       const seq = event.seq + offset;
       callbacks.onEvent({
