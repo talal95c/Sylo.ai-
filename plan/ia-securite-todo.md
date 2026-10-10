@@ -27,6 +27,7 @@ Règles : clés uniquement dans `.env` (git-ignoré), jamais dans le chat, le co
 ### 2.1 Simulateur `ml/sylo_risk/sim/`
 - [ ] **Implémenter** seeds A / B / C, ≈ 150 k paiements, T1–T4 aux taux PRD, 30 % de T1 évasifs, ≈ 3 % de négatifs difficiles, ≈ 1,5 % de premiers paiements légitimes par facture e-mail, export I1–I3.
 - [ ] **Tester** déterminisme (même seed → même hash), taux par typologie dans la tolérance, clusters de mules disjoints entre A et B.
+- [ ] **Vérifier** non-trivialité : 1ʳᵉ passe = séparable à 100 % (owned/nominated/historique copiés) ⇒ refaite avec chevauchement réaliste ; test de chevauchement (chaque signal de risque existe aussi chez les légitimes).
 - [ ] **Vérifier** à la main : aucune fraude ne dépend d'un seul champ ; la provenance non fiable seule n'est pas une fraude (taux de fraude parmi les factures e-mail < 50 %).
 
 ### 2.2 Features `features.py`, `history.py`, `geo.py`
@@ -40,7 +41,7 @@ Règles : clés uniquement dans `.env` (git-ignoré), jamais dans le chat, le co
 - [ ] **Vérifier** courbe de calibration (pas de cliff), métriques de validation dans `model.json`.
 
 ### 2.4 `ModelRisk`
-- [ ] **Implémenter** `RiskPort` : top 3 raisons TreeSHAP en anglais clair, `model = "gbm-<date>"`, `oobResolvable` (familles B/V/R seules ⇒ vrai ; P, G, N, R-OOB-01 ⇒ faux).
+- [ ] **Implémenter** `RiskPort` : top 3 raisons TreeSHAP en anglais clair, `model = "gbm-<date>"`, `oobResolvable` (familles B/V/G/R seules ⇒ vrai ; P, S, H > 3×, N, R-OOB-01 ⇒ faux).
 - [ ] **Tester** conformité (`run_risk_conformance` : légitime LOW, détourné ≥ MEDIUM avec ≥ 3 raisons, déterministe, p95 < 50 ms) ; raisons différentes des textes des règles moteur (sinon dédoublonnées).
 - [ ] **Vérifier** le score honnête de la scène 2 et ses raisons, **sans** réglage pour tomber en 40–69.
 
