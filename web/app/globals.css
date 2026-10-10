@@ -102,12 +102,13 @@ body {
 }
 
 .globe-label {
+  --globe-label-x-offset: 0px;
   pointer-events: none;
   position: relative;
   width: 0;
   height: 0;
   display: block;
-  transition: opacity 300ms ease;
+  transition: opacity 200ms ease;
 }
 .globe-label-pill {
   position: absolute;
@@ -116,7 +117,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transform: translate(-50%, calc(-100% - 26px));
+  transform: translate(calc(-50% + var(--globe-label-x-offset)), calc(-100% - 26px));
   white-space: nowrap;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   font-size: 12px;
@@ -162,20 +163,28 @@ body {
     transform: translateX(-50%) scaleY(1);
   }
 }
-.globe-label.west-europe .globe-label-pill {
-  transform: translate(calc(-50% - 100px), calc(-100% - 26px));
+.globe-label.flip .globe-label-pill {
+  transform: translate(calc(-50% + var(--globe-label-x-offset)), 26px);
 }
-.globe-label.east-europe .globe-label-pill {
-  transform: translate(calc(-50% + 100px), calc(-100% - 26px));
+.globe-label.flip .globe-label-pill::after {
+  top: auto;
+  bottom: calc(100% - 1px);
+  transform-origin: bottom;
 }
-.globe-label.east-rhone .globe-label-pill {
-  transform: translate(calc(-50% + 80px), calc(-100% - 26px));
+.globe-label.west-europe {
+  --globe-label-x-offset: -100px;
 }
-.globe-label.west-ghana .globe-label-pill {
-  transform: translate(calc(-50% - 70px), calc(-100% - 26px));
+.globe-label.east-europe {
+  --globe-label-x-offset: 100px;
 }
-.globe-label.east-ghana .globe-label-pill {
-  transform: translate(calc(-50% + 70px), calc(-100% - 26px));
+.globe-label.east-rhone {
+  --globe-label-x-offset: 80px;
+}
+.globe-label.west-ghana {
+  --globe-label-x-offset: -70px;
+}
+.globe-label.east-ghana {
+  --globe-label-x-offset: 70px;
 }
 .globe-label-city {
   color: rgba(0, 0, 0, 0.44);

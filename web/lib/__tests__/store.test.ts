@@ -129,6 +129,41 @@ describe("store reducer", () => {
     expect(state.lastSeq).toBe(8);
   });
 
+  it("clears the feed on reset while preserving system mode", () => {
+    const mode = {
+      v: 1,
+      seq: 0,
+      id: "evt-000000",
+      ts: "2026-10-11T09:00:00.000Z",
+      type: "system.mode",
+      paymentId: null,
+      simulated: false,
+      data: {
+        risk: "rules",
+        chain: "mock",
+        llm: "off",
+        rails: "simulated",
+        degraded: [],
+      },
+    } as SyloEvent;
+    const started = fixture("scene1-legit")[0];
+    const active = reduce(reduce(initialState, mode), started);
+    const reset = {
+      v: 1,
+      seq: started.seq + 1,
+      id: `evt-${String(started.seq + 1).padStart(6, "0")}`,
+      ts: "2026-10-11T09:01:00.000Z",
+      type: "session.reset",
+      paymentId: null,
+      simulated: false,
+      data: {},
+    } as SyloEvent;
+    const state = reduce(active, reset);
+
+    expect(state.feed).toHaveLength(0);
+    expect(state.mode).toEqual(mode.data);
+  });
+
   it("enables supplier responses only while awaiting the supplier", () => {
     const diverted = fixture("scene2-diverted");
     const state = replay(...diverted);
