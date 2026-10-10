@@ -88,7 +88,7 @@ export default function PaymentCard({ state, institutions }: PaymentCardProps) {
   const city = (id: string | undefined) => (id ? (institutions[id]?.city ?? id) : "");
   const color = flapColor(state);
   const idle = payment.status === "idle";
-  const destination = hops.at(-1)?.to ?? payment.beneficiary?.institutionId;
+  const destination = hops.at(-1)?.to;
   const stops = hops.length ? [hops[0].from, ...hops.map((h) => h.to)] : [];
 
   return (

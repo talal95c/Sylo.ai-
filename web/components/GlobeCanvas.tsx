@@ -203,7 +203,9 @@ function buildArcs({ state, institutions, chainAltitude, flashing, refundCursor,
     const apex = isHeld && hop.kind === "chain" ? lockApex : null;
     const ground = (point: Institution): Pov => ({ lat: point.lat, lng: point.lng, altitude: 0 });
 
-    if (hop.state === "pending") {
+    if (hop.state === "pending" && state.payment.status === "stopped") {
+      arcs.push(arc(`${key}:never-sent`, from, to, hop.kind, chainAltitude, solid(withAlpha(kindColor, 0.2), 0.3)));
+    } else if (hop.state === "pending") {
       arcs.push(arc(`${key}:pending`, from, to, hop.kind, chainAltitude, solid(withAlpha(kindColor, 0.7), 0.45)));
     } else if (hop.state === "active" && isHeld && (lock === "locked" || lock === "revoked")) {
       arcs.push(arc(`${key}:held`, from, to, hop.kind, chainAltitude, solid(HELD_COLOR, 0.6)));
