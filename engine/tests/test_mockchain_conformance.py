@@ -80,3 +80,20 @@ def test_a_malformed_or_foreign_signature_is_an_unauthorized_signer():
     with pytest.raises(ChainReverted, match="UnauthorizedSigner"):
         chain.commit(intent, eip712.sign(other, intent, dev_key("router_signer").private_key))
     assert chain.status(intent.payment_id) == Status.NONE
+
+
+def test_signature_strictness_matches_the_contract():
+    """v must be 27 or 28 and s must be in the lower half, as OpenZeppelin's ECDSA requires."""
+    from sylo.chain_mock import SECP256K1_ORDER
+
+    chain = MockChain()
+    intent = _intent(1_900_000_000.0, tier=Tier.LOW)
+    good = eip712.sign(chain.domain(), intent, dev_key("router_signer").private_key)
+    r, s, v = good[:32], int.from_bytes(good[32:64], "big"), good[64]
+    v_zero_or_one = r + s.to_bytes(32, "big") + bytes([v - 27])
+    high_s_twin = r + (SECP256K1_ORDER - s).to_bytes(32, "big") + bytes([55 - v])  # the malleable twin: same signer
+    for bad in (v_zero_or_one, high_s_twin):
+        with pytest.raises(ChainReverted, match="UnauthorizedSigner"):
+            chain.commit(intent, bad)
+    chain.commit(intent, good)
+    assert chain.status(intent.payment_id) == Status.COMMITTED

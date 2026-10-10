@@ -29,6 +29,8 @@ from sylo_spec.ports import ChainReverted
 from .config import MOCK_REGISTRY_ADDRESS, MOCK_TOKEN_ADDRESS
 
 ZERO32 = b"\x00" * 32
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+SECP256K1_HALF_ORDER = SECP256K1_ORDER // 2
 TREASURY_MINT = 10_000_000 * 10**6  # the deploy script mints 10,000,000 tEURC to the EU CASP
 
 
@@ -98,10 +100,21 @@ class MockChain:
         return float(self._clock())
 
     def _signer(self, message, signature: bytes, expected: str) -> str:
-        """Recover the signer; like the contract, any invalid signature is `UnauthorizedSigner`."""
+        """Recover the signer; like the contract, any invalid signature is `UnauthorizedSigner`.
+
+        Same strictness as OpenZeppelin's ECDSA: 65 bytes, v is 27 or 28, s in the lower half
+        (no malleable twin of a valid signature).
+        """
+        well_formed = (
+            len(signature) == 65
+            and signature[64] in (27, 28)
+            and int.from_bytes(signature[32:64], "big") <= SECP256K1_HALF_ORDER
+        )
+        if not well_formed:
+            raise ChainReverted("UnauthorizedSigner")
         try:
             signer = eip712.recover(self._domain, message, signature)
-        except Exception as err:  # malformed signature
+        except Exception as err:  # not a point on the curve
             raise ChainReverted("UnauthorizedSigner") from err
         if signer != expected:
             raise ChainReverted("UnauthorizedSigner")
