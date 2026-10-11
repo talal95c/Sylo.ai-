@@ -35,6 +35,14 @@ class RulesRisk:
         account = ctx.account
         provenance = order.provenance.get("creditorAccount", "unknown")
         untrusted = provenance not in TRUSTED_PROVENANCE
+        session_cause = (
+            ctx.payer_session.sim_swap_72h
+            or ctx.payer_session.new_device_24h
+            or ctx.payer_session.country != order.debtor.country
+        )
+        structuring_cause = (
+            9_000 <= ctx.amount_eur < 10_000 and order.purpose != "DECLARED_SPLIT"
+        )
 
         if untrusted:
             fired.append(("R-PV-01", 20, "V", texts.reason_untrusted_provenance(provenance, ctx.payee)))
@@ -55,6 +63,21 @@ class RulesRisk:
             fired.append(("R-FL-03", 12, "B", texts.reason_name_mismatch(holder, payee_name, ctx.name_match)))
         if "R1" in ctx.norm_signals:
             fired.append(("R-NM-01", 7, "R", texts.REASON_NOT_NOMINATED))
+        if self.strict and (
+            session_cause
+            or account is None
+            or account.successful_payments == 0
+            or ctx.account_age_hours < 72
+            or structuring_cause
+        ):
+            fired.append(
+                (
+                    "R-DG-01",
+                    0,
+                    "P" if session_cause else "B",
+                    texts.REASON_MODEL_UNAVAILABLE,
+                )
+            )
 
         fired.sort(key=lambda rule: -rule[1])
         bonus = 10 if self.strict and fired else 0
@@ -75,9 +98,11 @@ class RulesRisk:
             rules_fired=[rule[0] for rule in fired],
             reasons=reasons,
             oob_resolvable=all(
-                rule[0] in {"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01"}
+                rule[0]
+                in {"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01", "R-DG-01"}
                 for rule in fired
-            ),
+            )
+            and not (self.strict and (session_cause or structuring_cause)),
             model=self.name,
         )
 

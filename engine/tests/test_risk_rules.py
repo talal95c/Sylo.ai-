@@ -1,7 +1,13 @@
+import sys
+from types import ModuleType
+
 from sylo_spec.models import RiskReason, RiskResult, Tier
 from sylo_spec.scenarios import build_risk_context, golden_case
 
+from sylo.config import Settings
+from sylo.ports_loader import load_ports
 from sylo.risk_rules import CombinedRisk, RulesRisk
+from sylo.signer import Signer
 
 RISK = RulesRisk()
 
@@ -69,6 +75,77 @@ def test_young_account_fires_r_fl_02():
 def test_strict_mode_is_stricter():
     assert RulesRisk(strict=True).score(*golden_case("diverted")).score == 74
     assert RulesRisk(strict=True).score(*golden_case("legit")).score == 10
+
+
+def test_strict_mode_adds_nonresolvable_degraded_rule_for_session_causes():
+    order, ctx = golden_case("legit")
+    for updates in (
+        {"sim_swap_72h": True},
+        {"new_device_24h": True},
+        {"country": "GH"},
+    ):
+        session = ctx.payer_session.model_copy(update=updates)
+        result = RulesRisk(strict=True).score(
+            order, ctx.model_copy(update={"payer_session": session})
+        )
+        reason = next(reason for reason in result.reasons if reason.rule_id == "R-DG-01")
+
+        assert result.score == 20 and result.tier == Tier.MEDIUM
+        assert reason.ref == "P"
+        assert reason.text == "Risk model unavailable: held for verification as a precaution."
+        assert not result.oob_resolvable
+
+
+def test_strict_mode_degraded_account_causes_remain_resolvable_but_structuring_does_not():
+    order, ctx = golden_case("legit")
+    for updates in (
+        {"account": None},
+        {"account_age_hours": 24.0},
+    ):
+        result = RulesRisk(strict=True).score(order, ctx.model_copy(update=updates))
+        assert "R-DG-01" in result.rules_fired
+        reason = next(reason for reason in result.reasons if reason.rule_id == "R-DG-01")
+        assert reason.ref == "B"
+        assert result.oob_resolvable
+
+    result = RulesRisk(strict=True).score(
+        order, ctx.model_copy(update={"amount_eur": 9_500.0})
+    )
+    reason = next(reason for reason in result.reasons if reason.rule_id == "R-DG-01")
+    assert reason.ref == "B"
+    assert not result.oob_resolvable
+
+    declared_split = order.model_copy(update={"purpose": "DECLARED_SPLIT"})
+    result = RulesRisk(strict=True).score(
+        declared_split, ctx.model_copy(update={"amount_eur": 9_500.0})
+    )
+    assert "R-DG-01" not in result.rules_fired
+
+
+def test_model_load_failure_holds_sim_swap_payment_at_medium(monkeypatch):
+    class CaseWriter:
+        def __init__(self, **kwargs):
+            pass
+
+    risk_package = ModuleType("sylo_risk")
+    risk_package.CaseWriter = CaseWriter
+    monkeypatch.setitem(sys.modules, "sylo_risk", risk_package)
+
+    risk, _, _, degraded = load_ports(
+        Settings(risk_mode="model"),
+        signer=Signer(env={}),
+        clock=lambda: 0.0,
+        env={},
+    )
+    order, ctx = golden_case("legit")
+    assert ctx.account is not None and ctx.payee is not None
+    assert ctx.account.successful_payments >= 1 and ctx.payee.owns(ctx.account.id)
+    session = ctx.payer_session.model_copy(update={"sim_swap_72h": True})
+    result = risk.score(order, ctx.model_copy(update={"payer_session": session}))
+
+    assert "risk" in degraded
+    assert result.tier >= Tier.MEDIUM
+    assert "R-DG-01" in result.rules_fired
 
 
 class _FakeModel:
