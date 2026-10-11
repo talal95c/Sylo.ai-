@@ -5,6 +5,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 import { revertMessage } from "@/lib/revert";
+import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
+import { MarketCompare } from "./MarketCompare";
+import { Savings } from "./RouteQuote";
 import { ease, euros, LockIcon, Spinner } from "./ui";
 
 const REF_LABEL: Record<string, string> = {
@@ -59,6 +62,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   const terminal = status === "credited" || status === "stopped";
   const showHeld = Boolean(held && state.alertOpen && !terminal);
   const showOutcome = terminal;
+  const receipt = buildQuote(state);
   const paymentId = state.payment?.paymentId;
   const detailsKey = `${state.feed[0]?.seq ?? 0}:${paymentId ?? "none"}:${held?.headline ?? "none"}`;
   const detailsOpen = detailsFor === detailsKey;
@@ -77,7 +81,8 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.45, ease }}
-            className="card pointer-events-auto w-[min(560px,100%)] overflow-hidden rounded-[20px]"
+            data-globe-occluder="bottom"
+            className="card pointer-events-auto max-h-[calc(100dvh-196px)] w-[min(560px,100%)] overflow-y-auto overscroll-contain rounded-[20px]"
           >
             <div className="h-1 w-full" style={{ background: state.incident ? "var(--danger)" : state.revoked ? "var(--danger)" : state.released ? "var(--low)" : TIER_COLORS[held.tier] }} />
             <div className="px-4 pb-4 pt-3.5">
@@ -157,6 +162,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={{ duration: 0.55, ease }}
+            data-globe-occluder="bottom"
             className="card pointer-events-auto flex w-[min(560px,100%)] items-center gap-4 rounded-[20px] p-4 pr-5"
           >
             <span className="grid size-10 shrink-0 place-items-center rounded-full text-white" style={{ background: status === "credited" ? "var(--low)" : state.refunded && !state.attack.reverted ? REFUND_COLOR : "var(--danger)" }}>
@@ -164,13 +170,13 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8.4 6.4 11.6 13 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : <LockIcon size={16} />}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[14.5px] font-medium">
-                {status === "credited" ? `Credited · ${euros(state.credited?.routeCostEur ?? 0)} all-in vs ${euros(state.credited?.swiftRouteCostEur ?? 0)} via SWIFT` : state.stopped?.headline}
+                {status === "credited" ? creditedHeadline(state) : state.stopped?.headline}
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
                 {status === "credited"
-                  ? `Saved ${euros((state.credited?.swiftRouteCostEur ?? 0) - (state.credited?.routeCostEur ?? 0))} · ${state.credited?.elapsedLabel ?? ""}`
+                  ? creditedDetail(state)
                   : state.attack.reverted
                     ? revertMessage(state.attack.reason)
                     : state.stopped?.detail}
@@ -180,12 +186,35 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                   {state.attack.reason}
                 </span>
               ) : null}
+              {status === "credited" && receipt?.swift && receipt.savedEur !== undefined ? <Savings quote={receipt} compact /> : null}
+              {status === "credited" && receipt ? <MarketCompare quote={receipt} /> : null}
             </div>
           </motion.section>
         ) : null}
       </AnimatePresence>
     </div>
   );
+}
+
+function creditedHeadline(state: ViewState) {
+  const quote = buildQuote(state);
+  if (quote?.savedEur !== undefined && quote.savedEur > 0) {
+    return `Credited · saved ${euros(quote.savedEur)} vs SWIFT${quote.savedPct !== undefined ? ` (${pct(quote.savedPct)})` : ""}`;
+  }
+  const cost = state.credited?.cashCostEur ?? state.credited?.routeCostEur;
+  return cost !== undefined ? `Credited · ${euros(cost)} ${state.credited?.cashCostEur !== undefined ? "fees + FX" : "all-in"}` : "Credited";
+}
+
+function creditedDetail(state: ViewState) {
+  const quote = buildQuote(state);
+  const credited = state.credited;
+  const parts: string[] = [];
+  if (quote) parts.push(`${euros(quote.cost)} ${quote.basis === "cash" ? "fees + FX" : "all-in"}${quote.swift ? ` vs ${euros(quote.swift.cost)} via SWIFT` : ""}`);
+  if (credited?.elapsedLabel) parts.push(`arrives ${credited.elapsedLabel}${credited.swiftEtaLabel ? ` vs ${credited.swiftEtaLabel}` : ""}`);
+  const decided = secondsBetween(state.timing.createdTs, state.timing.committedTs);
+  if (decided !== undefined) parts.push(`decided in ${decided.toFixed(1)} s`);
+  if (quote && quote.priceOfSafetyEur > 0) parts.push(`price of safety ${euros(quote.priceOfSafetyEur)}`);
+  return parts.join(" · ");
 }
 
 function Verification({ state, nextStep }: { state: ViewState; nextStep: string }) {
@@ -218,6 +247,8 @@ function Verification({ state, nextStep }: { state: ViewState; nextStep: string 
   return <div className="text-ink-3">{nextStep}</div>;
 }
 
+const isInvoiceScreen = (refs: string[]) => refs.some((ref) => ref.startsWith("TX-"));
+
 function CaseFile({ state }: { state: ViewState }) {
   const file = state.caseFile;
   if (!file) return null;
@@ -230,11 +261,16 @@ function CaseFile({ state }: { state: ViewState }) {
       <div className="mt-2 inline-flex rounded-full bg-[var(--surface-2)] px-2 py-1 text-[10px] text-ink-2">{ACTION_LABEL[file.recommendedAction] ?? file.recommendedAction}</div>
       {file.sentences?.length ? (
         <ul className="mt-3 space-y-1.5">
-          {file.sentences.map((sentence) => (
+          {[...file.sentences]
+            .sort((a, b) => Number(isInvoiceScreen(b.refs)) - Number(isInvoiceScreen(a.refs)))
+            .map((sentence) => (
             <li key={`${sentence.text}-${sentence.refs.join("-")}`} className="leading-snug text-ink-2">
+              {isInvoiceScreen(sentence.refs) ? (
+                <span className="mr-1.5 rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-ink">Invoice screen</span>
+              ) : null}
               {sentence.text} <span className="font-mono text-[10px] text-ink-3">{sentence.refs.join(" · ")}</span>
             </li>
-          ))}
+            ))}
         </ul>
       ) : <p className="mt-3 leading-snug text-ink-2">{file.explanation}</p>}
       {file.citations.length ? (

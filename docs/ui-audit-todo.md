@@ -93,7 +93,7 @@ Suggested order:
 - [ ] **The outage outcome reads "€216 all-in vs €216 via SWIFT · Saved €0"** (`components/AlertOverlay.tsx` ~168-172, `components/DecisionSteps.tsx` ~96). When the payment was rerouted to SWIFT, say so instead: "Rerouted to SWIFT: Avalanche rail was down · €216 · 1–3 days."
 - [ ] **The outage banner stays after "Payment rail restored."** Clear it on `rail.up`.
 - [ ] **The savings line is the best pitch number but is tiny grey text** ("Saved €36.79 vs SWIFT" in the credited toast). Make it the headline of the credited card.
-- [ ] **[Youssef] Reason counts disagree.** The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
+- [x] **[Youssef] Reason counts disagree.** (Done in the web: model reasons that repeat a fired rule are hidden, and the panel counts reasons.) The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
   - "first payment ever to this account" / "Only 0 successful payments on this account";
   - "name match 0.38" / "name match score is 38%".
   - **Fix:** de-duplicate in the web, or ask Lane B to stop the model reasons repeating the rules. Use one count everywhere.
@@ -106,13 +106,13 @@ Suggested order:
 
 Where a fix is inside a component Talal is editing (`DecisionSteps`, `StatusBanner`, `IncidentDrawer`), give him the sentence instead of editing the file.
 
-- [ ] Rule IDs: `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK` (feed, and cut to 96px in red in the route list), `TIER_MEDIUM_REQUIRES_CONDITIONAL_SET`, `PAYER_LIMIT`, `RAIL_DOWN` (`lib/feed.ts` ~97, `components/DecisionSteps.tsx` ~133).
-- [ ] "Scenario started: diverted" / "mule_wave" / "outage": use the scene names from the controls.
-- [ ] `IN_APP alert to Claire Martin`, `NETWORK alert to mule_bank`. The title "Security alert sent" is wrong for the in-app reassurance. Build the title from the `audience` and `channel` fields (`lib/feed.ts` ~225).
-- [ ] `FREEZE_AND_PAUSE` (`components/StatusBanner.tsx` ~23, `components/IncidentDrawer.tsx` ~55).
+- [x] Rule IDs: `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK` (feed, and cut to 96px in red in the route list), `TIER_MEDIUM_REQUIRES_CONDITIONAL_SET`, `PAYER_LIMIT`, `RAIL_DOWN` (`lib/feed.ts` ~97, `components/DecisionSteps.tsx` ~133).
+- [x] "Scenario started: diverted" / "mule_wave" / "outage": use the scene names from the controls.
+- [x] `IN_APP alert to Claire Martin`, `NETWORK alert to mule_bank`. The title "Security alert sent" is wrong for the in-app reassurance. Build the title from the `audience` and `channel` fields (`lib/feed.ts` ~225).
+- [x] `FREEZE_AND_PAUSE` (`components/StatusBanner.tsx` ~23, `components/IncidentDrawer.tsx` ~55).
 - [ ] Case file refs `V · R-PV-01 · evt-000328`, "T1 supplier impersonation", "(p=1.00)": fine for an analyst view, but put them in a hover or small-print line.
-- [ ] Amounts in three formats: "€85,000.00", "EUR 85,000" and an unformatted "EUR 85000.00" (`lib/feed.ts` ~86, ~135). Use one formatter.
-- [ ] "1 accounts", and other unpluralised counts.
+- [x] Amounts in three formats: "€85,000.00", "EUR 85,000" and an unformatted "EUR 85000.00" (`lib/feed.ts` ~86, ~135). Use one formatter.
+- [x] "1 accounts", and other unpluralised counts. (Lane B: the model reason "Only N successful payments on this account" still says "1 payments"; the web hides it when rule R-FL-01 already fired.)
 
 ### Animations
 
@@ -177,32 +177,32 @@ All of this section is Youssef's, including the two web items in P1. From a read
 
 ### P1
 
-- [ ] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
+- [x] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
 - [x] **Every attack or chain revert is narrated as "release() on the revoked payment"** (web). `web/lib/flow.ts:116-118` and `web/lib/store.ts:413-434`. Read `attack.attempted.data.attack` and narrate per attack.
 - [x] **The web infers "escrow" from the tier** (`web/lib/flow.ts:42-45`, `:139-141`), which is wrong for a bank hold (time-lock on R1) and for a blocked payment. The rules say the web never decides, so use `route.selected.settlement` and `payment.stopped`.
-- [ ] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode.
-- [ ] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
+- [x] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode. (Done in the engine for `LLM_MODE=live`; in cached mode the template for a scene without cached text is expected.)
+- [x] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
 - [ ] **Render free plan:** the service sleeps after 15 minutes and takes about a minute to wake, and state and the journal are lost on sleep. The engine peaks at about 196 MB, which fits in 512 MB with Next.js, but tightly. Ping `/health` a few minutes before the slot, and don't enable eERC or Fuji there.
-- [ ] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
+- [x] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
   - "six with the model" should be 7 reasons;
   - the "UI vs curl" column is stale (Mule wave, Outage, Swap and Replay are UI buttons now);
   - there are no Render instructions (`E=https://sylo-0wck.onrender.com`);
   - Reset does not clear run-time degradations.
-- [ ] **The README Quickstart is stale** (`README.md:20-25`, `:85`). The demo is at `/demo`, the button names are wrong, and `chain/` is no longer a skeleton.
-- [ ] **The pitch handoff doesn't match the metrics** (`docs/pitch-handoff.md`):
+- [x] **The README Quickstart is stale** (`README.md:20-25`, `:85`). The demo is at `/demo`, the button names are wrong, and `chain/` is no longer a skeleton.
+- [x] **The pitch handoff doesn't match the metrics** (`docs/pitch-handoff.md`):
   - p95 says 0.73 ms, but `metrics.json` and `BENCHMARKS.md` say 2.60 ms;
   - the "generated" time is stale;
   - open issues 3 and 4 are resolved (Scene 4 is in the run sheet, and the deploy reports `clusters: detector`).
 
 ### P2
 
-- [ ] Fuji mode silently signs with the Anvil dev keys when a signer key is missing (`engine/sylo/signer.py:27-37`). Pass `allow_dev_keys=False` on Fuji.
-- [ ] `ChainReverted` isn't caught in some API routes (attack, FREEZE, proof), giving a 500 (`engine/sylo/main.py:233-255`, `:380-392`). Map it to 409.
+- [x] Fuji mode silently signs with the Anvil dev keys when a signer key is missing (`engine/sylo/signer.py:27-37`). Pass `allow_dev_keys=False` on Fuji.
+- [x] `ChainReverted` isn't caught in some API routes (attack, FREEZE, proof), giving a 500 (`engine/sylo/main.py:233-255`, `:380-392`). Map it to 409.
 - [ ] A Fuji receipt timeout is treated as a revert (`chain/sylo_chain/fuji.py:323-325`). Treat it as "chain unavailable" instead.
-- [ ] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
-- [ ] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
+- [x] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
+- [x] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
 - [ ] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
-- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused. `ml/pyproject.toml` and `chain/pyproject.toml` still say "skeleton". The pitch handoff has one open TODO (team credits).
+- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused (Lane B to decide). The pitch handoff has one open TODO (team credits: ask each person). Done: the "skeleton" descriptions in `ml/` and `chain/`.
 
 ## What already works well (keep it)
 

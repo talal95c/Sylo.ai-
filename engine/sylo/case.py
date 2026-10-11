@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import MutableMapping
 from functools import lru_cache
 from typing import Any
 
@@ -174,9 +175,18 @@ def validate_case(raw: Any, *, known_refs: set[str]) -> CaseFile:
 class CaseService:
     """``mode`` is the requested ``LLM_MODE``; ``writer`` is Lane B's ``CasePort``, or None when it is not installed."""
 
-    def __init__(self, mode: str = "off", writer: Any | None = None) -> None:
+    def __init__(
+        self,
+        mode: str = "off",
+        writer: Any | None = None,
+        *,
+        live_writer: Any | None = None,
+        live_writer_ready: bool = False,
+    ) -> None:
         self.requested = mode if mode in LLM_MODES else "off"
         self.writer = writer if self.requested != "off" else None
+        self.live_writer = live_writer
+        self.live_writer_ready = live_writer is not None and live_writer_ready
 
     @property
     def mode(self) -> str:
@@ -187,14 +197,72 @@ class CaseService:
     def degraded(self) -> bool:
         return self.requested != "off" and self.writer is None
 
+    @staticmethod
+    def _write_with_document(writer: Any, payment_id: str, events: list[Event], document: str | None) -> Any:
+        if document is None:
+            return writer.write(payment_id, events)
+        documents = getattr(writer, "documents", None)
+        if not isinstance(documents, MutableMapping):
+            raise TypeError("case writer cannot accept an invoice document")
+        documents[payment_id] = document
+        try:
+            return writer.write(payment_id, events)
+        finally:
+            documents.pop(payment_id, None)
+
+    def _fallback_cache_dir(self) -> Any | None:
+        screen = getattr(self.live_writer, "text_screen", None)
+        return getattr(screen, "cache_dir", None)
+
     def write(
-        self, order: PaymentOrder, risk: RiskResult, events: list[dict[str, Any]], situation: str = "held"
+        self,
+        order: PaymentOrder,
+        risk: RiskResult,
+        events: list[dict[str, Any]],
+        situation: str = "held",
+        *,
+        document: str | None = None,
     ) -> CaseFile:
         """Blocking (the writer may call an LLM): run it in a worker thread."""
+        normalized_events = [Event.model_validate(event) for event in events]
+        if document is not None and self.live_writer is not None and self.live_writer_ready:
+            answer = self._write_with_document(self.live_writer, order.id, normalized_events, document)
+            case = validate_case(answer, known_refs=known_refs(risk, events))
+            if case.llm != "live":
+                raise ValueError("live invoice case writer did not return a live case")
+            return case
         if self.writer is not None:
+            screen = getattr(self.writer, "text_screen", None)
+            original_cache_dir = getattr(screen, "cache_dir", None)
+            fallback_cache_dir = self._fallback_cache_dir()
+            if document is not None and original_cache_dir is not None and fallback_cache_dir is not None:
+                screen.cache_dir = fallback_cache_dir
             try:
-                answer = self.writer.write(order.id, [Event.model_validate(event) for event in events])
+                answer = self._write_with_document(self.writer, order.id, normalized_events, document)
                 return validate_case(answer, known_refs=known_refs(risk, events))
             except Exception as err:
-                log.warning("case writer unusable (%s); using the case file built from the rules", err)
+                log.warning("case writer unusable (%s); using the case file built from the rules", type(err).__name__)
+            finally:
+                if document is not None and original_cache_dir is not None and fallback_cache_dir is not None:
+                    screen.cache_dir = original_cache_dir
         return rules_case_file(order, risk, events, situation)
+
+
+def redact_case_document(case: CaseFile, document: str) -> CaseFile:
+    """Prevent an analyst case from quoting the invoice verbatim into an event or decision journal."""
+    fragments = {document.strip(), *(line.strip() for line in document.splitlines())}
+    fragments.discard("")
+    ordered_fragments = sorted(fragments, key=len, reverse=True)
+
+    def redact(value: Any) -> Any:
+        if isinstance(value, str):
+            for fragment in ordered_fragments:
+                value = value.replace(fragment, "[invoice text withheld]")
+            return value
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        if isinstance(value, dict):
+            return {key: redact(item) for key, item in value.items()}
+        return value
+
+    return CaseFile.model_validate(redact(case.model_dump(by_alias=True, mode="json")))

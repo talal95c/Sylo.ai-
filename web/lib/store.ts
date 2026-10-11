@@ -20,7 +20,7 @@ import type {
   SystemModeData,
   TrafficSampleData,
 } from "./events";
-import { describe } from "./feed";
+import { describe, distinctReasons } from "./feed";
 
 export type PaymentStatus =
   | "idle"
@@ -55,6 +55,8 @@ export interface FeedItem {
   functionName?: string;
   reasonCode?: string;
   incidentId?: string;
+  /** Title for this event when the type alone is not specific enough (alerts, attacks). */
+  title?: string;
 }
 
 export interface RailView extends RailDownData {
@@ -146,6 +148,8 @@ export interface ViewState {
   };
   credited: PaymentCreditedData | null;
   stopped: PaymentStoppedData | null;
+  quote: RouteSelectedData | null;
+  timing: { createdTs?: string; committedTs?: string; creditedTs?: string };
   feed: FeedItem[];
   wave: WaveView | null;
 }
@@ -176,6 +180,8 @@ export const initialState: ViewState = {
   attack: { attempted: false, reverted: false, reason: null, name: null, functionName: null },
   credited: null,
   stopped: null,
+  quote: null,
+  timing: {},
   feed: [],
   wave: null,
 };
@@ -340,6 +346,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
       const amount = data.amount as Record<string, unknown>;
       return {
         ...next,
+        timing: { createdTs: event.ts },
         payment: {
           paymentId: event.paymentId ?? "",
           payerName: String(payer.name ?? ""),
@@ -363,7 +370,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
           score: Number(data.score),
           tier: data.tier as Tier,
           model: String(data.model ?? ""),
-          reasons: data.reasons as { ref: string; text: string }[],
+          reasons: distinctReasons(data.reasons as { ref: string; text: string; ruleId?: string | null }[]),
           rulesFired: data.rulesFired as string[],
           oobResolvable: data.oobResolvable === true,
         },
@@ -382,6 +389,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         ...next,
         selectedRouteId: String(data.routeId),
         routeScores: scores,
+        quote: data as unknown as RouteSelectedData,
         hops: selectedHops(next.routes, String(data.routeId)),
         payment: next.payment
           ? {
@@ -403,6 +411,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "intent.committed":
       return {
         ...next,
+        timing: { ...next.timing, committedTs: event.ts },
         payment: next.payment
           ? {
               ...next.payment,
@@ -446,7 +455,10 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
       return {
         ...next,
         payment: paymentWithStatus(next.payment, "held"),
-        held: data as unknown as PaymentHeldData,
+        held: {
+          ...(data as unknown as PaymentHeldData),
+          reasons: distinctReasons((data as unknown as PaymentHeldData).reasons),
+        },
         alertOpen: true,
       };
     case "case.ready":
@@ -504,6 +516,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         ...next,
         payment: paymentWithStatus(next.payment, "credited"),
         credited: data as unknown as PaymentCreditedData,
+        timing: { ...next.timing, creditedTs: event.ts },
       };
     case "payment.stopped":
       return {

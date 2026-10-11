@@ -1,7 +1,7 @@
 [project]
 name = "sylo-risk"
 version = "0.1.0"
-description = "Sylo.ai Lane B: calibrated fraud model implementing RiskPort (skeleton in v0)"
+description = "Sylo.ai Lane B: calibrated fraud model implementing RiskPort, mule-cluster detector and case writer"
 requires-python = ">=3.11"
 dependencies = [
   "lightgbm>=4.3",

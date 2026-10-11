@@ -22,11 +22,11 @@ export function GlowingShadow({
     >
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -inset-[3px] -z-10 rounded-[21px] bg-[var(--accent)] opacity-[0.035] blur-[8px] transition-[opacity,filter] duration-300 ease-out group-hover:opacity-[0.09] group-hover:blur-[10px] motion-reduce:transition-none"
+        className="pointer-events-none absolute inset-0 -z-10 rounded-[18px] bg-[var(--accent)] opacity-[0.035] blur-[8px] transition-[opacity,filter] duration-300 ease-out group-hover:opacity-[0.09] group-hover:blur-[10px] motion-reduce:transition-none"
       />
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -inset-px -z-10 rounded-[19px] opacity-60 ring-1 ring-[rgba(1,43,255,0.08)] transition-opacity duration-300 ease-out group-hover:opacity-100 motion-reduce:transition-none"
+        className="pointer-events-none absolute inset-0 -z-10 rounded-[18px] opacity-60 ring-1 ring-[rgba(1,43,255,0.08)] transition-opacity duration-300 ease-out group-hover:opacity-100 motion-reduce:transition-none"
       />
       <div className={cx("card relative z-0 h-full w-full rounded-[18px]", panelClassName)}>
         {children}

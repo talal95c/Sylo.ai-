@@ -4,7 +4,7 @@ from sylo_spec.models import Tier
 from sylo_spec.scenarios import DIVERTED_ORDER, LEGIT_ORDER
 
 from sylo.norms import NormsEngine
-from sylo.router import choose_route, route_cost
+from sylo.router import choose_route, route_cost, route_cost_breakdown
 
 ENGINE = NormsEngine()
 MODEL = ENGINE.pack.route_model
@@ -17,23 +17,59 @@ def _decision(order, tier, oob_resolvable=False):
 
 def test_route_scores_to_two_decimals():
     pack = ENGINE.pack
-    assert round(route_cost(pack.route("R1"), AMOUNT, MODEL), 2) == 216.00
-    assert round(route_cost(pack.route("R3"), AMOUNT, MODEL), 2) == 179.21
-    assert round(route_cost(pack.route("R2"), AMOUNT, MODEL), 2) == 941.73
+    assert round(route_cost(pack.route("R1"), AMOUNT, MODEL), 2) == 1834.40
+    assert round(route_cost(pack.route("R3"), AMOUNT, MODEL), 2) == 855.81
+    assert round(route_cost(pack.route("R2"), AMOUNT, MODEL), 2) == 2640.03
+
+
+def test_cost_breakdown_sums_to_route_score_and_includes_excluded_route_costs():
+    r1 = route_cost_breakdown(ENGINE.pack.route("R1"), AMOUNT, MODEL)
+    assert r1["fxMarginEur"] == 1700.0
+    assert r1["cashCostEur"] + r1["timeCostEur"] + r1["failureCostEur"] == r1["totalCostEur"]
+    assert r1["totalCostEur"] == round(route_cost(ENGINE.pack.route("R1"), AMOUNT, MODEL), 2)
+
+    decision = _decision(LEGIT_ORDER, Tier.LOW)
+    r4 = next(score for score in decision.scores if score["routeId"] == "R4")
+    assert r4["s"] is None and r4["excludedBy"] == "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK"
+    assert r4["name"] == "Mobile wallet remittance"
+    assert r4["etaLabel"] == "minutes" and r4["etaMinutes"] == 10.0
+    assert r4["feesEur"] == 1275.0 and r4["fxMarginEur"] == 1700.0 and r4["cashCostEur"] == 2975.0
+    assert {score["routeId"]: score["recipientGetsGhs"] for score in decision.scores} == {
+        "R1": 1098610.38,
+        "R2": 1098610.38,
+        "R3": 1112062.75,
+        "R4": 1098610.38,
+    }
 
 
 def test_low_picks_r3_directly():
     decision = _decision(LEGIT_ORDER, Tier.LOW)
     assert decision.route.id == "R3" and decision.settlement == "DIRECT"
-    assert decision.scores == [
-        {"routeId": "R1", "s": 216.0, "excludedBy": None},
-        {"routeId": "R2", "s": 941.73, "excludedBy": None},
-        {"routeId": "R3", "s": 179.21, "excludedBy": None},
-        {"routeId": "R4", "s": None, "excludedBy": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK"},
+    assert [(score["routeId"], score["s"], score["excludedBy"]) for score in decision.scores] == [
+        ("R1", 1834.4, None),
+        ("R2", 2640.03, None),
+        ("R3", 855.81, None),
+        ("R4", None, "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK"),
     ]
+    assert all(
+        {"name", "etaLabel", "etaMinutes", "feesEur", "fxMarginEur", "cashCostEur", "recipientGetsGhs"}
+        <= score.keys()
+        for score in decision.scores
+    )
+    data = decision.to_event_data()
+    assert data["cost"] == {
+        "feesEur": 170.0,
+        "fxMarginEur": 680.0,
+        "timeCostEur": 1.56,
+        "failureCostEur": 4.25,
+        "cashCostEur": 850.0,
+        "totalCostEur": 855.81,
+    }
+    assert data["etaMinutes"] == 120.0 and data["midRateEurGhs"] == 13.1886
+    assert data["recipientGetsGhs"] == 1112062.75
     assert decision.price_of_safety == 0.0 and decision.fees_eur == 170.0
     assert decision.reason == (
-        "R3 is the cheapest compliant route: €179 all-in against €216 via SWIFT. "
+        "R3 is the cheapest compliant route: €856 all-in (fees, FX margin and delay) against €1,834 via SWIFT. "
         "R4 is excluded by Ghana's export-proceeds rule."
     )
 
@@ -45,7 +81,7 @@ def test_medium_allows_only_holding_routes():
     assert r2["excludedBy"] == "TIER_MEDIUM_REQUIRES_CONDITIONAL_SETTLEMENT"
     assert decision.reason == (
         "Risk is MEDIUM, so only routes that can hold the money are allowed (R1 bank hold, R3 escrow). "
-        "R3 is the cheapest: €179 against €216. Price of safety: €0."
+        "R3 is the cheapest: €856 against €1,834. Price of safety: €0."
     )
 
 

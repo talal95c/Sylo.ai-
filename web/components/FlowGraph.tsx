@@ -15,6 +15,7 @@ import {
   type Lane,
   type NarrationTone,
 } from "@/lib/flow";
+import { buildQuote, pct } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { Check, cx, ease, euros, formatMoney, shortHash, Spinner } from "./ui";
 
@@ -271,10 +272,11 @@ function laneValue<T>(lane: Lane | null, own: Lane, value: T): T | null {
   return lane === own ? value : null;
 }
 
-export function FlowGraph({ state }: { state: ViewState }) {
+export function FlowGraph({ state, speed = 1 }: { state: ViewState; speed?: number }) {
   const statuses = flowStatuses(state);
   const lane = flowLane(state);
   const p = state.payment;
+  const quote = buildQuote(state);
   const reduced = useReducedMotion();
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -294,7 +296,7 @@ export function FlowGraph({ state }: { state: ViewState }) {
     if (!frame) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      setScale(Math.min(1, width / CANVAS_W, height / CANVAS_H));
+      setScale(Math.min(1.15, width / CANVAS_W, height / CANVAS_H));
     });
     observer.observe(frame);
     document.fonts?.ready.then(remeasure).catch(() => undefined);
@@ -392,8 +394,16 @@ export function FlowGraph({ state }: { state: ViewState }) {
                     <>
                       <path d={d} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeDasharray="6 8" className="flow-dash" />
                       {reduced ? null : (
-                        <circle r={3.5} fill="var(--accent)">
-                          <animateMotion dur="1.4s" repeatCount="indefinite" path={d} />
+                        <circle key={`${edge.id}-${status}`} r={3.5} fill="var(--accent)">
+                          <animateMotion
+                            ref={(node: SVGAnimateMotionElement | null) => {
+                              node?.beginElement();
+                            }}
+                            begin="indefinite"
+                            dur={`${1.4 / speed}s`}
+                            repeatCount="indefinite"
+                            path={d}
+                          />
                         </circle>
                       )}
                     </>
@@ -528,9 +538,10 @@ export function FlowGraph({ state }: { state: ViewState }) {
           >
             <Group>
               <Row label="Paid to" value={state.credited && p ? (state.credited.at === "supplier_ssx" ? p.payeeName : p.accountHolder) : null} />
-              <Row label="All-in cost" value={state.credited ? euros(state.credited.routeCostEur) : null} tone="var(--low)" />
-              <Row label="Via SWIFT" value={state.credited ? euros(state.credited.swiftRouteCostEur) : null} />
-              <Row label="Time" value={state.credited?.elapsedLabel} />
+              <Row label={quote?.basis === "cash" ? "Fees + FX" : "All-in cost"} value={state.credited && quote ? euros(quote.cost) : null} tone="var(--low)" />
+              <Row label="Via SWIFT" value={state.credited && quote?.swift ? euros(quote.swift.cost) : null} />
+              <Row label="Saved" value={state.credited && quote?.savedEur !== undefined ? `${euros(quote.savedEur)}${quote.savedPct !== undefined ? ` · ${pct(quote.savedPct)}` : ""}` : null} tone="var(--low)" />
+              <Row label="Arrives" value={state.credited?.elapsedLabel} />
             </Group>
           </FlowNode>
 

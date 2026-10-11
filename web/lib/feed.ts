@@ -32,6 +32,101 @@ function nameFor(id: unknown): string {
   return institutionNames[key] ?? key.replaceAll("_", " ");
 }
 
+/** Amounts everywhere on screen: "€85,000" or "€216.50". */
+export function formatEur(value: unknown): string {
+  const amount = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(amount)) return `€${text(value)}`;
+  return `€${amount.toLocaleString("en-US", { minimumFractionDigits: amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+}
+
+const RULE_LABELS: Record<string, string> = {
+  GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK: "Ghana: export proceeds must reach the exporter's nominated bank",
+  TIER_MEDIUM_REQUIRES_CONDITIONAL_SETTLEMENT: "This risk level needs a route that can hold the money",
+  PAYER_LIMIT: "Above the payer's fee or delay limit",
+  RAIL_DOWN: "Rail unavailable",
+  KILL_SWITCH: "Adapter cut by the kill switch",
+  INTENT_HASH_MISMATCH: "does not match the signed payment",
+  NONCE_USED: "already executed",
+  REVOKED: "payment revoked",
+  EXPIRED: "validity window passed",
+  NOT_CONFIRMED: "supplier has not confirmed",
+  PaymentNotReleasable: "the payment cannot be released",
+  CommitmentMismatch: "the payment differs from the signed one",
+  InvalidTransition: "the payment was already committed",
+};
+
+/** A rule, refusal or revert code as a short sentence; unknown codes are shown as they are. */
+export function ruleLabel(code: unknown): string {
+  const key = text(code);
+  return RULE_LABELS[key] ?? key;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  FREEZE_AND_PAUSE: "Hold frozen and corridor paused",
+  FREEZE: "Hold frozen",
+  PAUSE: "Corridor paused",
+  NONE: "No action",
+  CONFIRM_REVOCATION: "Revocation confirmed",
+  RELEASE: "Release approved",
+};
+
+export function actionLabel(code: unknown): string {
+  const key = text(code);
+  return ACTION_LABELS[key] ?? key.replaceAll("_", " ").toLowerCase();
+}
+
+const SCENARIO_LABELS: Record<string, string> = {
+  legit: "Legitimate payment",
+  diverted: "Diverted invoice",
+  diverted_simswap: "Diverted invoice, SIM swapped",
+  diverted_expiry: "Diverted invoice, hold expiry",
+  diverted_timelock: "Diverted invoice, time-lock",
+  mule_wave: "Mule wave",
+  outage: "Rail outage",
+};
+
+export function scenarioLabel(code: unknown): string {
+  const key = text(code);
+  return SCENARIO_LABELS[key] ?? key.replaceAll("_", " ");
+}
+
+const AUDIENCE_LABELS: Record<string, string> = {
+  payer: "payer",
+  analyst: "fraud analyst",
+  beneficiary_bank: "beneficiary's bank",
+  supplier: "supplier",
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+  IN_APP: "In-app message",
+  SMS: "SMS",
+  NETWORK: "Network fraud alert",
+};
+
+const ATTACK_TITLES: Record<string, string> = {
+  release_revoked: "Unauthorized release attempted",
+  swap_beneficiary: "Beneficiary swap attempted",
+  replay: "Replay attempted",
+  stolen_verifier_key: "Forged confirmation attempted",
+};
+
+/**
+ * Model reasons that repeat a rule that already fired (same signal, other wording), keyed by the rule.
+ * The engine sends both; the screen shows the rule's sentence once.
+ */
+const REPEATS_RULE: { ruleId: string; pattern: RegExp }[] = [
+  { ruleId: "R-FL-01", pattern: /successful payments? on this account/i },
+  { ruleId: "R-FL-03", pattern: /name match score/i },
+];
+
+export function distinctReasons<T extends { text: string; ruleId?: string | null }>(reasons: T[]): T[] {
+  const fired = new Set(reasons.map((reason) => reason.ruleId).filter(Boolean));
+  return reasons.filter(
+    (reason) =>
+      reason.ruleId || !REPEATS_RULE.some((repeat) => fired.has(repeat.ruleId) && repeat.pattern.test(reason.text)),
+  );
+}
+
 export type OutcomeTone = "success" | "warning" | "danger" | "neutral";
 
 const VERIFICATION_BADGES: Record<string, { label: string; tone: OutcomeTone }> = {
@@ -71,6 +166,7 @@ export function describe(
   let family: FeedItem["family"] = "system";
   let label = `Event received: ${event.type}`;
   let outcome: string | undefined;
+  let title: string | undefined;
 
   switch (event.type) {
     case "session.reset":
@@ -81,13 +177,13 @@ export function describe(
       break;
     case "scenario.started":
       family = "decision";
-      label = `Scenario started: ${text(data.scenario)}`;
+      label = `Scene started: ${scenarioLabel(data.scenario)}`;
       break;
     case "payment.created": {
       family = "decision";
       const beneficiary = data.beneficiary as Record<string, unknown> | undefined;
       const amount = data.amount as Record<string, unknown> | undefined;
-      label = `Payment received: ${text(amount?.currency)} ${text(amount?.value)} for ${text(beneficiary?.payeeName)}`;
+      label = `Payment received: ${formatEur(amount?.value)} for ${text(beneficiary?.payeeName)}`;
       break;
     }
     case "norms.checked": {
@@ -98,8 +194,8 @@ export function describe(
         return candidate.status === "EXCLUDED";
       }) as Record<string, unknown> | undefined;
       label = excluded
-        ? `Norms checked: ${text(excluded.routeId)} excluded by ${text(excluded.excludedBy, "policy")}`
-        : `Norms checked: ${routes.length} routes evaluated`;
+        ? `Norms checked: ${text(excluded.routeId)} excluded. ${ruleLabel(text(excluded.excludedBy, "policy"))}`
+        : `Norms checked: ${count(routes.length, "route")} evaluated`;
       break;
     }
     case "risk.scored":
@@ -144,7 +240,7 @@ export function describe(
       break;
     case "escrow.deposited":
       family = "chain";
-      label = `EUR ${text(data.amount)} locked in tEURC escrow`;
+      label = `${formatEur(data.amount)} locked in tEURC escrow`;
       break;
     case "payment.held":
       family = "alert";
@@ -181,7 +277,7 @@ export function describe(
       break;
     case "payment.credited":
       family = "decision";
-      label = `Payment credited at ${nameFor(data.at)} · fees €${number(data.feesEur)}`;
+      label = `Payment credited at ${nameFor(data.at)} · fees ${formatEur(number(data.feesEur))}`;
       break;
     case "payment.stopped":
       family = "alert";
@@ -189,19 +285,20 @@ export function describe(
       break;
     case "case.action":
       family = "decision";
-      label = `Analyst action: ${text(data.action, "recorded")}${data.by ? ` · ${text(data.by)}` : ""}`;
+      label = `Analyst action: ${actionLabel(text(data.action, "recorded"))}${data.by ? ` · ${text(data.by)}` : ""}`;
       break;
     case "attack.attempted":
       family = "attack";
       label = text(data.description, "Attack attempt started");
+      title = ATTACK_TITLES[text(data.attack)];
       break;
     case "leg.rejected":
       family = "attack";
-      label = `Leg ${number(data.hop) + 1} rejected on ${text(data.rail)}: ${text(data.reason)}`;
+      label = `Leg ${number(data.hop) + 1} rejected on ${text(data.rail)}: ${ruleLabel(data.reason)}`;
       break;
     case "tx.reverted":
       family = "attack";
-      label = `${text(data.function, "Transaction")}() reverted: ${text(data.reason)}`;
+      label = `${text(data.function, "Transaction")}() reverted: ${ruleLabel(data.reason)}`;
       break;
     case "rail.down":
       family = "alert";
@@ -217,7 +314,7 @@ export function describe(
       break;
     case "guardian.incident":
       family = "attack";
-      label = `${text(data.headline, "Guardian incident")} · ${text(data.incidentId)}`;
+      label = `${text(data.headline, "Guardian incident")} · ${actionLabel(data.action)} · ${text(data.incidentId)}`;
       break;
     case "traffic.sample":
       family = "system";
@@ -276,10 +373,15 @@ export function describe(
       family = "system";
       label = `Circuit breaker ${text(data.breakerId)} ${text(data.reason).toLowerCase()}`;
       break;
-    case "alert.raised":
+    case "alert.raised": {
       family = "alert";
-      label = `${text(data.channel)} alert to ${text(data.to)}: ${text(data.text)}`;
+      const channel = CHANNEL_LABELS[text(data.channel)] ?? text(data.channel);
+      const audience = AUDIENCE_LABELS[text(data.audience)];
+      const to = text(data.audience) === "beneficiary_bank" ? nameFor(data.to) : text(data.to);
+      title = text(data.audience) === "payer" ? `Message to the payer (${channel})` : `${channel} sent`;
+      label = `${channel} to ${to}${audience ? ` (${audience})` : ""}: ${text(data.text)}`;
       break;
+    }
   }
 
   return {
@@ -289,6 +391,7 @@ export function describe(
     ...(txHash ? { txHash } : {}),
     ...(explorerUrl !== undefined ? { explorerUrl } : {}),
     ...(outcome ? { outcome } : {}),
+    ...(title ? { title } : {}),
     ...(typeof data.function === "string" ? { functionName: data.function } : {}),
     ...(typeof data.reason === "string" ? { reasonCode: data.reason } : {}),
     ...(typeof data.incidentId === "string" ? { incidentId: data.incidentId } : {}),

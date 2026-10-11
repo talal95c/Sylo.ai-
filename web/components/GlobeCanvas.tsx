@@ -8,6 +8,15 @@ import { greatCircleMidpoint } from "@/lib/geo";
 import type { ViewState } from "@/lib/store";
 import { arcDotPositions } from "@/lib/arcDots";
 import { ACCENT, DANGER_COLOR, HOP_COLORS, REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
+import {
+  altitudeFactor,
+  freeCenter,
+  freeRect,
+  viewOffsetFor,
+  type Occluder,
+  type OccluderSide,
+  type Rect,
+} from "@/lib/globeFrame";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -15,6 +24,7 @@ export interface GlobeCanvasProps {
   chainAltitude: number;
   atmosphereColor: string;
   speed: number;
+  onFrame?: (cx: number, cy: number) => void;
 }
 
 interface ArcDatum {
@@ -38,6 +48,7 @@ interface DotTrack {
   color: string;
   opacity: number;
   radius: number;
+  taper?: boolean;
 }
 
 interface HtmlDatum {
@@ -127,7 +138,7 @@ function hopView(
     ? Math.max(routeAltitude, chainAltitude * 3.2)
     : routeAltitude;
   return {
-    lat: midpoint.lat - altitude * 3,
+    lat: midpoint.lat,
     lng: midpoint.lng,
     altitude,
   };
@@ -164,8 +175,12 @@ function dotTrackObject(datum: object) {
   });
   const mesh = new THREE.InstancedMesh(DOT_GEOMETRY, material, track.points.length);
   const matrix = new THREE.Matrix4();
+  const last = Math.max(1, track.points.length - 1);
   track.points.forEach((point, index) => {
-    matrix.makeScale(track.radius, track.radius, track.radius).setPosition(point);
+    const radius = track.taper
+      ? track.radius * (0.6 + (0.65 * index) / last)
+      : track.radius;
+    matrix.makeScale(radius, radius, radius).setPosition(point);
     mesh.setMatrixAt(index, matrix);
   });
   mesh.instanceMatrix.needsUpdate = true;
@@ -212,10 +227,20 @@ export default function GlobeCanvas({
   chainAltitude,
   atmosphereColor,
   speed,
+  onFrame,
 }: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { width, height } = useViewport();
   const reducedMotion = useReducedMotion();
+  const freeRectRef = useRef<Rect | null>(null);
+  const viewOffsetRef = useRef({ x: 0, y: 0 });
+  const viewOffsetTargetRef = useRef({ x: 0, y: 0 });
+  const offsetTweenRef = useRef(0);
+  const onFrameRef = useRef(onFrame);
+
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+  }, [onFrame]);
   const [landDots, setLandDots] = useState<LandDot[]>([]);
   const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
   const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
@@ -353,18 +378,20 @@ export default function GlobeCanvas({
       fromId: string,
       toId: string,
       altitude: number | null,
-      style: { color: string; opacity: number; radius?: number },
+      style: { color: string; opacity: number; radius?: number; taper?: boolean },
     ) => {
       const from = institutions[fromId];
       const to = institutions[toId];
       if (!from || !to) return;
       const radius = style.radius ?? DOT_RADIUS;
+      const taper = style.taper ?? false;
       tracks.push(
-        stable(`dots-${id}`, `${fromId}>${toId}|${altitude}|${style.color}|${style.opacity}|${radius}`, () => ({
+        stable(`dots-${id}`, `${fromId}>${toId}|${altitude}|${style.color}|${style.opacity}|${radius}|${taper}`, () => ({
           id,
           color: style.color,
           opacity: style.opacity,
           radius,
+          taper,
           points: arcDotPositions(from, to, altitude, DOT_SPACING),
         })),
       );
@@ -391,7 +418,7 @@ export default function GlobeCanvas({
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
         const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
-        const excluded = route.status === "EXCLUDED" || unavailable;
+        const excludedByNorms = route.status === "EXCLUDED";
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
           dots(
@@ -399,7 +426,11 @@ export default function GlobeCanvas({
             hop.from,
             hop.to,
             altitude,
-            excluded ? { color: DANGER_COLOR, opacity: 0.9 } : { color: HOP_COLORS[hop.kind], opacity: 0.5 },
+            unavailable
+              ? { color: DANGER_COLOR, opacity: 0.55 }
+              : excludedByNorms
+                ? { color: "#0a0a0a", opacity: 0.12, radius: DOT_RADIUS * 0.8 }
+                : { color: HOP_COLORS[hop.kind], opacity: 0.35, taper: true },
           );
         });
       }
@@ -413,7 +444,7 @@ export default function GlobeCanvas({
       const duration = reducedMotion ? 0 : hop.durationMs ?? 1400;
 
       if (hop.state === "pending") {
-        dots(base, hop.from, hop.to, altitude, { color: "#0a0a0a", opacity: 0.28, radius: DOT_RADIUS * 0.85 });
+        dots(base, hop.from, hop.to, altitude, { color: "#0a0a0a", opacity: 0.28, radius: DOT_RADIUS * 0.85, taper: true });
         continue;
       }
 
@@ -443,7 +474,7 @@ export default function GlobeCanvas({
         continue;
       }
 
-      dots(base, hop.from, hop.to, altitude, { color: kindColor, opacity: 0.45 });
+      dots(base, hop.from, hop.to, altitude, { color: kindColor, opacity: 0.45, taper: true });
       push(`${base}-comet`, hop.from, hop.to, `comet-${duration}-${state.released}`, {
         color: [rgba(hop.kind === "chain" ? kindColor : ACCENT, 0), hop.kind === "chain" ? kindColor : ACCENT],
         altitude,
@@ -461,7 +492,7 @@ export default function GlobeCanvas({
       route.hops.forEach((hop, index) => {
         dots(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, hop.kind === "chain" ? chainAltitude : null, {
           color: DANGER_COLOR,
-          opacity: 0.9,
+          opacity: 0.55,
         });
       });
     }
@@ -536,8 +567,8 @@ export default function GlobeCanvas({
       ...new Set([
         ...(focusedHop
           ? [
-              focusedHop.from,
               focusedHop.to,
+              focusedHop.from,
               ...(payerFocused ? ["payer_rhone"] : []),
               ...(supplierFocused ? ["supplier_ssx"] : []),
             ]
@@ -642,7 +673,7 @@ export default function GlobeCanvas({
           lng: lockPoint.lng,
           altitude: chainAltitude,
           className: "globe-marker",
-          html: `<div style="color:${color};display:flex;flex-direction:column;align-items:center;gap:6px"><div class="badge">${icon}</div><div class="caption">${caption}</div></div>`,
+          html: `<div style="color:${color};position:relative"><div class="badge">${icon}</div><div class="caption">${caption}</div></div>`,
         })),
       );
     }
@@ -674,15 +705,11 @@ export default function GlobeCanvas({
       const globe = globeRef.current;
       if (!globe) return;
 
-      const panelRects = [...document.querySelectorAll<HTMLElement>("aside")]
-        .map((panel) => panel.getBoundingClientRect())
-        .filter((rect) => rect.width > 0 && rect.height > 0);
-      const leftPanel = panelRects.find((rect) => rect.left < width / 2);
-      const rightPanel = panelRects.find((rect) => rect.left > width / 2);
-      const viewportLeft = leftPanel ? leftPanel.right + 8 : 12;
-      const viewportRight = rightPanel ? rightPanel.left - 8 : width - 12;
-      const viewportTop = 76;
-      const viewportBottom = height - 72;
+      const free = freeRectRef.current;
+      const viewportLeft = free ? free.left : 12;
+      const viewportRight = free ? free.right : width - 12;
+      const viewportTop = free ? free.top : 76;
+      const viewportBottom = free ? free.bottom : height - 72;
       const placed: DOMRect[] = [...document.querySelectorAll<HTMLElement>(".globe-marker, .globe-chain-label")]
         .filter((marker) => marker.style.opacity !== "0")
         .map((marker) => {
@@ -762,6 +789,19 @@ export default function GlobeCanvas({
           }
         }
 
+        const stillCollides = placed.some(
+          (other) =>
+            rect.left < other.right + 8 &&
+            rect.right > other.left - 8 &&
+            rect.top < other.bottom + 6 &&
+            rect.bottom > other.top - 6,
+        );
+        if (stillCollides) {
+          element.classList.add("panel-hidden");
+          element.style.opacity = "0";
+          continue;
+        }
+
         const connectorLength = Math.hypot(shiftX, gap);
         const connectorAngle = (Math.atan2(shiftX, gap) * 180) / Math.PI;
         element.style.setProperty("--globe-label-connector-length", `${connectorLength}px`);
@@ -800,14 +840,14 @@ export default function GlobeCanvas({
       waveRings.push(ring("wave-cluster", lat, lng, 0.006, DANGER_COLOR, 4));
     }
     if (state.attack.attempted && lockPoint) {
-      return [...waveRings, ring("attack", lockPoint.lat, lockPoint.lng, 0.005, DANGER_COLOR, 6)];
+      return [...waveRings, ring("attack", lockPoint.lat, lockPoint.lng, chainAltitude, DANGER_COLOR, 6)];
     }
     if (state.refunded) {
       const payer = at("payer_rhone");
       return payer ? [...waveRings, ring("refund", payer.lat, payer.lng, 0.005, REFUND_COLOR, 4)] : waveRings;
     }
     if (holding && lockPoint) {
-      return [...waveRings, ring("held", lockPoint.lat, lockPoint.lng, 0.005, TIER_COLORS.MEDIUM, 5)];
+      return [...waveRings, ring("held", lockPoint.lat, lockPoint.lng, chainAltitude, TIER_COLORS.MEDIUM, 5)];
     }
     if (state.credited) {
       const target = at(state.credited.at);
@@ -838,17 +878,18 @@ export default function GlobeCanvas({
     const schedule = (delay: number, callback: () => void) => {
       timers.push(setTimeout(callback, ms(delay)));
     };
-    const focus = (point: GeoPoint | undefined, altitude: number, duration: number, latitudeOffset = 0) => {
+    const pov = (target: { lat: number; lng: number; altitude: number }, duration: number) => {
+      const fit = altitudeFactor(freeRectRef.current, width, height);
+      globe.pointOfView({ ...target, altitude: target.altitude * fit }, duration);
+    };
+    const focus = (point: GeoPoint | undefined, altitude: number, duration: number) => {
       if (!point) return;
-      globe.pointOfView(
-        { lat: point.lat + latitudeOffset, lng: point.lng, altitude },
-        ms(duration),
-      );
+      pov({ lat: point.lat, lng: point.lng, altitude }, ms(duration));
     };
     const pointAt = (id: string) => institutions?.[id];
-    const focusLock = (altitude: number, duration: number, latitudeOffset = 0) => {
+    const focusLock = (altitude: number, duration: number) => {
       if (!lockPoint) return;
-      focus(lockPoint, altitude, duration, latitudeOffset);
+      focus(lockPoint, altitude, duration);
     };
     const pullBack = (delay: number) => {
       schedule(delay, () => {
@@ -902,27 +943,25 @@ export default function GlobeCanvas({
             900,
             1800,
           );
-          globe.pointOfView(target, ms(duration / Math.max(1, speedRef.current)));
+          pov(target, ms(duration / Math.max(1, speedRef.current)));
         }
         break;
       }
       case "payment.held": {
-        const compactViewport = window.innerHeight < 840;
-        focusLock(1.4, 1200, compactViewport ? -11.5 : -5.5);
+        focusLock(1.4, 1200);
         break;
       }
       case "verification.requested": {
         const supplier = pointAt("supplier_ssx");
         if (!lockPoint || !supplier) break;
-        const target = hopView(lockPoint, supplier, chainAltitude, true);
-        const compactViewport = window.innerHeight < 840;
-        const altitude = Math.max(
-          1.4,
-          target.altitude * (compactViewport ? 3 : 2.25),
+        const midpoint = greatCircleMidpoint(lockPoint, supplier);
+        const routeAltitude = clamp(
+          0.8 + angularDistanceDegrees(lockPoint, supplier) / 32,
+          1,
+          1.75,
         );
-        const latitudeOffset = altitude * (compactViewport ? 14 : 8.5);
-        globe.pointOfView(
-          { ...target, lat: target.lat - latitudeOffset, altitude },
+        pov(
+          { lat: midpoint.lat, lng: midpoint.lng, altitude: Math.max(1.4, routeAltitude) },
           ms(1400),
         );
         break;
@@ -933,7 +972,7 @@ export default function GlobeCanvas({
       case "escrow.refunded": {
         const payer = pointAt("payer_rhone");
         if (payer && lockPoint) {
-          globe.pointOfView(hopView(payer, lockPoint, chainAltitude), ms(1600));
+          pov(hopView(payer, lockPoint, chainAltitude), ms(1600));
         }
         break;
       }
@@ -963,7 +1002,74 @@ export default function GlobeCanvas({
     return () => {
       timers.forEach(clearTimeout);
     };
-  }, [lastEvent, state.scenario, state.wave, institutions, lockPoint, reducedMotion, chainAltitude]);
+  }, [lastEvent, state.scenario, state.wave, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
+
+  // Panel-aware framing: measure the occluders, then tween a camera view
+  // offset so pointOfView targets land in the centre of the free area.
+  useEffect(() => {
+    const applyViewOffset = (target: { x: number; y: number }) => {
+      const globe = globeRef.current;
+      if (!globe) return;
+      const camera = globe.camera() as THREE.PerspectiveCamera;
+      if (offsetTweenRef.current) {
+        cancelAnimationFrame(offsetTweenRef.current);
+        offsetTweenRef.current = 0;
+      }
+      const setOffset = (x: number, y: number) => {
+        viewOffsetRef.current = { x, y };
+        if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) camera.clearViewOffset();
+        else camera.setViewOffset(width, height, x, y, width, height);
+      };
+      if (reducedMotion) {
+        setOffset(target.x, target.y);
+        return;
+      }
+      const from = { ...viewOffsetRef.current };
+      const start = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / 600);
+        const eased = 1 - (1 - t) ** 3;
+        setOffset(from.x + (target.x - from.x) * eased, from.y + (target.y - from.y) * eased);
+        if (t < 1) offsetTweenRef.current = requestAnimationFrame(tick);
+        else offsetTweenRef.current = 0;
+      };
+      offsetTweenRef.current = requestAnimationFrame(tick);
+    };
+
+    const measure = () => {
+      const globe = globeRef.current;
+      const occluders: Occluder[] = [
+        ...document.querySelectorAll<HTMLElement>("[data-globe-occluder]"),
+      ].map((element) => ({
+        side: element.dataset.globeOccluder as OccluderSide,
+        rect: element.getBoundingClientRect(),
+      }));
+      const free = freeRect(occluders, width, height);
+      freeRectRef.current = free;
+      const { cx, cy } = free
+        ? freeCenter(free)
+        : { cx: width / 2, cy: height / 2 };
+      onFrameRef.current?.(cx, cy);
+      if (!globe) return;
+      if (process.env.NODE_ENV !== "production") {
+        (window as unknown as { __syloGlobe?: GlobeMethods }).__syloGlobe = globe;
+      }
+      const target = free ? viewOffsetFor(width, height, cx, cy) : { x: 0, y: 0 };
+      const previous = viewOffsetTargetRef.current;
+      viewOffsetTargetRef.current = target;
+      if (Math.abs(target.x - previous.x) <= 4 && Math.abs(target.y - previous.y) <= 4) return;
+      applyViewOffset(target);
+    };
+
+    measure();
+    const interval = setInterval(measure, 250);
+    window.addEventListener("resize", measure);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("resize", measure);
+      if (offsetTweenRef.current) cancelAnimationFrame(offsetTweenRef.current);
+    };
+  }, [width, height, reducedMotion]);
 
   function onReady() {
     const globe = globeRef.current;

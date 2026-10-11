@@ -2,7 +2,7 @@
 
 Who drives: Lane A. Screen: `http://localhost:3000/demo`. Everything below works with the mock chain and the rules; the real components only change the labels (`simulated`, explorer links, model name).
 
-Endpoints and events are described in [`spec/api.md`](../spec/api.md). `$E` is the engine URL (`http://localhost:8000`).
+Endpoints and events are described in [`spec/api.md`](../spec/api.md). `$E` is the engine URL: `http://localhost:8000` locally, `https://sylo-0wck.onrender.com` on Render (the web app proxies `/v1` to the engine, so the same host serves both).
 
 ## Before the jury
 
@@ -12,7 +12,7 @@ Endpoints and events are described in [`spec/api.md`](../spec/api.md). `$E` is t
 | Check everything | `make test` | green |
 | Start | `make dev` | engine on :8000, web on :3000 |
 | Check the scenes | `make demo-check` | `demo check OK: 12 checks`, with the flags of `.env` on the first line |
-| Clean session | `curl -X POST $E/v1/reset` | banner without "degraded" |
+| Clean session | `curl -X POST $E/v1/reset`, or the **Reset** button | banner without "degraded" (a dependency that failed at start-up, such as the model or the Fuji client, stays degraded until the engine restarts) |
 
 Flags in `.env` (the banner shows what is really running):
 
@@ -30,24 +30,24 @@ On macOS the model needs the OpenMP library (`brew install libomp`). Without it 
 
 ## Scenes
 
-Times are at speed 1. "UI" means a button exists on the demo screen today; "curl" means it does not yet.
+Times are at speed 1. "UI" means a button on the demo screen; "More scenes" is the menu next to the main buttons. The curl commands do the same from a terminal.
 
 | # | Scene | How | What must appear | Time |
 |---|---|---|---|---|
 | 1 | Legitimate payment | UI: **Legitimate payment** | R4 excluded by Ghana's export-proceeds rule; LOW 10 (rules) or LOW 25 (model); R3 chosen; two approvals; intent committed; five hops; "Credited" | 16 s |
 | 1 | Legitimate payment, confidential (`CONFIDENTIAL_MODE` not `off`) | UI: **Legitimate payment** | Same as above, plus `confidential.transfer` on the Avalanche leg: amount hidden, the auditor decrypted EUR 85,000. The diverted invoice of Scene 2 still uses the public escrow | 16 s (about 25 s with `eerc`) |
-| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons (six with the model); HIGH 77 with the model, handled like MEDIUM because only the beneficiary's identity is in doubt; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
+| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons (five on screen with the model: it sends seven, and the screen hides the two that repeat a rule); HIGH 77 with the model, handled like MEDIUM because only the beneficiary's identity is in doubt; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
 | 2 | Supplier denies | UI: **"We never changed it"** | Denial recorded; analyst confirms; revoked; refunded; freeze request to the mule's bank; "Payment stopped" | 7 s |
 | 2 | Supplier confirms (variant) | UI: **"Yes, it's our account"** | Released; two more hops; credited at the new account | 5 s |
 | 2b | Attack 1: release a revoked payment | UI: **Try release() attack** | `tx.reverted`, `PaymentNotReleasable` | 1 s |
-| 2b | Attack 2: swap the beneficiary | `curl -X POST $E/v1/attacks/swap_beneficiary -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `leg.rejected` `INTENT_HASH_MISMATCH` at hop 3, then `tx.reverted` `CommitmentMismatch` | 2 s |
-| 2b | Attack 3: replay the intent | same with `/v1/attacks/replay` | `tx.reverted` `InvalidTransition` | 1 s |
-| 3 | Mule wave | `curl -X POST $E/v1/sim/mule-wave -H 'content-type: application/json' -d '{"auto":true}'` | Three unrelated payers are sent to the same nine-day-old account; `cluster.detected` in the Volta region; `breaker.on` for 24 h | 6 s |
+| 2b | Attack 2: swap the beneficiary | UI: More scenes → **Swap beneficiary** (after a diverted invoice), or `curl -X POST $E/v1/attacks/swap_beneficiary -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `leg.rejected` `INTENT_HASH_MISMATCH` at hop 3, then `tx.reverted` `CommitmentMismatch` | 2 s |
+| 2b | Attack 3: replay the intent | UI: More scenes → **Replay intent**, or the same curl with `/v1/attacks/replay` | `tx.reverted` `InvalidTransition` | 1 s |
+| 3 | Mule wave | UI: More scenes → **Mule wave**, or `curl -X POST $E/v1/sim/mule-wave -H 'content-type: application/json' -d '{"auto":true}'` | Three unrelated payers are sent to the same nine-day-old account; `cluster.detected` in the Volta region; `breaker.on` for 24 h | 6 s |
 | 3 | Next payment into the region | UI: **Diverted invoice** | Rule `R-CB-01` among the reasons; HIGH and held (rules), or CRITICAL and blocked (model) | 11 s |
-| 4 | Stolen verifier key (simulated chain) | UI: **Diverted invoice**, wait for "Payment held", then `curl -X POST $E/v1/attacks/stolen_verifier_key -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `guardian.incident` `CONFIRMED_WITHOUT_OOB_RECORD`, action `FREEZE_AND_PAUSE`, DORA draft; R3 closed; the thief's `release()` reverts `PaymentNotReleasable`; the analyst revokes; refunded; "Payment stopped" | 8 s |
+| 4 | Stolen verifier key (simulated chain) | UI: **Diverted invoice**, wait for "Payment held", then More scenes → **Guardian incident** (or `curl -X POST $E/v1/attacks/stolen_verifier_key -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'`) | `guardian.incident` `CONFIRMED_WITHOUT_OOB_RECORD`, action `FREEZE_AND_PAUSE`, DORA draft; R3 closed; the thief's `release()` reverts `PaymentNotReleasable`; the analyst revokes; refunded; "Payment stopped" | 8 s |
 | 4 | Stolen verifier key (Fuji, with the guardian) | See [Scene 4 on Fuji](#scene-4-on-fuji-stolen-verifier-key-and-guardian) | Forged `CONFIRMED` on Snowtrace; the guardian freezes the hold and pauses FR-GH; the attacker's `release()` is mined and fails (`PaymentNotReleasable`); `guardian.incident` with a DORA draft; the engine closes R3 and hands the payment to the analyst, who revokes: refunded | ~15 s after the payment is held |
 | 4 | Reopen the route | `curl -X POST $E/v1/sim/rails/R3/up` (on Fuji, first `uv run python -m sylo_chain.guardian unpause`) | `rail.up` R3; the next payment uses R3 again | 1 s |
-| 5 | Rail outage | `curl -X POST $E/v1/scenarios/outage/run -H 'content-type: application/json' -d '{"auto":true}'` | `rail.down` R3; the payment goes through R1 (fees €80); still LOW; `rail.up` | 16 s |
+| 5 | Rail outage | UI: More scenes → **Rail outage**, or `curl -X POST $E/v1/scenarios/outage/run -H 'content-type: application/json' -d '{"auto":true}'` | `rail.down` R3; the payment goes through R1 (fees €80); still LOW; `rail.up` | 16 s |
 | — | Hold expiry (demo clock) | `curl -X POST $E/v1/scenarios/diverted_expiry/run -H 'content-type: application/json' -d '{"auto":true}'`, or UI: **Diverted invoice**, wait for "Payment held", then `curl -X POST $E/v1/sim/clock -H 'content-type: application/json' -d '{"advanceHours":24}'` | `clock.advanced` 24 h; `intent.revoked` `EXPIRED`; refunded; "Payment stopped"; no freeze request to the other bank | 8 s |
 | — | Time-lock (demo clock) | `curl -X POST $E/v1/scenarios/diverted_timelock/run -H 'content-type: application/json' -d '{"auto":true,"autoAnswer":"confirm"}'` | R3 down, so the payment is held at the bank on R1; the supplier confirms; `timelock.on` 24 h (first payment to a new account above EUR 50,000); the clock jumps; `timelock.off`; credited | 14 s |
 | — | "A new corridor is one file" | `curl -X POST $E/v1/quotes -H 'content-type: application/json' -d '{"order":"lagos-accra"}'`, then open `engine/packs/NG-GH.yaml` | A quote for Lagos → Accra in USD: PAPSS chosen, mobile money excluded by the same Ghanaian rule, authorities CBN and NFIU. Nothing is executed and the globe does not draw it | — |
@@ -65,6 +65,15 @@ curl -X POST $E/v1/payments/PAY-2026-0002/approve -H 'content-type: application/
 curl -X POST $E/v1/cases/PAY-2026-0002/actions -H 'content-type: application/json' -d '{"action":"CONFIRM_REVOCATION"}'
 curl -X POST $E/v1/breakers/CB-cluster-4e0e9e32c724/confirm   # the id is in cluster.detected (CB-CL-AFLAO-01 with the sample cluster)
 ```
+
+## On Render (the public link)
+
+`https://sylo-0wck.onrender.com/demo` runs the engine with `RISK_MODE=model`, `LLM_MODE=cached`, `CHAIN_MODE=mock` and `DEMO_PUBLIC=1`.
+
+- **Wake it up first.** The free service sleeps after 15 minutes idle and takes about a minute to wake: open `https://sylo-0wck.onrender.com/health` three minutes before the slot. A wake-up is a fresh engine: the session and the decision log start empty, so "Edit a decision" and `make verify-log` only work locally.
+- **Everyone shares one session.** Any visitor's Reset or scene shows on every screen, and a diverted invoice waits for the supplier until someone answers or presses Reset. Press **Reset** just before going on stage, or present from a local `make dev`.
+- **`DEMO_PUBLIC=1` closes the operator endpoints** (approvals, case actions, guardian incidents, payee checks, the demo clock, rail switches and webhooks, simulated events, breakers): they answer 403. Every UI button still works; the curl rows that call those endpoints (manual human steps, `sim/clock`, `sim/rails`, Scene 4 on Fuji) need a local engine.
+- eERC and Fuji are off there; run them locally.
 
 ## Scene 4 on Fuji: stolen verifier key and guardian
 

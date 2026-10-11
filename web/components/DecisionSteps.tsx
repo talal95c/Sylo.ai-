@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { ruleLabel } from "@/lib/feed";
+import { buildQuote } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";
@@ -54,7 +56,7 @@ function buildSteps(state: ViewState): Step[] {
       label: "Fraud risk scored",
       done: Boolean(state.risk),
       warn: state.risk ? state.risk.tier !== "LOW" : false,
-      detail: state.risk ? `${state.risk.score} / ${state.risk.tier} / ${state.risk.rulesFired.length} rules fired` : "Deterministic fraud controls",
+      detail: state.risk ? `${state.risk.score} / ${state.risk.tier} / ${state.risk.reasons.length} ${state.risk.reasons.length === 1 ? "reason" : "reasons"}` : "Deterministic fraud controls",
       badge: state.risk ? (state.risk.tier === "LOW" ? "Low risk" : "Review") : undefined,
     },
     {
@@ -93,7 +95,7 @@ function buildSteps(state: ViewState): Step[] {
       label: p?.status === "stopped" ? "Payment stopped" : p?.status === "credited" ? "Supplier credited" : "Final outcome",
       done: final,
       fail: p?.status === "stopped",
-      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer / analyst case opened" : state.credited ? `${euros(state.credited.routeCostEur)} all-in vs ${euros(state.credited.swiftRouteCostEur)} via SWIFT` : "Credited or stopped",
+      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer / analyst case opened" : state.credited ? creditedSummary(state) : "Credited or stopped",
       badge: p?.status === "stopped" ? "Stopped" : p?.status === "credited" ? "Credited" : undefined,
     },
   ];
@@ -112,6 +114,13 @@ function buildSteps(state: ViewState): Step[] {
   });
 }
 
+function creditedSummary(state: ViewState) {
+  const quote = buildQuote(state);
+  if (!quote) return "Supplier credited";
+  const label = quote.basis === "cash" ? "fees + FX" : "all-in";
+  return quote.swift ? `${euros(quote.cost)} ${label} vs ${euros(quote.swift.cost)} via SWIFT` : `${euros(quote.cost)} ${label}`;
+}
+
 function RouteTable({ state }: { state: ViewState }) {
   const rows: { routeId: string; s: number | null | undefined; excludedBy?: string | null }[] = state.routeScores.length
     ? state.routeScores
@@ -125,7 +134,7 @@ function RouteTable({ state }: { state: ViewState }) {
           const route = state.routes.find((candidate) => candidate.routeId === score.routeId);
           const chosen = score.routeId === state.selectedRouteId;
           const excluded = score.s === null || Boolean(score.excludedBy);
-          const exclusion = score.excludedBy ?? route?.excludedBy ?? "Excluded";
+          const exclusion = ruleLabel(score.excludedBy ?? route?.excludedBy ?? "Excluded");
           return (
             <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[10.5px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
               <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
@@ -171,7 +180,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
   const completed = steps.filter((step) => step.state === "done" || step.state === "warn" || step.state === "fail").length;
   const summary = decisionSummary(state);
   return (
-    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="shrink-0" panelClassName="overflow-clip" aria-label="Engine decisions">
+    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="min-h-0" panelClassName="flex min-h-0 flex-col overflow-clip" aria-label="Engine decisions">
       <PanelHeaderButton
         index="02"
         title="Engine decisions"
@@ -191,7 +200,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease }}
-            className="overflow-hidden"
+            className="thin-scrollbar min-h-0 shrink basis-auto overflow-y-auto overscroll-contain"
           >
       <ol className="px-4 py-1">
         {steps.map((step, index) => (

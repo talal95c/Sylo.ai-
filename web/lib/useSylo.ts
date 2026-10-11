@@ -41,6 +41,7 @@ export function useSylo() {
   const [notice, setNotice] = useState<string>();
   const [speed, setSpeedState] = useState<1 | 2>(1);
   const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
+  const [ready, setReady] = useState(false);
   const sourceRef = useRef<Source | null>(null);
   const toastId = useRef(0);
   const activePaymentId = state.payment?.paymentId;
@@ -67,6 +68,7 @@ export function useSylo() {
       },
       onStatus(status) {
         if (status.notice) setNotice(status.notice);
+        if (status.connected) setReady(true);
         if (status.kind !== "live") return;
         if (status.connected) {
           opened = true;
@@ -105,8 +107,11 @@ export function useSylo() {
   }, []);
 
   const runScenario = useCallback(
-    (name: ScenarioName) =>
-      sourceRef.current?.runScenario(name, { speed }) ?? Promise.resolve(),
+    (name: ScenarioName, invoiceText?: string) =>
+      sourceRef.current?.runScenario(name, {
+        speed,
+        ...(invoiceText === undefined ? {} : { invoiceText }),
+      }) ?? Promise.resolve(),
     [speed],
   );
   const supplierResponse = useCallback(
@@ -153,6 +158,7 @@ export function useSylo() {
     state,
     sourceKind,
     notice,
+    ready,
     speed,
     setSpeed,
     setSourceKind,
@@ -160,7 +166,8 @@ export function useSylo() {
     dismissToast,
     actions: {
       runLegit: () => safeAction(() => runScenario("legit")),
-      runDiverted: () => safeAction(() => runScenario("diverted")),
+      runDiverted: (invoiceText?: string) =>
+        safeAction(() => runScenario("diverted", invoiceText)),
       runMuleWave: () => safeAction(() => runScenario("muleWave")),
       runGuardian: () =>
         safeAction(() =>

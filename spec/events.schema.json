@@ -271,14 +271,37 @@
             "properties": {
               "routeId": { "type": "string" },
               "s": { "type": ["number", "null"] },
-              "excludedBy": { "type": ["string", "null"] }
+              "excludedBy": { "type": ["string", "null"] },
+              "name": { "type": "string", "description": "v1, optional" },
+              "etaLabel": { "type": "string", "description": "v1, optional" },
+              "etaMinutes": { "type": "number", "description": "v1, optional" },
+              "feesEur": { "type": "number", "description": "v1, optional" },
+              "fxMarginEur": { "type": "number", "description": "v1, optional" },
+              "cashCostEur": { "type": "number", "description": "v1, optional" },
+              "recipientGetsGhs": { "type": ["number", "null"], "description": "v1, optional" }
             }
           }
         },
         "reason": { "type": "string" },
         "feesEur": { "type": "number" },
         "etaLabel": { "type": "string" },
-        "priceOfSafetyEur": { "type": "number" }
+        "priceOfSafetyEur": { "type": "number" },
+        "cost": {
+          "type": "object",
+          "description": "v1, optional",
+          "additionalProperties": true,
+          "properties": {
+            "feesEur": { "type": "number", "description": "v1, optional" },
+            "fxMarginEur": { "type": "number", "description": "v1, optional" },
+            "timeCostEur": { "type": "number", "description": "v1, optional" },
+            "failureCostEur": { "type": "number", "description": "v1, optional" },
+            "cashCostEur": { "type": "number", "description": "v1, optional" },
+            "totalCostEur": { "type": "number", "description": "v1, optional" }
+          }
+        },
+        "etaMinutes": { "type": "number", "description": "v1, optional" },
+        "midRateEurGhs": { "type": ["number", "null"], "description": "v1, optional" },
+        "recipientGetsGhs": { "type": ["number", "null"], "description": "v1, optional" }
       }
     },
     "ApprovalGranted": {
@@ -413,7 +436,14 @@
         "feesEur": { "type": "number" },
         "routeCostEur": { "type": "number" },
         "swiftRouteCostEur": { "type": ["number", "null"] },
-        "elapsedLabel": { "type": "string" }
+        "elapsedLabel": { "type": "string" },
+        "cashCostEur": { "type": "number", "description": "v1, optional" },
+        "swiftCashCostEur": { "type": ["number", "null"], "description": "v1, optional" },
+        "fxMarginEur": { "type": "number", "description": "v1, optional" },
+        "recipientGetsGhs": { "type": ["number", "null"], "description": "v1, optional" },
+        "etaMinutes": { "type": "number", "description": "v1, optional" },
+        "swiftEtaLabel": { "type": ["string", "null"], "description": "v1, optional" },
+        "swiftEtaMinutes": { "type": ["number", "null"], "description": "v1, optional" }
       }
     },
     "PaymentStopped": {

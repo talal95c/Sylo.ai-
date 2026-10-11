@@ -107,6 +107,7 @@ export function TopBar({
   onSource,
   view,
   onView,
+  onHelp,
 }: {
   mode: SystemModeData | null;
   riskMode: "rules" | "model";
@@ -115,6 +116,7 @@ export function TopBar({
   onSource: (kind: SourceKind) => void;
   view: DemoView;
   onView: (view: DemoView) => void;
+  onHelp?: () => void;
 }) {
   return (
     <motion.header
@@ -180,6 +182,17 @@ export function TopBar({
           <span className="hidden whitespace-nowrap text-[10.5px] text-ink-3 sm:block" title="Recorded events">
             Recorded events
           </span>
+        ) : null}
+        {onHelp ? (
+          <button
+            type="button"
+            onClick={onHelp}
+            aria-label="Show the guided tour"
+            title="Guided tour"
+            className="grid size-8 shrink-0 place-items-center rounded-full text-[12.5px] font-medium text-ink-3 transition-colors hover:bg-[var(--surface-2)] hover:text-ink"
+          >
+            ?
+          </button>
         ) : null}
         <div className="flex h-9 items-center rounded-full bg-[var(--surface-2)] p-1" role="radiogroup" aria-label="Event source">
           {(["live", "replay"] as const).map((kind) => (

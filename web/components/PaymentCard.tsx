@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PaymentStatus, ViewState } from "@/lib/store";
-import { Dot, ease, euros, shortHash, Spinner, Tag } from "./ui";
+import { RouteQuote } from "./RouteQuote";
+import { Dot, ease, shortHash, Spinner, Tag } from "./ui";
 
 const STATUS: Record<PaymentStatus, { label: string; color: string; busy?: boolean }> = {
   idle: { label: "Ready", color: "rgba(0,0,0,.38)" },
@@ -93,6 +94,7 @@ export function PaymentCard({ state }: { state: ViewState }) {
                 last
               />
             </div>
+            <RouteQuote state={state} />
           </motion.div>
         ) : (
           <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-4 pb-4 pt-2">
@@ -120,11 +122,7 @@ function formatAmount(value: string, currency: string) {
 }
 
 function routeDetail(payment: NonNullable<ViewState["payment"]>) {
-  const details = [
-    payment.routeId,
-    payment.routeCostEur !== undefined ? `${euros(payment.routeCostEur)} all-in` : undefined,
-    payment.etaLabel,
-  ];
+  const details = [payment.routeId, payment.etaLabel];
   return details.filter(Boolean).join(" · ") || "The engine is evaluating compliant routes";
 }
 

@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import time
+import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
+from sylo_spec.ports import ChainReverted
 
 from .approvals import ApprovalError
 from .config import Settings
@@ -44,6 +49,18 @@ class RunBody(BaseModel):
     speed: float | None = Field(default=None, gt=0, le=100)
     auto: bool = False
     autoAnswer: Literal["confirm", "deny"] = "deny"
+    invoiceText: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("invoiceText", mode="before")
+    @classmethod
+    def clean_invoice_text(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        return "".join(
+            char
+            for char in value
+            if char in "\n\t" or unicodedata.category(char) != "Cc"
+        ).strip()
 
 
 class AnswerBody(BaseModel):
@@ -144,8 +161,15 @@ def _dump(event: dict[str, Any]) -> str:
     return json.dumps(event, ensure_ascii=False, separators=(",", ":"))
 
 
-def create_app(settings: Settings | None = None, orchestrator: Orchestrator | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    orchestrator: Orchestrator | None = None,
+    *,
+    invoice_clock: Callable[[], float] | None = None,
+) -> FastAPI:
     settings = settings or Settings.from_env()
+    monotonic = invoice_clock or time.monotonic
+    invoice_rate = {"last_started": None}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -160,6 +184,12 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(ChainReverted)
+    async def chain_reverted(request: Request, err: ChainReverted) -> JSONResponse:
+        """A contract refusal is a conflict with the on-chain state, not a server error."""
+        where = f"{err.function} " if err.function else ""
+        return JSONResponse(status_code=409, content={"detail": f"the chain refused {where}({err.reason})", "reason": err.reason})
 
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator
@@ -205,14 +235,35 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
     @app.post("/v1/scenarios/{name}/run")
     async def run_scenario(name: str, request: Request, body: RunBody | None = None) -> dict[str, str]:
         body = body or RunBody()
+        invoice_text = body.invoiceText
+        if invoice_text is not None and not settings.live_invoice:
+            raise HTTPException(403, "live invoice is disabled (LIVE_INVOICE=off)")
+        if invoice_text is not None and name != "diverted":
+            raise HTTPException(422, "invoiceText is only allowed for scenario 'diverted'")
+        now = monotonic()
+        last_started = invoice_rate["last_started"]
+        if invoice_text is not None and last_started is not None:
+            remaining = 30.0 - (now - last_started)
+            if remaining > 0:
+                raise HTTPException(
+                    429,
+                    "one invoice run is allowed every 30 seconds",
+                    headers={"Retry-After": str(max(1, math.ceil(remaining)))},
+                )
         try:
             payment_id = orch(request).start(
-                name, speed=body.speed or settings.demo_speed, auto=body.auto, auto_answer=body.autoAnswer
+                name,
+                speed=body.speed or settings.demo_speed,
+                auto=body.auto,
+                auto_answer=body.autoAnswer,
+                invoice_text=invoice_text,
             )
         except UnknownScenario:
             raise HTTPException(404, f"unknown scenario {name!r}; expected one of {_names(SCENARIOS)}") from None
         except ScenarioBusy:
             raise HTTPException(409, "a scenario is running; wait for it to finish or POST /v1/reset") from None
+        if invoice_text is not None:
+            invoice_rate["last_started"] = monotonic()
         return {"paymentId": payment_id}
 
     @app.post("/v1/payments/{payment_id}/supplier-response")

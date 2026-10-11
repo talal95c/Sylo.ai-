@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyloEvent } from "../events";
-import { createLiveSource, createReplaySource, type ScenarioName } from "../source";
+import {
+  createLiveSource,
+  createReplaySource,
+  EngineRequestError,
+  formatInvoiceError,
+  invoiceComposerVisible,
+  type ScenarioName,
+} from "../source";
 
 const scenes = [
   { name: "diverted_simswap", file: "scene2-simswap.jsonl" },
@@ -46,7 +53,6 @@ describe("replay scenes", () => {
     );
   });
 });
-
 describe("live engine errors", () => {
   it("uses a FastAPI detail string", async () => {
     vi.stubGlobal(
@@ -100,5 +106,72 @@ describe("live engine errors", () => {
     await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
       "Engine unreachable: check the connection or switch to Replay",
     );
+  });
+});
+
+describe("jury invoice source controls", () => {
+  it("keeps the invoice composer out of Replay", () => {
+    expect(invoiceComposerVisible("replay")).toBe(false);
+    expect(invoiceComposerVisible("live")).toBe(true);
+  });
+
+  it("sends invoiceText with the Live diverted scenario", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const source = createLiveSource("http://engine.test/");
+
+    await source.runScenario("diverted", {
+      speed: 2,
+      invoiceText: "jury invoice",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://engine.test/v1/scenarios/diverted/run",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          speed: 2,
+          auto: false,
+          invoiceText: "jury invoice",
+        }),
+      },
+    );
+  });
+
+  it("preserves 403, 422 and 429 invoice errors for inline display", () => {
+    expect(formatInvoiceError(new EngineRequestError(403, "live invoice is disabled"))).toBe(
+      "live invoice is disabled",
+    );
+    expect(formatInvoiceError(new EngineRequestError(422, "Engine request failed (422)"))).toContain(
+      "2,000 characters",
+    );
+    expect(
+      formatInvoiceError(
+        new EngineRequestError(429, "one invoice run is allowed every 30 seconds", "25"),
+      ),
+    ).toContain("Retry in 25 seconds");
+  });
+
+  it("preserves an engine 429 detail and Retry-After header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: "one invoice run is allowed every 30 seconds" }),
+        {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "25" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const source = createLiveSource("http://engine.test");
+
+    await expect(
+      source.runScenario("diverted", { speed: 1, invoiceText: "jury invoice" }),
+    ).rejects.toMatchObject<Partial<EngineRequestError>>({
+      status: 429,
+      message: "Engine refused: one invoice run is allowed every 30 seconds",
+      retryAfter: "25",
+    });
   });
 });

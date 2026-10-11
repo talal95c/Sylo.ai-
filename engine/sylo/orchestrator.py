@@ -56,7 +56,7 @@ from . import texts
 from .approvals import ApprovalSession, required_approvers
 from .breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from .bus import EventBus
-from .case import CaseService, rules_case_file
+from .case import CaseService, redact_case_document, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
 from .intake import extract, match_order
@@ -265,6 +265,7 @@ class PaymentRun:
     signed: list[dict[str, Any]] = field(default_factory=list)
     transactions: list[dict[str, Any]] = field(default_factory=list)
     last_seq: int = 0
+    invoice_text: str | None = None
 
     @property
     def tier(self) -> Tier | None:
@@ -313,6 +314,7 @@ class Orchestrator:
         self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
         if settings.cluster_mode == "auto" and self.cluster_stub and "clusters" not in self.degraded:
             self.degraded.append("clusters")
+        self._startup_degraded = list(self.degraded)
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
         self._clock_offset = timedelta(0)
@@ -400,23 +402,39 @@ class Orchestrator:
     def running(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    def start(self, name: str, *, speed: float = 1.0, auto: bool = False, auto_answer: str = "deny") -> str:
+    def start(
+        self,
+        name: str,
+        *,
+        speed: float = 1.0,
+        auto: bool = False,
+        auto_answer: str = "deny",
+        invoice_text: str | None = None,
+    ) -> str:
         """Start a scenario in the background and return its payment id."""
         if name not in SCENARIOS:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
-        run = self._new_run(name, speed, auto, auto_answer)
+        run = self._new_run(name, speed, auto, auto_answer, invoice_text)
         self._task = asyncio.create_task(self._execute(run))
         return run.order.id
 
-    async def run_to_end(self, name: str, *, speed: float = 1.0, auto: bool = True, auto_answer: str = "deny") -> PaymentRun:
+    async def run_to_end(
+        self,
+        name: str,
+        *,
+        speed: float = 1.0,
+        auto: bool = True,
+        auto_answer: str = "deny",
+        invoice_text: str | None = None,
+    ) -> PaymentRun:
         """Run a scenario in the foreground (tests and the fixture recorder)."""
         if name not in SCENARIOS:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
-        run = self._new_run(name, speed, auto, auto_answer)
+        run = self._new_run(name, speed, auto, auto_answer, invoice_text)
         await self._execute(run)
         if run.case_task is not None:
             await run.case_task
@@ -511,8 +529,16 @@ class Orchestrator:
         self.breakers.reset()
         self._window.clear()
         self._announced_breakers.clear()
+        self.incidents.clear()
+        # A dependency that failed while running gets another chance; one missing since start-up stays degraded.
+        runtime_degraded = self.degraded != self._startup_degraded
+        self.degraded = list(self._startup_degraded)
+        if isinstance(self.risk, CombinedRisk):
+            self.risk.failed = False
         self.bus.clear()
         self.bus.publish("session.reset", {})
+        if runtime_degraded:
+            self.bus.publish("system.mode", self.mode())
 
     def _legs(self, payment_id: str) -> list[dict[str, Any]]:
         """Status leg by leg, from the events of the payment (pacs.002-style)."""
@@ -1221,7 +1247,9 @@ class Orchestrator:
             raise UnknownPayment(payment_id)
         return run
 
-    def _new_run(self, name: str, speed: float, auto: bool, auto_answer: str) -> PaymentRun:
+    def _new_run(
+        self, name: str, speed: float, auto: bool, auto_answer: str, invoice_text: str | None = None
+    ) -> PaymentRun:
         scenario = SCENARIOS.get(name)
         if scenario is None:
             raise UnknownScenario(name)
@@ -1236,6 +1264,7 @@ class Orchestrator:
             chain_index=index,
             auto=auto,
             auto_answer=auto_answer,
+            invoice_text=invoice_text,
         )
         self._runs[order.id] = run
         return run
@@ -1398,8 +1427,19 @@ class Orchestrator:
                 run.status = "stopped"
                 self._emit(run, "payment.stopped", {"headline": texts.CHAIN_DOWN_HEADLINE, "detail": detail})
         except Exception:
+            # Fail safe: say so on the stream, keep any hold, and never leave the screen on "in transit".
             log.exception("scenario %s failed", run.scenario)
-            run.status = "stopped"
+            self._degrade("engine")
+            if run.hold is not None:
+                run.status = "held"
+                self._alert(
+                    run, "analyst", texts.ANALYST, "IN_APP", texts.ENGINE_ERROR_HELD, headline=texts.ENGINE_ERROR_HEADLINE
+                )
+            else:
+                detail = texts.ENGINE_ERROR_DETAIL.format(status=run.status)
+                run.status = "stopped"
+                self._alert(run, "analyst", texts.ANALYST, "IN_APP", detail, headline=texts.ENGINE_ERROR_HEADLINE)
+                self._emit(run, "payment.stopped", {"headline": texts.ENGINE_ERROR_HEADLINE, "detail": detail})
 
     def _payment_created(self, order: PaymentOrder) -> dict[str, Any]:
         account = ACCOUNTS[order.creditor_account_id]
@@ -1691,6 +1731,7 @@ class Orchestrator:
 
         await pacer.wait(300)
         run.status = "credited"
+        swift_score = next((score for score in decision.scores if score["routeId"] == "R1"), None)
         self._emit(
             run,
             "payment.credited",
@@ -1699,6 +1740,13 @@ class Orchestrator:
                 "feesEur": decision.fees_eur,
                 "routeCostEur": decision.s_selected,
                 "swiftRouteCostEur": decision.s_swift,
+                "cashCostEur": decision.cost["cashCostEur"],
+                "swiftCashCostEur": swift_score["cashCostEur"] if swift_score else None,
+                "fxMarginEur": decision.cost["fxMarginEur"],
+                "recipientGetsGhs": decision.recipient_gets_ghs,
+                "etaMinutes": decision.eta_minutes,
+                "swiftEtaLabel": swift_score["etaLabel"] if swift_score else None,
+                "swiftEtaMinutes": swift_score["etaMinutes"] if swift_score else None,
                 "elapsedLabel": f"{decision.route.eta_label}{texts.ELAPSED_SUFFIX}",
             },
             simulated=True,
@@ -1819,9 +1867,14 @@ class Orchestrator:
         """
         assert run.risk is not None
         events = [event for event in self.bus.events if event["paymentId"] == run.order.id]
-        if self.case.writer is None:
+        live_invoice_ready = run.invoice_text is not None and self.case.live_writer_ready
+        if run.invoice_text is not None and not live_invoice_ready:
+            self._degrade("llm")
+        if self.case.writer is None and not live_invoice_ready:
             await run.pacer.wait(700)
-            self._case_ready(run, self.case.write(run.order, run.risk, events, situation))
+            self._case_ready(
+                run, self.case.write(run.order, run.risk, events, situation, document=run.invoice_text)
+            )
         else:
             run.case_task = asyncio.create_task(self._write_case(run, events, situation))
 
@@ -1829,15 +1882,29 @@ class Orchestrator:
         assert run.risk is not None
         try:
             case = await asyncio.wait_for(
-                asyncio.to_thread(self.case.write, run.order, run.risk, events, situation), timeout=CASE_TIMEOUT_S
+                asyncio.to_thread(
+                    self.case.write,
+                    run.order,
+                    run.risk,
+                    events,
+                    situation,
+                    document=run.invoice_text,
+                ),
+                timeout=CASE_TIMEOUT_S,
             )
         except Exception as err:
-            log.warning("case file not ready in time (%s); using the one built from the rules", err)
+            log.warning("case file not ready in time (%s); using the one built from the rules", type(err).__name__)
             self._degrade("llm")
             case = rules_case_file(run.order, run.risk, events, situation)
+        if self.case.requested == "live" and case.llm != "live":
+            # Mistral did not answer and the writer fell back to cached text or the rules: say so on the banner.
+            # (In cached mode the template for a scene without cached text is expected, not a failure.)
+            self._degrade("llm")
         self._case_ready(run, case)
 
     def _case_ready(self, run: PaymentRun, case: CaseFile) -> None:
+        if run.invoice_text is not None:
+            case = redact_case_document(case, run.invoice_text)
         run.case = case
         self._emit(run, "case.ready", case.model_dump(by_alias=True, mode="json"))
 
@@ -2212,7 +2279,8 @@ class Orchestrator:
     # --- attacks -----------------------------------------------------------------------------
 
     def _attack_started(self, run: PaymentRun, name: str) -> None:
-        self._current_pacer = run.pacer
+        if self._current_pacer is None:
+            self._current_pacer = run.pacer
         self._emit(
             run,
             "attack.attempted",
@@ -2354,14 +2422,27 @@ def build_orchestrator(
 ) -> Orchestrator:
     env = os.environ if env is None else env
     settings = settings or Settings.from_env(env)
-    signer = Signer(env)
+    keys_missing = False
+    if settings.chain_mode == "fuji":
+        # The public dev keys are fine on a simulated chain, never on a real one: without the real keys, use the mock chain.
+        try:
+            signer = Signer(env, allow_dev_keys=False)
+        except RuntimeError as err:
+            log.warning("CHAIN_MODE=fuji but %s; using the mock chain", err)
+            settings = dataclasses.replace(settings, chain_mode="mock")
+            signer = Signer(env)
+            keys_missing = True
+    else:
+        signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
+    if keys_missing:
+        degraded.append("chain")
     if chain.mode != "mock":
         # The registry outlives this process and keeps every nonce: start from this session's own base
         # (microseconds since the epoch), so no message repeats a nonce of an earlier session.
         signer.start_nonces_at(time.time_ns() // 1_000)
-    writer, llm_degraded = load_case_writer(settings, env)
+    writer, llm_degraded, live_writer, live_writer_ready = load_case_writer(settings, env)
     if llm_degraded:
         degraded.append("llm")
     confidential, confidential_degraded = load_confidential_leg(
@@ -2392,7 +2473,12 @@ def build_orchestrator(
         beneficiary=env.get("GH_VASP_ADDRESS") or None,
         payer_address=env.get("EU_CASP_ADDRESS") or None,
         token=settings.token_address,
-        case=CaseService(settings.llm_mode, writer),
+        case=CaseService(
+            settings.llm_mode,
+            writer,
+            live_writer=live_writer,
+            live_writer_ready=live_writer_ready,
+        ),
         journal=journal,
         confidential=confidential,
         telecom=telecom,
