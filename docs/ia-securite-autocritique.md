@@ -66,8 +66,8 @@ C'est sûr mais peu exploitable. Sans modèle, 43 % des paiements légitimes son
 - La campagne synthétique de « fan-in » est facile. On obtient 30/30 détections, mais aussi 30/30 faux clusters sur les comptes légitimes jeunes et populaires.
 - Les agents de retrait (cash-out) ne sont pas modélisés (`agents = []`), alors que la roadmap les cite.
 - La vue réseau suppose que plusieurs banques partagent des données. La faisabilité juridique (RGPD, secret bancaire, ghanaian Data Protection Act) n'est pas démontrée.
-- Le détecteur du moteur (`WindowClusterDetector`) ne connaît pas le payeur : 3 paiements d'un même payeur vers 3 comptes jeunes d'une banque frontalière déclenchent aussi un cluster ; sa précision n'est mesurée que par le test de la scène 3, pas par le benchmark hors ligne.
-- La fenêtre du moteur couvre 1 h et fixe `day = 0`, alors que le benchmark travaille par jours : la scène 3 et le benchmark ne testent pas exactement la même fenêtre.
+- Le moteur et le benchmark hors ligne utilisent le même détecteur (`NetworkXClusterDetector`), mais la scène 3 valide l'adaptation des paiements du moteur, pas la précision hors échantillon ni en production.
+- La fenêtre du moteur couvre 1 h, tandis que le benchmark travaille par jours : la scène 3 et le benchmark ne testent pas exactement la même fenêtre.
 - Les comptes inconnus, dont l'âge ou le nombre de paiements n'est pas connu, sont traités comme suspects. C'est le choix prudent, mais il peut générer des faux clusters sur les comptes absents du registre.
 
 ## 7. LLM (Jev, Mistral)

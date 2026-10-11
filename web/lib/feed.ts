@@ -23,6 +23,10 @@ function number(value: unknown, fallback = 0): number {
   return typeof value === "number" ? value : fallback;
 }
 
+function count(value: number, singular: string): string {
+  return `${value} ${singular}${value === 1 ? "" : "s"}`;
+}
+
 function nameFor(id: unknown): string {
   const key = text(id);
   return institutionNames[key] ?? key.replaceAll("_", " ");
@@ -107,6 +111,14 @@ export function describe(
       family = "decision";
       label = `Route selected: ${text(data.name)} · ${text(data.etaLabel)}`;
       break;
+    case "approval.required": {
+      family = "decision";
+      const pending = Array.isArray(data.pending) ? data.pending.length : 0;
+      label = pending
+        ? `Approval required · ${count(pending, "approver")} pending`
+        : "Approval requirements met";
+      break;
+    }
     case "approval.granted": {
       family = "decision";
       const approvers = Array.isArray(data.by)
@@ -175,6 +187,10 @@ export function describe(
       family = "alert";
       label = text(data.headline, "Payment stopped");
       break;
+    case "case.action":
+      family = "decision";
+      label = `Analyst action: ${text(data.action, "recorded")}${data.by ? ` · ${text(data.by)}` : ""}`;
+      break;
     case "attack.attempted":
       family = "attack";
       label = text(data.description, "Attack attempt started");
@@ -207,9 +223,50 @@ export function describe(
       family = "system";
       label = text(data.text, "Network traffic sample received");
       break;
-    case "cluster.detected":
+    case "cluster.detected": {
       family = "alert";
-      label = `Sample cluster ${text(data.clusterId)} · ${number(data.accounts)} accounts · ${number(data.agents)} agents`;
+      const clusterId = text(data.clusterId);
+      const accounts = count(number(data.accounts), "account");
+      const agents = number(data.agents);
+      const isSample = data.detector === "cluster-sample";
+      if (isSample) {
+        label = `Sample cluster ${clusterId} · ${accounts} · ${count(agents, "agent")}`;
+        break;
+      }
+      const region = text(data.regionName) || text(data.region);
+      const parts = [
+        `Mule cluster ${clusterId}`,
+        region || undefined,
+        accounts,
+        Array.isArray(data.linkedPayments)
+          ? count(data.linkedPayments.length, "payment")
+          : undefined,
+        agents > 0 ? count(agents, "agent") : undefined,
+      ].filter((part): part is string => Boolean(part));
+      label = parts.join(" · ");
+      break;
+    }
+    case "clock.advanced":
+      family = "system";
+      label = text(data.text, `Demo clock advanced by ${number(data.hours)} hours`);
+      break;
+    case "timelock.on":
+      family = "alert";
+      label = text(data.text, `Time-lock activated for ${number(data.hours)} hours`);
+      break;
+    case "timelock.off":
+      family = "system";
+      label = text(
+        data.reason === "ELAPSED" ? "Time-lock elapsed" : "",
+        `Time-lock ended: ${text(data.reason, "unknown reason")}`,
+      );
+      break;
+    case "confidential.transfer":
+      family = "chain";
+      label = text(
+        data.text,
+        `Confidential ${text(data.token, "token")} transfer completed · amount hidden`,
+      );
       break;
     case "breaker.on":
       family = "alert";

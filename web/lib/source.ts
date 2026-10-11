@@ -1,7 +1,16 @@
 import type { SyloEvent } from "./events";
 
 export type SourceKind = "live" | "replay";
-export type ScenarioName = "legit" | "diverted" | "muleWave" | "guardian" | "outage";
+export type ScenarioName =
+  | "legit"
+  | "diverted"
+  | "muleWave"
+  | "guardian"
+  | "outage"
+  | "diverted_simswap"
+  | "diverted_expiry"
+  | "diverted_timelock"
+  | "confidential";
 export type AttackName = "release_revoked" | "swap_beneficiary" | "replay";
 
 export interface SourceCallbacks {
@@ -103,9 +112,18 @@ export function createLiveSource(engineUrl: string): Source {
       if (name === "guardian") {
         return Promise.reject(new Error("Guardian incidents are reported by the guardian service; use Replay for the recorded scene."));
       }
-      return post(engineUrl, `/v1/scenarios/${name}/run`, {
+      const scenario = name === "confidential" ? "legit" : name;
+      const automated = [
+        "outage",
+        "diverted_simswap",
+        "diverted_expiry",
+        "diverted_timelock",
+        "confidential",
+      ].includes(name);
+      return post(engineUrl, `/v1/scenarios/${scenario}/run`, {
         speed: opts.speed,
-        auto: name === "outage",
+        auto: automated,
+        ...(name === "diverted_timelock" ? { autoAnswer: "confirm" } : {}),
       });
     },
     supplierResponse(paymentId, answer) {
@@ -135,6 +153,10 @@ const fixtureFiles = {
   muleWave: "samples-scene3-mule-wave.jsonl",
   guardian: "samples-scene4-guardian.jsonl",
   outage: "samples-scene5-outage.jsonl",
+  diverted_simswap: "scene2-simswap.jsonl",
+  diverted_expiry: "samples-hold-expiry.jsonl",
+  diverted_timelock: "samples-time-lock.jsonl",
+  confidential: "samples-confidential.jsonl",
 } as const;
 
 async function loadFixture(file: string): Promise<SyloEvent[]> {

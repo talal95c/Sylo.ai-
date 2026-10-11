@@ -28,6 +28,7 @@ export interface SystemModeData {
   llm: "off" | "cached" | "live";
   rails: "simulated";
   degraded: string[];
+  confidential?: "off" | "simulated" | "eerc";
 }
 
 export interface PaymentParty {
