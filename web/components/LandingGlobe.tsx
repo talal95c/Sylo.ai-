@@ -1,11 +1,23 @@
 "use client";
 
 import createGlobe from "cobe";
+import { greatCirclePoint } from "@/lib/arcDots";
 import { useEffect, useRef } from "react";
 
 const LYON: [number, number] = [45.764, 4.836];
 const TAMALE: [number, number] = [9.403, -0.842];
 const ACCENT: [number, number, number] = [1 / 255, 43 / 255, 1];
+
+// Dotted ground track Lyon → Tamale, evenly spaced along the great circle.
+const CORRIDOR_DOTS = (() => {
+  const from = { lat: LYON[0], lng: LYON[1] };
+  const to = { lat: TAMALE[0], lng: TAMALE[1] };
+  const count = 36;
+  return Array.from({ length: count - 1 }, (_, index) => {
+    const { lat, lng } = greatCirclePoint(from, to, (index + 1) / count);
+    return { location: [lat, lng] as [number, number], size: 0.0055 };
+  });
+})();
 
 const FOCUS_PHI = Math.PI - ((2 * Math.PI) / 180 - Math.PI / 2);
 const FOCUS_THETA = 0.15;
@@ -38,11 +50,8 @@ export default function LandingGlobe() {
       markers: [
         { location: LYON, size: 0.025, id: "lyon" },
         { location: TAMALE, size: 0.025, id: "tamale" },
+        ...CORRIDOR_DOTS,
       ],
-      arcs: [{ from: LYON, to: TAMALE, id: "corridor" }],
-      arcColor: ACCENT,
-      arcWidth: 0.6,
-      arcHeight: 0.28,
       markerElevation: 0.01,
     });
 
