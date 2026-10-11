@@ -8,7 +8,7 @@ from sylo_spec import SPEC_DIR
 from sylo_spec.models import CaseFile
 from sylo_spec.ports import CasePort
 
-from sylo_risk.case import CaseWriter, TemplateCaseWriter, validate_case
+from sylo_risk.case import CaseWriter, TemplateCaseWriter, TextScreen, validate_case
 from sylo_risk.case.writer import SYSTEM_PROMPT
 
 REPO = SPEC_DIR.parent
@@ -120,6 +120,7 @@ def test_stricter_action_is_accepted_and_prompt_is_spotlighted(monkeypatch):
         mode="live",
         api_key="test-key",
         documents={"PAY-2026-0002": invoice},
+        text_screen=TextScreen(mode="off"),
     ).write("PAY-2026-0002", events)
 
     assert case.llm == "live"

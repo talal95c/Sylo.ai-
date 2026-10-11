@@ -13,6 +13,7 @@ from sylo_spec.models import CaseFile
 from sylo_spec.ports import CasePort
 
 from .template import event_dict, template_case
+from .text_screen import TEXT_SCREEN_REFS, TextScreen, TextSignals
 from .validation import validate_case
 
 log = logging.getLogger("sylo.case_writer")
@@ -103,7 +104,9 @@ def _restore_case(case: CaseFile, replacements: Mapping[str, str]) -> CaseFile:
     return CaseFile.model_validate(restore(case.model_dump(by_alias=True, mode="json")))
 
 
-def _allowed_refs(events: list[dict[str, Any]]) -> list[str]:
+def _allowed_refs(
+    events: list[dict[str, Any]], template: CaseFile | None = None
+) -> list[str]:
     refs: set[str] = set()
     for event in events:
         if event.get("id"):
@@ -116,6 +119,13 @@ def _allowed_refs(events: list[dict[str, Any]]) -> list[str]:
                 for reason in data.get("reasons", [])
                 if isinstance(reason, Mapping) and reason.get("ref")
             )
+    if template is not None:
+        refs.update(
+            ref
+            for sentence in template.sentences
+            for ref in sentence.refs
+            if ref in TEXT_SCREEN_REFS
+        )
     return sorted(refs)
 
 
@@ -129,8 +139,19 @@ class TemplateCaseWriter:
     name = "template"
     mode = "off"
 
+    def __init__(
+        self,
+        *,
+        documents: Mapping[str, str] | None = None,
+        text_screen: TextScreen | None = None,
+    ) -> None:
+        self.documents = dict(documents or {})
+        self.text_screen = text_screen or TextScreen()
+
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
-        return template_case(payment_id, events)
+        document = self.documents.get(payment_id)
+        signals = self.text_screen.screen(document) if document and document.strip() else None
+        return template_case(payment_id, events, text_signals=signals)
 
 
 class CaseWriter:
@@ -145,6 +166,7 @@ class CaseWriter:
         cache_dir: Path | None = None,
         documents: Mapping[str, str] | None = None,
         timeout: float = 8.0,
+        text_screen: TextScreen | None = None,
     ) -> None:
         if mode not in {"off", "cached", "live"}:
             raise ValueError(f"unsupported case writer mode: {mode}")
@@ -154,6 +176,35 @@ class CaseWriter:
         self.cache_dir = cache_dir or Path(__file__).resolve().parent / "cache"
         self.documents = dict(documents or {})
         self.timeout = timeout
+        self.text_screen = text_screen or TextScreen()
+
+    @staticmethod
+    def _with_text_screen(case: CaseFile, template: CaseFile) -> CaseFile:
+        template_sentences = [
+            sentence
+            for sentence in template.sentences
+            if set(sentence.refs) & TEXT_SCREEN_REFS
+        ]
+        missing = [
+            sentence
+            for sentence in template_sentences
+            if not any(
+                existing.text == sentence.text and existing.refs == sentence.refs
+                for existing in case.sentences
+            )
+        ]
+        if not missing:
+            return case
+        citations = {citation.ref: citation for citation in case.citations}
+        for citation in template.citations:
+            if citation.ref in TEXT_SCREEN_REFS and citation.ref not in citations:
+                citations[citation.ref] = citation
+        return case.model_copy(
+            update={
+                "sentences": [*case.sentences, *missing],
+                "citations": list(citations.values()),
+            }
+        )
 
     def _cached(self, payment_id: str, events: list[Any], template: CaseFile) -> CaseFile | None:
         path = _safe_cache_path(self.cache_dir, payment_id)
@@ -164,17 +215,29 @@ class CaseWriter:
             if isinstance(raw, dict):
                 raw["llm"] = "cached"
             case = validate_case(raw, events, template)
-            return case.model_copy(update={"llm": "cached"}) if case else None
+            if case is None:
+                return None
+            case = case.model_copy(update={"llm": "cached"})
+            screened = self._with_text_screen(case, template)
+            return validate_case(screened, events, template)
         except (OSError, ValueError, TypeError):
             return None
 
-    def _request(self, payment_id: str, events: list[Any], template: CaseFile) -> CaseFile:
+    def _request(
+        self,
+        payment_id: str,
+        events: list[Any],
+        template: CaseFile,
+        text_signals: TextSignals | None,
+    ) -> CaseFile:
         if not self.api_key:
             raise RuntimeError("MISTRAL_API_KEY is not configured")
         pseudonymized, replacements = _placeholder_events(events)
-        refs = _allowed_refs(pseudonymized)
+        refs = _allowed_refs(pseudonymized, template)
         document = self.documents.get(payment_id, "none")
-        if document != "none":
+        if text_signals and text_signals.injection is not None and text_signals.injection >= 0.5:
+            document = "withheld: embedded instructions detected"
+        elif document != "none":
             document = re.sub(r"\s", "ˆ", document)
         user_message = (
             f"<allowed_refs>{json.dumps(refs, ensure_ascii=False)}</allowed_refs>\n"
@@ -213,10 +276,21 @@ class CaseWriter:
         case = validate_case(output, pseudonymized, template)
         if case is None:
             raise ValueError("Mistral output failed case validation")
-        return _restore_case(case, replacements)
+        case = _restore_case(case, replacements)
+        case = self._with_text_screen(case, template)
+        validated = validate_case(case, events, template)
+        if validated is None:
+            raise ValueError("Mistral output failed text-screen validation")
+        return validated
 
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
-        template = template_case(payment_id, events)
+        document = self.documents.get(payment_id)
+        text_signals = (
+            self.text_screen.screen(document)
+            if isinstance(document, str) and document.strip()
+            else None
+        )
+        template = template_case(payment_id, events, text_signals=text_signals)
         if self.mode == "off":
             return template
         if self.mode == "cached":
@@ -225,7 +299,7 @@ class CaseWriter:
             log.warning("CaseWriter live mode has no API key; trying the cache before the template")
             return self._cached(payment_id, events, template) or template
         try:
-            return self._request(payment_id, events, template)
+            return self._request(payment_id, events, template, text_signals)
         except Exception as error:
             log.warning("CaseWriter live generation failed (%s); using the template", type(error).__name__)
             return template

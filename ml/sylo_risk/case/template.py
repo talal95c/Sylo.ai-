@@ -5,6 +5,8 @@ from typing import Any
 
 from sylo_spec.models import CaseFile
 
+from .text_screen import TextSignals
+
 
 RULE_FAMILIES = {
     "R-PV-01": "V",
@@ -131,7 +133,51 @@ def _timeline_text(event: Mapping[str, Any]) -> str:
     return kind.replace(".", " ").capitalize() + "."
 
 
-def template_case(payment_id: str, events: list[Any], *, llm: str = "off") -> CaseFile:
+def _text_screen_sentences(
+    signals: TextSignals | None, action: str
+) -> list[dict[str, Any]]:
+    if signals is None:
+        return []
+    prompts = {
+        "change": (
+            "TX-CHANGE",
+            "the document announces new bank details",
+        ),
+        "pressure": (
+            "TX-PRESSURE",
+            "the document uses payment-fraud pressure",
+        ),
+        "injection": (
+            "TX-INJECTION",
+            "the document contains instructions addressed to an automated system",
+        ),
+    }
+    sentences: list[dict[str, Any]] = []
+    for name, (ref, description) in prompts.items():
+        score = getattr(signals, name)
+        if score is None or score < 0.5:
+            continue
+        text = f"Text screening (Jev): {description} (p={score:.2f})."
+        if action == "RELEASE_AFTER_CONFIRMATION":
+            text = f"Text screening (Jev): {description} (p={score:.2f}); verification is still required."
+        sentences.append({"text": text, "refs": [ref]})
+    if signals.source == "unavailable":
+        sentences.append(
+            {
+                "text": "Text screening unavailable: treat the document as unverified.",
+                "refs": ["TX-UNAVAILABLE"],
+            }
+        )
+    return sentences
+
+
+def template_case(
+    payment_id: str,
+    events: list[Any],
+    *,
+    llm: str = "off",
+    text_signals: TextSignals | None = None,
+) -> CaseFile:
     normalized = [event_dict(event) for event in events]
     risk_event = next((event for event in normalized if event.get("type") == "risk.scored"), {})
     risk_data = _data(risk_event)
@@ -155,6 +201,8 @@ def template_case(payment_id: str, events: list[Any], *, llm: str = "off") -> Ca
             event_id = str(event.get("id", ""))
             if event_id:
                 sentences.append({"text": _timeline_text(event), "refs": [event_id]})
+
+    sentences.extend(_text_screen_sentences(text_signals, action))
 
     citations_by_ref: dict[str, dict[str, str]] = {}
     for sentence in sentences:

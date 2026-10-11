@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import ValidationError
 from sylo_spec.models import CaseFile
 
+from .text_screen import TEXT_SCREEN_REFS
 from .template import ACTION_RANK, event_dict
 
 NUMBER = re.compile(r"\d[\d,.\s]*\d|\d")
@@ -53,7 +54,9 @@ def validate_case(
         for reason in risk_data.get("reasons", [])
         if isinstance(reason, Mapping) and reason.get("ref")
     }
-    allowed = event_ids | rules | families
+    template_refs = {ref for sentence in template.sentences for ref in sentence.refs}
+    text_refs = template_refs & TEXT_SCREEN_REFS
+    allowed = event_ids | rules | families | text_refs
 
     for sentence in case.sentences:
         if not sentence.refs or any(ref not in allowed for ref in sentence.refs):
@@ -64,12 +67,27 @@ def validate_case(
     if set(citations) != distinct_refs or len(citations) != len(case.citations):
         return None
     for ref, source in citations.items():
-        expected = f"event:{ref}" if ref in event_ids else f"rule:{ref}" if ref in rules else f"reason:{ref}"
+        expected = (
+            f"event:{ref}"
+            if ref in event_ids
+            else f"rule:{ref}"
+            if ref in rules
+            else f"reason:{ref}"
+        )
         if ref not in allowed or source != expected:
             return None
 
     events_json = json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
     available_numbers = _numbers(events_json)
+    available_numbers.update(
+        _numbers(
+            " ".join(
+                sentence.text
+                for sentence in template.sentences
+                if set(sentence.refs) & TEXT_SCREEN_REFS
+            )
+        )
+    )
     for text in [case.summary, case.explanation, *(sentence.text for sentence in case.sentences)]:
         text_numbers = _numbers(_strip_refs(text, allowed))
         if not text_numbers.issubset(available_numbers):

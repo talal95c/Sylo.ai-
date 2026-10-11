@@ -12,6 +12,9 @@ dependencies = [
   "sylo-spec",
 ]
 
+[project.optional-dependencies]
+jev = ["typesafe-sdk>=0.7.4"]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 
