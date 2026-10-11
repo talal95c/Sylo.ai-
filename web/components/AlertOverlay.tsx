@@ -44,7 +44,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.55, ease }}
-            className="card pointer-events-auto w-[min(560px,100%)] overflow-hidden rounded-[28px]"
+            className="card pointer-events-auto max-h-[calc(100dvh-196px)] w-[min(560px,100%)] overflow-y-auto overscroll-contain rounded-[28px]"
           >
             <div className="h-1 w-full" style={{ background: state.revoked ? "var(--danger)" : state.released ? "var(--low)" : TIER_COLORS[held.tier] }} />
             <div className="p-6">
@@ -188,6 +188,8 @@ function Verification({ state, nextStep }: { state: ViewState; nextStep: string 
   return <div className="text-ink-3">{nextStep}</div>;
 }
 
+const isInvoiceScreen = (refs: string[]) => refs.some((ref) => ref.startsWith("TX-"));
+
 function CaseFile({ state }: { state: ViewState }) {
   const file = state.caseFile;
   return (
@@ -211,8 +213,13 @@ function CaseFile({ state }: { state: ViewState }) {
           <div className="mt-3 max-h-[150px] overflow-y-auto pr-1">
             {file.sentences?.length ? (
               <ul className="space-y-1.5">
-                {file.sentences.map((sentence) => (
+                {[...file.sentences]
+                  .sort((a, b) => Number(isInvoiceScreen(b.refs)) - Number(isInvoiceScreen(a.refs)))
+                  .map((sentence) => (
                   <li key={sentence.text} className="leading-snug text-ink-2">
+                    {isInvoiceScreen(sentence.refs) ? (
+                      <span className="mr-1.5 rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 text-[10.5px] font-medium text-ink">Invoice screen</span>
+                    ) : null}
                     {sentence.text}{" "}
                     <span className="font-mono text-[10.5px] text-ink-3">{sentence.refs.join(" · ")}</span>
                   </li>
