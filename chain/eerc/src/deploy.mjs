@@ -1,6 +1,7 @@
 // Deploys the eERC converter stack on Fuji (prod verifiers + BabyJubJub + Registrar +
 // EncryptedERC{isConverter:true, decimals:2}), registers auditor / EU CASP / GH VASP and sets
 // the auditor key. Idempotent: reruns reuse deployments/43113.json and skip done steps.
+// Then run src/roles.mjs to hand EncryptedERC ownership from the deployer to the admin wallet.
 import fs from "node:fs";
 import { ethers } from "ethers";
 import {
@@ -24,7 +25,7 @@ import {
 } from "./lib.mjs";
 
 const p = provider();
-const deployer = wallet("auditor", p);
+const deployer = wallet("deployer", p);
 const deployerAddr = await deployer.getAddress();
 
 async function deploy(name, args = [], libs = {}) {
@@ -78,7 +79,7 @@ if (!d) {
 }
 
 const { registrar, eerc } = contracts(deployer);
-const roles = { auditor: deployer, euCasp: wallet("euCasp", p), ghVasp: wallet("ghVasp", p) };
+const roles = { auditor: wallet("auditor", p), euCasp: wallet("euCasp", p), ghVasp: wallet("ghVasp", p) };
 
 for (const [role, w] of Object.entries(roles)) {
 	const id = await deriveIdentity(w);
@@ -97,10 +98,11 @@ for (const [role, w] of Object.entries(roles)) {
 }
 
 if (!(await eerc.isAuditorKeySet())) {
-	const tx = await eerc.setAuditorPublicKey(deployerAddr);
+	const auditorAddr = await roles.auditor.getAddress();
+	const tx = await eerc.setAuditorPublicKey(auditorAddr);
 	await tx.wait();
-	d.auditor = { address: deployerAddr, setTx: tx.hash, note: "PoC: deployer holds the auditor key; final holder TBD (PRD §13.6)" };
-	console.log(`  auditor key set -> ${deployerAddr}  ${txLink(tx.hash)}`);
+	d.auditor = { address: auditorAddr, setTx: tx.hash, note: "dedicated auditor wallet (compliance function in production)" };
+	console.log(`  auditor key set -> ${auditorAddr}  ${txLink(tx.hash)}`);
 }
 
 fs.writeFileSync(DEPLOYMENTS_FILE, `${JSON.stringify(d, null, 2)}\n`);

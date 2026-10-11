@@ -4,7 +4,7 @@
   "mode": "converter",
   "eercDecimals": 2,
   "underlying": "0xd1A86C8Fc2a693E9C81E6ddC2924179e82A407bD",
-  "owner": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+  "owner": "0x543c3081DD0879fb4512147231768e270ae8f315",
   "startBlock": 59290460,
   "contracts": {
     "RegistrationVerifier": "0x497c375c9b149914C173E4CCAD6871A1129876eB",
@@ -27,14 +27,6 @@
     "EncryptedERC": "0xf9114ba4b7be02308581d5b19f6a127d223c0894d71d1ad735d35d092b8c4070"
   },
   "registered": {
-    "auditor": {
-      "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
-      "publicKey": [
-        "2727148728548457238443866730113309754991759667549556886683137213948819949522",
-        "17348761717503691437980818628325470361356518477796009755427168295457019784142"
-      ],
-      "tx": "0xbc6664d40ff47127bb911ec997cf5582ca66ec9867e326c2194b4d691e15e467"
-    },
     "euCasp": {
       "address": "0xBCf6E4EEe3B7700Ce8633a2067c73Ad866b7135D",
       "publicKey": [
@@ -50,14 +42,38 @@
         "17839127115113183118122760711830854402569813171106252890487035778440256842479"
       ],
       "tx": "0xf061cc5fd6018df73f825d1ae19179b9a6f0b3821cfe4ffd0bdf63aabbe28e4a"
+    },
+    "legacyAuditorDeployer": {
+      "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+      "publicKey": [
+        "2727148728548457238443866730113309754991759667549556886683137213948819949522",
+        "17348761717503691437980818628325470361356518477796009755427168295457019784142"
+      ],
+      "tx": "0xbc6664d40ff47127bb911ec997cf5582ca66ec9867e326c2194b4d691e15e467"
+    },
+    "auditor": {
+      "address": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+      "publicKey": [
+        "13507096856740909942413611332798274494866652648331341513220864214377119519395",
+        "9445662088560389552962177887574822177858740588529837347082076426239790382945"
+      ],
+      "tx": "0xc4603f9576008b74b27525e182d5685655b05dd30537faa67801382a695dae3d"
     }
   },
   "auditor": {
-    "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
-    "setTx": "0x870cfafeeda943e74dfa48901315a11820d41d1a37aaf953b2d05066468601f8",
-    "note": "PoC: deployer holds the auditor key; final holder TBD (PRD §13.6)"
+    "address": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+    "setTx": "0xfd470464d138f44346079b6d99630914794839316d4f648ff5c56b41cdb90042",
+    "note": "dedicated auditor wallet (compliance function in production); rotatable by the admin",
+    "previous": [
+      {
+        "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+        "setTx": "0x870cfafeeda943e74dfa48901315a11820d41d1a37aaf953b2d05066468601f8",
+        "note": "deployer key: transfers made before this rotation are decryptable only with it"
+      }
+    ]
   },
   "demoRun": {
+    "note": "first run: per-payment wrap/unwrap, audited with the previous (deployer) auditor key",
     "paymentId": "PAY-2026-0001",
     "amountEur": 85000,
     "auditorDecryptedEur": 85000,
@@ -69,5 +85,48 @@
       "transfer": "0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e",
       "withdraw": "0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1"
     }
+  },
+  "roles": {
+    "deployer": {
+      "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+      "does": "deployed the contracts; no standing rights after the handover"
+    },
+    "admin": {
+      "address": "0x543c3081DD0879fb4512147231768e270ae8f315",
+      "does": "owner of EncryptedERC (setAuditorPublicKey, setTokenBlacklist)"
+    },
+    "auditor": {
+      "address": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+      "does": "holds the audit decryption key; decrypts amounts only"
+    },
+    "euCasp": {
+      "address": "0xBCf6E4EEe3B7700Ce8633a2067c73Ad866b7135D",
+      "does": "payer-side institution; holds the eEURC float"
+    },
+    "ghVasp": {
+      "address": "0x4B83aD390b5e5E079fab11dC1FBC86d09CE4DeB9",
+      "does": "payee-side institution; settles netted amounts"
+    }
+  },
+  "ownership": {
+    "transferTx": "0x38ea8a545fd8a9ddd17d9c371e6840a60bffbba17d2c9f53520b779924debe47",
+    "acceptTx": "0x9a27e06bcbcbe308ee5633d8c160d4f0541c5b29a7b16f5683c0239c31c176ea",
+    "model": "Ownable2Step (admin accepted)",
+    "owner": "0x543c3081DD0879fb4512147231768e270ae8f315",
+    "registrar": "not ownable (no admin functions)"
+  },
+  "roleFundingTxs": {
+    "auditor": "0x444f9a43e1e0366a3712f4dcdfe8d3842d2ce3952cf9af07c9d6dea00ddc5afc",
+    "admin": "0x61d4193af37bc03ef34be5e10f2ea5ab6c32f3e5b5feff40c6f2112870242f9e"
+  },
+  "demoRunFloat": {
+    "model": "pre-funded float + netted unwrap (see demo-runs-43113.json for full records)",
+    "float": { "floatAfterEur": 1000000, "deposit": "0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b" },
+    "transfers": [
+      { "paymentId": "PAY-2026-0101", "auditorDecryptedEur": 85000, "tx": "0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c" },
+      { "paymentId": "PAY-2026-0102", "auditorDecryptedEur": 12400.75, "tx": "0xeb011a5d5814e7552a3a95353c96d701f2a565ffac98121e0ce87a1756b66c65" },
+      { "paymentId": "PAY-2026-0103", "auditorDecryptedEur": 230000, "tx": "0x1b8cd84674010e669c20e758f22a8d1373f61a76332ede8a0bcb45042c7e8bca" }
+    ],
+    "settle": { "amountEur": 300000, "auditorDecryptedEur": 300000, "withdraw": "0x6f55d7fcb23b2a2a540f61d52cd6f51256fc97e20f7f2a20741ef8d6d728e9a4" }
   }
 }
