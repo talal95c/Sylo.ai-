@@ -78,6 +78,7 @@ class Settings:
     # A public deployment: the operator endpoints (approvals, case actions, guardian, payee checks,
     # simulated clock, rails and events, breakers) answer 403; scenarios, attacks and reset stay open.
     demo_public: bool = False
+    operator_token: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -116,4 +117,5 @@ class Settings:
             reroute_max_fees_eur=float(_get(env, "REROUTE_MAX_FEES_EUR", "500")),
             reroute_max_days=float(_get(env, "REROUTE_MAX_DAYS", "3")),
             demo_public=_get(env, "DEMO_PUBLIC", "0").lower() in {"1", "true", "yes", "on"},
+            operator_token=env.get("OPERATOR_TOKEN") or None,
         )
