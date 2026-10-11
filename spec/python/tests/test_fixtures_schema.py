@@ -54,8 +54,22 @@ def test_numbering_starts_at_one_and_branches_continue():
         assert all(e["id"] == f"evt-{e['seq']:06d}" for e in events)
 
 
-def test_scene2_diverted_ends_at_the_supplier_question():
-    assert load("scene2-diverted")[-1]["type"] == "verification.requested"
+def test_scene2_branches_start_after_the_shared_case_ready():
+    diverted = load("scene2-diverted")
+    deny, confirm = load("scene2-deny"), load("scene2-confirm")
+    case_ready = diverted[-1]
+    verification = [event for event in diverted if event["type"] == "verification.requested"]
+    assert case_ready["type"] == "case.ready"
+    assert verification and verification[-1]["seq"] < case_ready["seq"]
+    for branch in (deny, confirm):
+        assert branch[0]["seq"] == case_ready["seq"] + 1
+        assert not any(event["type"] == "case.ready" for event in branch)
+        responses = [
+            event
+            for event in branch
+            if event["type"].startswith("supplier.") or event["type"] == "verification.recorded"
+        ]
+        assert all(case_ready["seq"] < event["seq"] for event in responses)
 
 
 def test_every_attack_fixture_continues_the_deny_branch():
@@ -128,12 +142,16 @@ def types_of(name: str) -> list[str]:
     return [event["type"] for event in load(name)]
 
 
-def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_held_payment():
+def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_stopped_payment():
     kinds = types_of("samples-scene3-mule-wave")
     assert kinds[:6] == ["scenario.started", "traffic.sample", "traffic.sample", "traffic.sample", "cluster.detected", "breaker.on"]
-    assert "payment.held" in kinds[6:] and kinds[-1] == "payment.stopped"
+    assert "payment.held" not in kinds[6:] and kinds[-1] == "case.ready"
+    assert "payment.stopped" in kinds[6:]
     scored = next(e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "risk.scored")
-    assert scored["rulesFired"][-1] == "R-CB-01"
+    assert scored["score"] == 77 and scored["tier"] == "CRITICAL"
+    assert "R-CB-01" in scored["rulesFired"]
+    detected = [e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "cluster.detected"]
+    assert detected and all(event["detector"] == "sylo_risk.clusters" for event in detected)
     stamps = [e["ts"] for e in load("samples-scene3-mule-wave")]
     assert stamps == sorted(stamps), "one timeline, even with two scenarios in the file"
 

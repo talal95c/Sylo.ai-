@@ -328,7 +328,7 @@
     "t_high": 0.4510718837561716,
     "t_med": 0.04457334309526271
   },
-  "generatedAt": "2026-10-11T06:40:17.226460+00:00",
+  "generatedAt": "2026-10-11T06:53:02.088654+00:00",
   "integrity": [
     {
       "case": "I1",
@@ -427,7 +427,7 @@
     "recallT1": 1.0,
     "recallT1Evasive": 1.0,
     "stpRate": 0.9327744107744108,
-    "ttdP95Ms": 0.571591750144762,
+    "ttdP95Ms": 0.5852578495250782,
     "valueStoppedPct": 0.9944670834224548
   },
   "modelOnlyMetrics": {
@@ -540,9 +540,9 @@
     "recallT1Evasive": 1.0,
     "seed": "C",
     "stpRate": 0.9168484848484848,
-    "ttdP95Ms": 0.5924768498516642,
+    "ttdP95Ms": 0.6416737502149772,
     "valueStoppedPct": 0.9921639451858553
   },
-  "runtimeSeconds": 431.96770891200003,
+  "runtimeSeconds": 415.3483672049997,
   "sample": false
 }

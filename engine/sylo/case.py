@@ -35,6 +35,7 @@ LLM_MODES = ("off", "cached", "live")
 RULES_PROMPT_VERSION = "rules-v1"
 RULES_MODEL = "rules"
 IMPERSONATION_RULES = frozenset({"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01"})
+TEXT_SCREEN_REFS = frozenset({"TX-CHANGE", "TX-PRESSURE", "TX-INJECTION", "TX-UNAVAILABLE"})
 CLOSINGS = {
     "held": (texts.CASE_CLOSING_HELD, "RELEASE_AFTER_CONFIRMATION"),
     "analyst": (texts.CASE_CLOSING_ANALYST, "CONFIRM_REVOCATION"),
@@ -139,6 +140,7 @@ def rules_case_file(
 def known_refs(risk: RiskResult, events: list[dict[str, Any]]) -> set[str]:
     """Everything a case file may cite: the rules that fired, reason refs, norm signals and the payment's events."""
     refs = set(risk.rules_fired)
+    refs.update(TEXT_SCREEN_REFS)
     refs.update(reason.ref for reason in risk.reasons)
     refs.update(event["id"] for event in events)
     for event in events:

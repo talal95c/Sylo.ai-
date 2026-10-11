@@ -7,6 +7,7 @@ import {
   closeAlert,
   initialState,
   reduce,
+  resetForSourceChange,
   type ViewState,
 } from "./store";
 import {
@@ -16,6 +17,7 @@ import {
   type Source,
   type SourceKind,
 } from "./source";
+import { engineConnectTimeoutMs, engineUrl } from "./engine";
 
 type UiAction = { type: "ui.closeAlert" } | { type: "ui.sourceChanged" };
 type HookAction = SyloEvent | UiAction;
@@ -23,7 +25,7 @@ type HookAction = SyloEvent | UiAction;
 function hookReducer(state: ViewState, action: HookAction): ViewState {
   if (!("v" in action)) {
     if (action.type === "ui.closeAlert") return closeAlert(state);
-    return { ...initialState, mode: state.mode };
+    return resetForSourceChange(state);
   }
   return reduce(state, action);
 }
@@ -42,8 +44,6 @@ export function useSylo() {
 
   useEffect(() => {
     dispatch({ type: "ui.sourceChanged" });
-    const engineUrl =
-      process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://localhost:8000";
     const source =
       sourceKind === "live"
         ? createLiveSource(engineUrl)
@@ -81,7 +81,7 @@ export function useSylo() {
     if (sourceKind === "live") {
       initialTimer = setTimeout(() => {
         if (!opened) switchToReplay();
-      }, 2000);
+      }, engineConnectTimeoutMs);
     }
 
     return () => {

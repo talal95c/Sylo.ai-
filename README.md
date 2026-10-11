@@ -26,6 +26,13 @@ Open <http://localhost:3000> and use the demo buttons at the bottom left:
 
 Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
 
+## Deploy
+
+- **Render:** choose **New → Blueprint** for this repository, then set `CORS_ORIGINS` to the Vercel URL(s).
+- **Vercel:** import the repository, set Root Directory to `web`, and keep **Include files outside the Root Directory** enabled (the prebuild copies `../spec`).
+- Set `NEXT_PUBLIC_ENGINE_URL=https://<render-service>.onrender.com`, `NEXT_PUBLIC_SOURCE=live`, and `NEXT_PUBLIC_ENGINE_CONNECT_TIMEOUT_MS=60000`.
+- One engine is one shared demo session: visitors to that deployment share its in-memory state and event stream.
+
 ### Engine v1 (Lane A)
 
 The engine now also runs the human steps and the integrity checks of v1 ([`spec/api.md`](spec/api.md)):
@@ -64,10 +71,12 @@ make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
 |---|---|---|
 | [`spec/`](spec/) | Shared | Event schema, API, EIP-712 vector, geography, fixtures, Python models and conformance suites |
 | [`engine/`](engine/) | A | FastAPI engine: norms, rules-based risk, router, signer, simulated chain, orchestrator, event stream |
-| [`ml/`](ml/) | B | Fraud model package (skeleton in v0) |
+| [`ml/`](ml/) | B | Synthetic fraud-risk model, simulator and evaluation pipeline |
 | [`contracts/`](contracts/) | C | `PaymentRegistry`, `PaymentEscrow`, `MockEURC` (Foundry) |
 | [`chain/`](chain/) | C | Fuji adapter package (skeleton in v0) |
 | [`web/`](web/) | D | Next.js demo screen with the globe |
+
+Lane B runs with `RISK_MODE=model`; `LLM_MODE=cached|live` controls case generation and `JEV_MODE` controls advisory document screening. Use `make data SEED=A`, `make train` and `make eval SEED=B` for the model workflow. The cached demo needs no API key. See the [model card](docs/model-card.md) and [benchmark journal](ml/reports/BENCHMARKS.md). `make dev` loads `.env`, which overrides shell flags.
 
 ## Documents
 

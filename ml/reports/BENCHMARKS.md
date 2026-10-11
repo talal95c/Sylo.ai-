@@ -95,16 +95,18 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 | B | 30/30 (100.0%) | 7 / 10.1 | 0 / 0 / 30 | 30/30 (100.0%) | 11.5 / 16.1 | 14 | 4.51 s |
 | C | 30/30 (100.0%) | 7.5 / 10.2 | 0 / 0 / 30 | 29/30 (96.7%) | 10 / 15.2 | 15 | 4.49 s |
 
-The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; the old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
+The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
-The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. No engine/web wiring was done. Lane A will need to invoke the `ClusterPort` implementation from the future mule-wave scene and publish the resulting roadmap-shaped `cluster.detected` event before wiring the breaker or globe.
+- Engine window detector (`WindowClusterDetector`, main 5971aaa): ≥3 payments into young/thin accounts at a border bank; offline benchmark unchanged.
+
+The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. The engine's `WindowClusterDetector` is covered by the scene 3 engine test, not by this offline benchmark.
 
 
 ## Evaluation harness — B / C
 
 - Command: `make eval SEED=B`.
 - Dataset: 150,000 payments per seed, 30 days.
-- Runtime: 432.0 s.
-- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 0.572 ms.
-- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 0.592 ms.
+- Runtime: 415.3 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 0.585 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 0.642 ms.
 - Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
