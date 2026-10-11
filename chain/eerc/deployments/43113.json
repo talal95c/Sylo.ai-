@@ -1,0 +1,73 @@
+{
+  "chainId": 43113,
+  "source": "ava-labs/EncryptedERC@8dc98cd (contracts/prod verifiers, circom/build circuits)",
+  "mode": "converter",
+  "eercDecimals": 2,
+  "underlying": "0xd1A86C8Fc2a693E9C81E6ddC2924179e82A407bD",
+  "owner": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+  "startBlock": 59290460,
+  "contracts": {
+    "RegistrationVerifier": "0x497c375c9b149914C173E4CCAD6871A1129876eB",
+    "MintVerifier": "0xb54E18294FBb0d960A51860Ca0d724599e59197F",
+    "WithdrawVerifier": "0xFC8AA186B56a42AA6Fc2fF1E4b1813A0C0074840",
+    "TransferVerifier": "0xD0bE9B31a9e5B2bbdaC7B4EB0938592Ad9b4db4f",
+    "BurnVerifier": "0x31DA6fA599b9F79a3b88e0187D35D65E570E4e5D",
+    "BabyJubJub": "0xeF1C0F4bBbFf3E9451718c112cf9c9DBFB0b6211",
+    "Registrar": "0xF36620B74Db9b584A15Bd1CF2474Acec0C2ba33A",
+    "EncryptedERC": "0x6112a283a43C3f6522D5Ee55d349Cc841062Ec26"
+  },
+  "deployTxs": {
+    "RegistrationVerifier": "0x318322f16fea3cd23d1111dd0c0c264ca2eae4fcce3fe83a8720d93f0110e05b",
+    "MintVerifier": "0x6c027354b9773516a6a56f941daedad21bfe154cfbb0ec9401522a9fc1c59d79",
+    "WithdrawVerifier": "0x4057d299181c35d0f78c54c57e51d6dbf64cce166de99d1d2abe46a77d45478f",
+    "TransferVerifier": "0xfee42786f09070d780f56ef9ef165411b320c8b3cc23e97f73b50b198b4d55be",
+    "BurnVerifier": "0xa5e6dd04ee08559d88f2ca3cb7677f3ed6d4b2cef8d9e46ec3f408fc65a6c91f",
+    "BabyJubJub": "0xf08856a4c5cdb0232a323a9955236d1da054249c4606de8d9825a5b9f840be12",
+    "Registrar": "0x49fae251a86b370089711426fe94afa4a4478cc7441e34bb48c1b9c2d64a2e18",
+    "EncryptedERC": "0xf9114ba4b7be02308581d5b19f6a127d223c0894d71d1ad735d35d092b8c4070"
+  },
+  "registered": {
+    "auditor": {
+      "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+      "publicKey": [
+        "2727148728548457238443866730113309754991759667549556886683137213948819949522",
+        "17348761717503691437980818628325470361356518477796009755427168295457019784142"
+      ],
+      "tx": "0xbc6664d40ff47127bb911ec997cf5582ca66ec9867e326c2194b4d691e15e467"
+    },
+    "euCasp": {
+      "address": "0xBCf6E4EEe3B7700Ce8633a2067c73Ad866b7135D",
+      "publicKey": [
+        "4824902620604188363247476558161414168232067308225350847908535158627889198775",
+        "19721910030750353719713533857879695843164727469933964525386525676757425838538"
+      ],
+      "tx": "0x5d4cd48917a0d308fb8636e4dbf8b9ea063b67d04ccf90e5ccc1e99fb825047e"
+    },
+    "ghVasp": {
+      "address": "0x4B83aD390b5e5E079fab11dC1FBC86d09CE4DeB9",
+      "publicKey": [
+        "9992545111826074016619700625023295257123347827725152475222144858247317948078",
+        "17839127115113183118122760711830854402569813171106252890487035778440256842479"
+      ],
+      "tx": "0xf061cc5fd6018df73f825d1ae19179b9a6f0b3821cfe4ffd0bdf63aabbe28e4a"
+    }
+  },
+  "auditor": {
+    "address": "0xbDB63aB91DFA5dfA5C8251b1FFbbE3820F5e7d2a",
+    "setTx": "0x870cfafeeda943e74dfa48901315a11820d41d1a37aaf953b2d05066468601f8",
+    "note": "PoC: deployer holds the auditor key; final holder TBD (PRD §13.6)"
+  },
+  "demoRun": {
+    "paymentId": "PAY-2026-0001",
+    "amountEur": 85000,
+    "auditorDecryptedEur": 85000,
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0001"
+    },
+    "txs": {
+      "deposit": "0x40352f4fe095e8f37be722e730d041dfafa6b3daa09a75186df24394bf93933c",
+      "transfer": "0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e",
+      "withdraw": "0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1"
+    }
+  }
+}
