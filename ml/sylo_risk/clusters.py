@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from functools import lru_cache
 from hashlib import sha256
 from typing import Any
 
 import networkx as nx
 
-from sylo_spec.models import Cluster, ClusterCentroid, ClusterPoint, WindowPayment
+from sylo_spec import SPEC_DIR
+from sylo_spec.models import Account, Cluster, ClusterCentroid, ClusterPoint, WindowPayment
+from sylo_spec.scenarios import ACCOUNTS
 
-from .geo import GH_REGION_CENTROIDS, institution_geography
+from .geo import GH_REGION_CENTROIDS, GH_REGION_ISO, institution_geography
 
-name = "networkx-mule-clusters"
+YOUNG_ACCOUNT_DAYS = 120
+THIN_HISTORY_PAYMENTS = 10
+MIN_LINKED_PAYMENTS = 3
 
 
 @dataclass
@@ -22,7 +29,6 @@ class _ClusterState:
     accounts: set[str] = field(default_factory=set)
     payments: dict[str, Mapping[str, Any]] = field(default_factory=dict)
     regions: dict[str, str] = field(default_factory=dict)
-    institutions: set[str] = field(default_factory=set)
 
 
 def _region(record: Mapping[str, Any]) -> str:
@@ -44,43 +50,6 @@ def _cluster_id(accounts: set[str]) -> str:
     return f"cluster-{sha256(identity.encode('utf-8')).hexdigest()[:12]}"
 
 
-def _as_record(payment: Mapping[str, Any] | WindowPayment) -> dict[str, Any]:
-    if isinstance(payment, Mapping):
-        record = dict(payment)
-    else:
-        record = payment.model_dump()
-        record["day"] = 0
-        record["bene_bank_institution_id"] = record.get("institution_id")
-    record.setdefault("payer_id", None)
-    if record.get("account_age_days") is None:
-        record["account_age_days"] = 0
-    if record.get("successful_payments") is None:
-        record["successful_payments"] = 0
-    return record
-
-
-def _region_payload(region: str) -> tuple[str, str]:
-    codes = {
-        "Ashanti": "GH-AH",
-        "Bono": "GH-BO",
-        "Central": "GH-CP",
-        "Eastern": "GH-EP",
-        "Greater Accra": "GH-AA",
-        "Northern": "GH-NP",
-        "Upper East": "GH-UE",
-        "Volta": "GH-TV",
-        "Western": "GH-WP",
-        "Savannah": "GH-SV",
-    }
-    names = {
-        "Volta": "Volta Region (Aflao border)",
-        "Upper East": "Upper East Region (border)",
-    }
-    return codes.get(region, region), names.get(
-        region, f"{region} Region" if region != "Unknown" else "Unknown"
-    )
-
-
 def _join_groups(graph: nx.Graph, groups: Mapping[Any, set[str]]) -> None:
     for accounts in groups.values():
         ordered = sorted(accounts)
@@ -93,7 +62,7 @@ class NetworkXClusterDetector:
 
     def detect(
         self,
-        payments: Sequence[Mapping[str, Any] | WindowPayment],
+        payments: list[Mapping[str, Any]],
         window_days: int = 2,
     ) -> list[Cluster]:
         if window_days < 1:
@@ -101,8 +70,7 @@ class NetworkXClusterDetector:
 
         by_day: dict[int, list[tuple[int, Mapping[str, Any]]]] = defaultdict(list)
         for index, payment in enumerate(payments):
-            record = _as_record(payment)
-            by_day[int(record.get("day", 0))].append((index, record))
+            by_day[int(payment.get("day", 0))].append((index, payment))
 
         clusters: dict[str, _ClusterState] = {}
         account_cluster: dict[str, str] = {}
@@ -128,9 +96,6 @@ class NetworkXClusterDetector:
                 account_records[account_id].append((index, payment))
 
             candidates: dict[str, list[tuple[int, Mapping[str, Any]]]] = {}
-            border_accounts: dict[
-                str, dict[str, list[tuple[int, Mapping[str, Any]]]]
-            ] = defaultdict(dict)
             for account_id, records in account_records.items():
                 account_node = ("account", account_id)
                 payers = {
@@ -147,23 +112,8 @@ class NetworkXClusterDetector:
                     successes = int(latest.get("successful_payments", 0))
                 except (TypeError, ValueError):
                     continue
-                if age < 120 or successes < 10:
-                    bank_id = str(latest.get("bene_bank_institution_id") or "")
-                    geography = institution_geography(bank_id or None)
-                    if geography.known and geography.border and bank_id:
-                        border_accounts[bank_id][account_id] = records
                 if len(payers) >= 3 and (age < 120 or successes < 10):
                     candidates[account_id] = records
-
-            for accounts in border_accounts.values():
-                payers = {
-                    str(payment.get("payer_id") or "")
-                    for records in accounts.values()
-                    for _, payment in records
-                    if payment.get("payer_id")
-                }
-                if len(accounts) >= 3 and len(payers) >= 3:
-                    candidates.update(accounts)
 
             if not candidates:
                 continue
@@ -230,11 +180,6 @@ class NetworkXClusterDetector:
                                 ),
                             )[1]
                         )
-                        state.institutions.update(
-                            str(payment.get("bene_bank_institution_id"))
-                            for _, payment in records
-                            if payment.get("bene_bank_institution_id")
-                        )
                         state.payments.update(
                             {
                                 str(record.get("payment_id") or f"row-{index}"): record
@@ -272,15 +217,12 @@ class NetworkXClusterDetector:
                 region = "Unknown"
                 lat, lng = 0.0, 0.0
                 points = []
-            region_id, region_name = _region_payload(region)
             output.append(
                 Cluster(
                     cluster_id=state.cluster_id,
                     accounts=sorted(state.accounts),
                     agents=[],
-                    region=region_id,
-                    region_name=region_name,
-                    institutions=sorted(state.institutions),
+                    region=region,
                     centroid=ClusterCentroid(lat=lat, lng=lng),
                     points=points,
                     linked_payments=sorted(state.payments),
@@ -290,11 +232,110 @@ class NetworkXClusterDetector:
         return output
 
 
+@lru_cache(maxsize=1)
+def _institutions() -> dict[str, Mapping[str, Any]]:
+    geo = json.loads((SPEC_DIR / "geo" / "institutions.json").read_text(encoding="utf-8"))
+    return {institution["id"]: institution for institution in geo["institutions"]}
+
+
+class WindowClusterDetector:
+    """``ClusterPort`` over the engine's window of recent payments (``WindowPayment``: ids, amount, time).
+
+    The window carries no payer and no history, so the offline rule "three payers into one young
+    account" becomes: payments into young or thin accounts at a border-region bank, linked through
+    that bank. A group that at least three payments point to is reported. Unknown accounts and
+    unknown banks count as suspicious (missing data is pessimistic).
+    """
+
+    name = "networkx-mule-clusters"
+
+    def __init__(self, accounts: Mapping[str, Account] | None = None) -> None:
+        self.accounts = ACCOUNTS if accounts is None else accounts
+
+    def _suspicious(self, payment: WindowPayment) -> bool:
+        if not institution_geography(payment.institution_id).border:
+            return False
+        account = self.accounts.get(payment.account_id)
+        if account is None:
+            return True
+        at = datetime.fromisoformat(payment.at.replace("Z", "+00:00")).date()
+        age = (at - date.fromisoformat(account.first_seen)).days
+        return age < YOUNG_ACCOUNT_DAYS or account.successful_payments < THIN_HISTORY_PAYMENTS
+
+    def detect(self, window: list[WindowPayment]) -> list[Cluster]:
+        suspicious = [payment for payment in window if self._suspicious(payment)]
+        graph = nx.Graph()
+        for payment in suspicious:
+            graph.add_edge(("payment", payment.payment_id), ("account", payment.account_id))
+            graph.add_edge(("account", payment.account_id), ("bank", payment.institution_id))
+
+        found: list[tuple[str, list[str], list[str], list[str]]] = []
+        for component in nx.connected_components(graph):
+            payments = sorted(node[1] for node in component if node[0] == "payment")
+            if len(payments) < MIN_LINKED_PAYMENTS:
+                continue
+            accounts = sorted(node[1] for node in component if node[0] == "account")
+            banks = sorted(node[1] for node in component if node[0] == "bank")
+            found.append((self._place(banks), accounts, banks, payments))
+
+        per_place: Counter[str] = Counter()
+        clusters = []
+        for place, accounts, banks, payments in sorted(found):
+            per_place[place] += 1
+            clusters.append(self._cluster(f"CL-{place}-{per_place[place]:02d}", accounts, banks, payments, suspicious))
+        return clusters
+
+    @staticmethod
+    def _place(banks: list[str]) -> str:
+        city = _institutions().get(banks[0], {}).get("city") or banks[0]
+        return "".join(ch for ch in str(city).upper() if ch.isalnum())
+
+    @staticmethod
+    def _cluster(
+        cluster_id: str, accounts: list[str], banks: list[str], payments: list[str], window: Sequence[WindowPayment]
+    ) -> Cluster:
+        per_bank = Counter(payment.institution_id for payment in window if payment.payment_id in payments)
+        located = [bank for bank in banks if bank in _institutions()]
+        points = [
+            ClusterPoint(
+                lat=round(float(_institutions()[bank]["lat"]), 2),
+                lng=round(float(_institutions()[bank]["lng"]), 2),
+                weight=per_bank[bank] / max(per_bank.values()),
+            )
+            for bank in located
+        ]
+        region = institution_geography(banks[0]).region
+        if points:
+            centroid = ClusterCentroid(lat=points[0].lat, lng=points[0].lng)
+        elif region in GH_REGION_CENTROIDS:
+            centroid = ClusterCentroid(lat=GH_REGION_CENTROIDS[region][0], lng=GH_REGION_CENTROIDS[region][1])
+        else:
+            centroid = ClusterCentroid(lat=0.0, lng=0.0)
+        city = _institutions().get(banks[0], {}).get("city")
+        region_name = f"{region} Region" if region else "Unknown region"
+        if city:
+            region_name += f" ({city} border)"
+        return Cluster(
+            cluster_id=cluster_id,
+            accounts=accounts,
+            agents=[],
+            region=GH_REGION_ISO.get(region or "", "Unknown"),
+            region_name=region_name,
+            institutions=banks,
+            centroid=centroid,
+            points=points,
+            linked_payments=payments,
+        )
+
+
 def detect(
     payments: Sequence[Mapping[str, Any] | WindowPayment],
     window_days: int = 2,
 ) -> list[Cluster]:
-    return NetworkXClusterDetector().detect(payments, window_days)
+    """The engine passes ``WindowPayment`` (spec ``ClusterPort``); the evaluation passes simulator rows."""
+    if payments and all(isinstance(payment, WindowPayment) for payment in payments):
+        return WindowClusterDetector().detect(list(payments))  # type: ignore[arg-type]
+    return NetworkXClusterDetector().detect(payments, window_days)  # type: ignore[arg-type]
 
 
 def detect_isolated_by_payer_bank(

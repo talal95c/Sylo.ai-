@@ -1,6 +1,5 @@
 from sylo_risk.clusters import detect, detect_isolated_by_payer_bank
 from sylo_risk.geo import GH_REGION_CENTROIDS
-from sylo_spec.models import WindowPayment
 
 
 def _payment(
@@ -41,60 +40,11 @@ def test_three_payers_to_young_account_detect_one_region_level_cluster():
     assert cluster.accounts == ["young-account"]
     assert cluster.linked_payments == ["pay-1", "pay-2", "pay-3"]
     assert cluster.detected_at_day == 2
-    assert cluster.region == "GH-TV"
-    assert cluster.region_name == "Volta Region (Aflao border)"
-    assert cluster.institutions == ["mule_bank"]
+    assert cluster.region == "Volta"
     assert (cluster.centroid.lat, cluster.centroid.lng) == GH_REGION_CENTROIDS["Volta"]
     assert {
         (point.lat, point.lng) for point in cluster.points
     } == {GH_REGION_CENTROIDS["Volta"]}
-
-
-def test_three_window_payments_to_distinct_suspect_accounts_detect_on_third_payment():
-    payments = [
-        WindowPayment(
-            payment_id=f"wave-{index}",
-            payer_id=f"payer-{index}",
-            account_id=f"account-{index}",
-            institution_id="mule_bank",
-            amount_eur=100.0,
-            at=f"2026-10-11T09:00:0{index}.000Z",
-        )
-        for index in range(1, 4)
-    ]
-
-    clusters = detect(payments, window_days=2)
-
-    assert len(clusters) == 1
-    assert clusters[0].accounts == ["account-1", "account-2", "account-3"]
-    assert clusters[0].linked_payments == ["wave-1", "wave-2", "wave-3"]
-    assert clusters[0].detected_at_day == 0
-    assert clusters[0].region == "GH-TV"
-    assert clusters[0].region_name == "Volta Region (Aflao border)"
-    assert clusters[0].institutions == ["mule_bank"]
-
-
-def test_probe_and_border_fan_in_below_three_accounts_return_no_cluster():
-    assert detect([WindowPayment(
-        payment_id="probe",
-        account_id="probe-account",
-        institution_id="mule_bank",
-        amount_eur=1.0,
-        at="2026-10-11T09:00:00.000Z",
-    )]) == []
-    assert detect(
-        [
-            WindowPayment(
-                payment_id=f"wave-{index}",
-                payer_id=f"payer-{index}",
-                account_id=f"account-{index}",
-                institution_id="mule_bank",
-                amount_eur=100.0,
-                at="2026-10-11T09:00:00.000Z",
-            )
-            for index in range(1, 3)
-        ]
-    ) == []
 
 
 def test_old_popular_supplier_is_not_flagged():
@@ -141,3 +91,62 @@ def test_isolated_bank_view_requires_three_payers_of_one_bank():
     clusters = detect_isolated_by_payer_bank(payments)
     assert len(clusters) == 1
     assert set(clusters[0].linked_payments) == {"a1", "a2", "a3"}
+
+
+def _window(*rows, at="2026-10-11T09:00:00.000Z"):
+    from sylo_spec.models import WindowPayment
+
+    return [
+        WindowPayment(payment_id=payment_id, account_id=account, institution_id=bank, amount_eur=20_000.0, at=at)
+        for payment_id, account, bank in rows
+    ]
+
+
+WAVE = (
+    ("PAY-2026-0101", "acc-aflao-02", "mule_bank"),
+    ("PAY-2026-0102", "acc-aflao-04", "mule_bank"),
+    ("PAY-2026-0103", "acc-aflao-05", "mule_bank"),
+)
+
+
+def test_engine_window_detector_is_a_cluster_port_and_finds_the_wave():
+    from sylo_spec.ports import ClusterPort
+
+    from sylo_risk.clusters import WindowClusterDetector
+
+    detector = WindowClusterDetector()
+    assert isinstance(detector, ClusterPort)
+    [cluster] = detect(_window(("PAY-2026-0002", "acc-mensah-aflao", "mule_bank"), *WAVE))
+
+    assert cluster.cluster_id == "CL-AFLAO-01"
+    assert cluster.institutions == ["mule_bank"], "the breaker scopes on these institutions"
+    assert cluster.linked_payments == ["PAY-2026-0002", "PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"]
+    assert cluster.accounts == ["acc-aflao-02", "acc-aflao-04", "acc-aflao-05", "acc-mensah-aflao"]
+    assert cluster.agents == [], "payments do not reveal cash-out agents"
+    assert (cluster.region, cluster.region_name) == ("GH-TV", "Volta Region (Aflao border)")
+    assert (cluster.centroid.lat, cluster.centroid.lng) == (6.12, 1.19)
+
+
+def test_engine_window_needs_three_linked_payments():
+    assert detect(_window(*WAVE[:2])) == []
+    assert detect(_window(("probe", "probe", "probe"))) == []
+
+
+def test_engine_window_ignores_a_verified_supplier_at_an_inland_bank():
+    rows = [(f"P{i}", "acc-ssx-nominated", "bank_gh") for i in range(5)]
+    assert detect(_window(*rows)) == []
+
+
+def test_engine_window_ignores_an_old_busy_account_at_a_border_bank():
+    from sylo_spec.models import Account
+
+    from sylo_risk.clusters import WindowClusterDetector
+
+    old = Account(
+        id="acc-aflao-shop", holder_name="AFLAO HARDWARE", institution_id="mule_bank",
+        account_masked="GH•• 0001", first_seen="2019-01-01", successful_payments=250,
+    )
+    detector = WindowClusterDetector(accounts={old.id: old})
+    rows = [(f"P{i}", "acc-aflao-shop", "mule_bank") for i in range(4)]
+    assert detector.detect(_window(*rows)) == []
+    assert len(detector.detect(_window(*rows, ("P9", "acc-new", "mule_bank"), ("P8", "acc-new", "mule_bank"), ("P7", "acc-new2", "mule_bank")))) == 1
