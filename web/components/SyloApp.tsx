@@ -99,6 +99,7 @@ export default function SyloApp() {
           institutions={geo?.institutions ?? null}
           chainAltitude={geo?.chainAltitude ?? 0.45}
           speed={sylo.speed}
+          visible={globe}
         />
       </motion.div>
 

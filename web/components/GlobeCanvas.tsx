@@ -35,6 +35,7 @@ export interface GlobeCanvasProps {
   chainAltitude: number;
   atmosphereColor: string;
   speed: number;
+  visible: boolean;
   onFrame?: (cx: number, cy: number) => void;
 }
 
@@ -206,6 +207,7 @@ export default function GlobeCanvas({
   chainAltitude,
   atmosphereColor,
   speed,
+  visible,
   onFrame,
 }: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
@@ -687,8 +689,10 @@ export default function GlobeCanvas({
   }, [handleGlobeZoom]);
 
   useEffect(() => {
+    if (!visible) return;
     let frame = 0;
-    const gap = 18;
+    let last = -Infinity;
+    let lastSignature = "";
 
     const layoutLabels = () => {
       const globe = globeRef.current;
@@ -696,6 +700,20 @@ export default function GlobeCanvas({
       const cameraPov = globe.pointOfView();
 
       const free = freeRectRef.current;
+      const signature = [
+        cameraPov.lat,
+        cameraPov.lng,
+        cameraPov.altitude,
+        width,
+        height,
+        free?.left,
+        free?.right,
+        free?.top,
+        free?.bottom,
+        htmlData.map((label) => `${label.id}:${label.lat}:${label.lng}:${label.altitude}`).join(","),
+      ].join("|");
+      if (signature === lastSignature) return;
+      lastSignature = signature;
       const viewportLeft = free ? free.left : 12;
       const viewportRight = free ? free.right : width - 12;
       const viewportTop = free ? free.top : 76;
@@ -789,8 +807,6 @@ export default function GlobeCanvas({
       }
     };
 
-    // Layout reads DOM rects for every label; ~10 Hz keeps the demo laptop smooth.
-    let last = -Infinity;
     const tick = (now: number) => {
       if (now - last >= 100) {
         last = now;
@@ -799,9 +815,21 @@ export default function GlobeCanvas({
       frame = requestAnimationFrame(tick);
     };
 
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [height, htmlData, width]);
+    const updateVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      } else if (!frame) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+    document.addEventListener("visibilitychange", updateVisibility);
+    updateVisibility();
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("visibilitychange", updateVisibility);
+    };
+  }, [height, htmlData, visible, width]);
 
   const rings = useMemo<RingDatum[]>(() => {
     if (!institutions) return [];
