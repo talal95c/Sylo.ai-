@@ -21,6 +21,7 @@ from sylo_spec.ports import ChainReverted
 from .approvals import ApprovalError
 from .config import Settings
 from .metrics import load_metrics
+from .payees import InvalidPayment, PaymentIn, ghana_banks, saved_payees
 from .orchestrator import (
     ATTACKS,
     SCENARIOS,
@@ -89,7 +90,10 @@ class RailBody(BaseModel):
 
 
 class QuoteBody(BaseModel):
-    order: Literal["legit", "diverted", "lagos-accra"]
+    """One of ``order`` (a demo order) or ``payment`` (a payment typed by a user)."""
+
+    order: Literal["legit", "diverted", "lagos-accra"] | None = None
+    payment: PaymentIn | None = None
     amount: str | None = Field(default=None, pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
 
 
@@ -330,7 +334,24 @@ def create_app(
 
     @app.post("/v1/quotes")
     async def quote(body: QuoteBody, request: Request) -> dict[str, Any]:
+        if (body.order is None) == (body.payment is None):
+            raise HTTPException(422, "give exactly one of order and payment")
+        if body.payment is not None:
+            if body.amount is not None:
+                raise HTTPException(422, "the amount of a typed payment goes in payment.amount")
+            try:
+                return orch(request).quote_payment(body.payment)
+            except InvalidPayment as err:
+                raise HTTPException(422, str(err)) from None
         return orch(request).quote(body.order, body.amount)
+
+    @app.get("/v1/banks")
+    async def banks() -> dict[str, Any]:
+        return {"banks": ghana_banks()}
+
+    @app.get("/v1/payees")
+    async def payees() -> dict[str, Any]:
+        return {"payees": saved_payees()}
 
     @app.post("/v1/payments")
     async def submit_payment(

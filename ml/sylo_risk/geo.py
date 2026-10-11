@@ -37,6 +37,9 @@ INSTITUTION_REGION = {
     "bank_gh": "Ashanti",
     "supplier_ssx": "Northern",
     "mule_bank": "Volta",
+    "bank_gh_accra": "Greater Accra",
+    "bank_gh_tamale": "Northern",
+    "bank_gh_takoradi": "Western",
 }
 
 

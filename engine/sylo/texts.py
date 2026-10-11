@@ -175,6 +175,15 @@ NEXT_STEP = (
     "We are asking Savanna Shea on the number already on file for Kwame Asante, after checking that it was "
     "not SIM-swapped."
 )
+PROTECTION_AMOUNT = (
+    "{amount} is locked in the escrow smart contract on Avalanche. It can only go to the account fixed in "
+    "the signed payment or back to Rhône Cosmétiques. Automatic refund in 24 h if nobody confirms."
+)
+NEXT_STEP_CONTACT = "We are asking {payee} on the number already on file for {contact}, after checking that it was not SIM-swapped."
+NEXT_STEP_NO_CONTACT = (
+    "No contact is on file for this beneficiary, so nobody can confirm the account out of band: an analyst decides."
+)
+NO_CONTACT = "No contact on file"
 HIGH_IDENTITY_ONLY_HOLD = (
     "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
 )

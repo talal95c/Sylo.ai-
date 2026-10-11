@@ -68,6 +68,7 @@ from .config import (
 from .journal import Journal
 from .norms import NormsEngine, NormsResult, load_pack
 from .pacer import Pacer, RealPacer, iso_ms
+from .payees import PaymentIn, build_order, forget_session_accounts
 from .ports_loader import load_case_writer, load_ports
 from .rails import LegMessage, LegRejected, RailAdapter, Rails
 from .risk_rules import CombinedRisk
@@ -142,6 +143,10 @@ SCENARIOS: dict[str, ScenarioDef] = {
     "diverted_expiry": ScenarioDef("diverted", supplier_silent=True),
     "diverted_timelock": ScenarioDef("diverted", rail_down="R3"),
 }
+CUSTOM = "custom"
+CUSTOM_SCENARIO = ScenarioDef(CUSTOM)
+"""A payment typed by a user (``POST /v1/quotes`` with ``payment``): no injected incident."""
+CUSTOM_FIRST_NUMBER = 1001
 ATTACKS = ("release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
 HOLD_MODES = {"ONCHAIN_ESCROW": "escrow", "FIAT_HOLD": "bank"}
@@ -319,6 +324,7 @@ class Orchestrator:
         self._paused_corridors: dict[str, str] = {}
         self._clock_offset = timedelta(0)
         self._quotes: dict[str, Quote] = {}
+        self._custom_count = 0
         self._submitted: dict[str, dict[str, Any]] = {}
         self._payee_checks: dict[str, dict[str, Any]] = {}
         self._injected_sim_swap: float | None = None
@@ -410,13 +416,14 @@ class Orchestrator:
         auto: bool = False,
         auto_answer: str = "deny",
         invoice_text: str | None = None,
+        order: PaymentOrder | None = None,
     ) -> str:
-        """Start a scenario in the background and return its payment id."""
-        if name not in SCENARIOS:
+        """Start a scenario, or a typed order (``order``), in the background and return its payment id."""
+        if name not in SCENARIOS and not (name == CUSTOM and order is not None):
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
-        run = self._new_run(name, speed, auto, auto_answer, invoice_text)
+        run = self._new_run(name, speed, auto, auto_answer, invoice_text, order)
         self._task = asyncio.create_task(self._execute(run))
         return run.order.id
 
@@ -519,6 +526,8 @@ class Orchestrator:
         self._current_pacer = None
         self._clock_offset = timedelta(0)
         self._quotes.clear()
+        self._custom_count = 0
+        forget_session_accounts()
         self._submitted.clear()
         self._payee_checks.clear()
         self._injected_sim_swap = None
@@ -717,6 +726,25 @@ class Orchestrator:
             "rails": rails,
         }
 
+    def quote_payment(self, payment: PaymentIn) -> dict[str, Any]:
+        """Norms, risk, best route and price for a payment typed by a user. Executable for 600 s."""
+        self._custom_count += 1
+        order = self._verified_order(build_order(payment, f"PAY-2026-{CUSTOM_FIRST_NUMBER - 1 + self._custom_count:04d}"))
+        return self._store_quote(CUSTOM, order, executable=True)
+
+    def _store_quote(self, order_name: str, order: PaymentOrder, *, executable: bool, **decide: Any) -> dict[str, Any]:
+        quote = Quote(
+            id=f"Q-{len(self._quotes) + 1:04d}",
+            order_name=order_name,
+            order=order,
+            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
+            executable=executable,
+        )
+        self._quotes[quote.id] = quote
+        decision = self._decision(order, **decide)
+        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
+        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+
     def quote(self, order_name: str, amount: str | None = None) -> dict[str, Any]:
         """Norms, risk, best route and reason for one of the demo orders, valid 600 s. Nothing is committed.
 
@@ -732,17 +760,7 @@ class Orchestrator:
             raise UnknownScenario(order_name)
         if amount is not None:
             order = order.model_copy(update={"amount": order.amount.model_copy(update={"value": amount})})
-        quote = Quote(
-            id=f"Q-{len(self._quotes) + 1:04d}",
-            order_name=order_name,
-            order=order,
-            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
-            executable=amount is None and engine is None,
-        )
-        self._quotes[quote.id] = quote
-        decision = self._decision(order, engine=engine, payer=payer)
-        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
-        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+        return self._store_quote(order_name, order, executable=amount is None and engine is None, engine=engine, payer=payer)
 
     def submit(
         self,
@@ -767,6 +785,13 @@ class Orchestrator:
             if self.now() > quote.valid_until:
                 raise ActionNotAllowed(f"quote {quote_id} expired at {iso_ms(quote.valid_until)}: ask for a new one")
             order_name = quote.order_name
+            if order_name == CUSTOM:
+                decision = self._decision(self._verified_order(quote.order))
+                payment_id = self.start(CUSTOM, speed=speed, auto=auto, auto_answer=auto_answer, order=quote.order)
+                answer = {"paymentId": payment_id, "quoteId": quote_id, "status": "deciding", "replayed": False, "decision": decision}
+                if idempotency_key:
+                    self._submitted[idempotency_key] = answer
+                return answer
         if order_name not in ORDERS:
             raise UnknownScenario(str(order_name))
         decision = self._decision(self._verified_order(ORDERS[order_name]))
@@ -1248,12 +1273,18 @@ class Orchestrator:
         return run
 
     def _new_run(
-        self, name: str, speed: float, auto: bool, auto_answer: str, invoice_text: str | None = None
+        self,
+        name: str,
+        speed: float,
+        auto: bool,
+        auto_answer: str,
+        invoice_text: str | None = None,
+        order: PaymentOrder | None = None,
     ) -> PaymentRun:
-        scenario = SCENARIOS.get(name)
+        scenario = SCENARIOS.get(name) or (CUSTOM_SCENARIO if order is not None else None)
         if scenario is None:
             raise UnknownScenario(name)
-        order = ORDERS[scenario.order]
+        order = order or ORDERS[scenario.order]
         index = self._run_counts.get(order.id, 0) + 1  # checked against the registry when the run starts
         self._run_counts[order.id] = index
         run = PaymentRun(
@@ -1591,7 +1622,7 @@ class Orchestrator:
 
     async def _script(self, run: PaymentRun) -> None:
         pacer, order = run.pacer, run.order
-        scenario = SCENARIOS[run.scenario]
+        scenario = SCENARIOS.get(run.scenario, CUSTOM_SCENARIO)
         self.telecom.clear()
         swap_hours = scenario.sim_swap_hours_ago if scenario.sim_swap_hours_ago is not None else self._injected_sim_swap
         self._injected_sim_swap = None
@@ -1948,7 +1979,7 @@ class Orchestrator:
             await run.pacer.wait(SUPPLIER_AUTO_MS)
             await self._case_written(run)
             if not (run.answer.done() or run.analyst.done() or run.escalation.done()):
-                if SCENARIOS[run.scenario].supplier_silent:
+                if SCENARIOS.get(run.scenario, CUSTOM_SCENARIO).supplier_silent:
                     # Nobody answers: the demo clock jumps to the hold's expiry instead of waiting a day.
                     self.advance_clock(self.settings.escrow_hold_seconds / 3600)
                 else:
@@ -1989,21 +2020,30 @@ class Orchestrator:
         run.escalation = asyncio.get_running_loop().create_future()
         run.expiry = asyncio.get_running_loop().create_future()
 
-        payee = PAYEES[order.payee_id]
-        contact = payee.known_contacts[0]
-        telecom_msisdn = (
-            orange_playground_number(contact.msisdn_masked, run.scenario)
-            if isinstance(self.telecom, OrangeSimSwap)
-            else contact.msisdn_masked
-        )
-        max_age_hours = self.settings.sim_swap_max_age_hours
-        if isinstance(self.telecom, OrangeSimSwap):
-            max_age_hours = max(max_age_hours, ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS)
-        sim_swap_recent = self.telecom.check(telecom_msisdn, max_age_hours)
-        if getattr(self.telecom, "degraded", False):
-            self._degrade("telecom")
+        payee = PAYEES.get(order.payee_id)
+        contact = payee.known_contacts[0] if payee is not None and payee.known_contacts else None
+        custom = run.scenario == CUSTOM
         reasons = list(risk.reasons)
-        next_step = texts.NEXT_STEP
+        sim_swap_recent = False
+        if contact is None:
+            # Nobody known can confirm the account out of band: never trust a number given with the payment.
+            next_step = texts.NEXT_STEP_NO_CONTACT
+            reasons.append(RiskReason(ref="O", text=next_step, rule_id="R-OOB-02"))
+        else:
+            telecom_msisdn = (
+                orange_playground_number(contact.msisdn_masked, run.scenario)
+                if isinstance(self.telecom, OrangeSimSwap)
+                else contact.msisdn_masked
+            )
+            max_age_hours = self.settings.sim_swap_max_age_hours
+            if isinstance(self.telecom, OrangeSimSwap):
+                max_age_hours = max(max_age_hours, ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS)
+            sim_swap_recent = self.telecom.check(telecom_msisdn, max_age_hours)
+            if getattr(self.telecom, "degraded", False):
+                self._degrade("telecom")
+            next_step = (
+                texts.NEXT_STEP_CONTACT.format(payee=texts.payee_short(payee), contact=contact.name) if custom else texts.NEXT_STEP
+            )
         if sim_swap_recent:
             changed = self.telecom.retrieve_date(telecom_msisdn)
             if getattr(self.telecom, "degraded", False):
@@ -2029,7 +2069,7 @@ class Orchestrator:
                 "headline": texts.HELD_HEADLINE,
                 "reasons": [r.to_json_dict() for r in reasons],
                 "protection": (
-                    texts.PROTECTION
+                    (texts.PROTECTION_AMOUNT.format(amount=amount) if custom else texts.PROTECTION)
                     if mode == "escrow"
                     else texts.PROTECTION_BANK.format(amount=amount, bank=bank_name, payer=PAYER.name)
                 ),
@@ -2039,25 +2079,26 @@ class Orchestrator:
             simulated=self.chain_simulated if mode == "escrow" else True,
         )
         self._alert(run, "payer", PAYER.approvers[0].name, "IN_APP", texts.ALERT_HELD)
-        await self._open_case(run, "analyst" if sim_swap_recent else "held")
+        analyst_only = sim_swap_recent or contact is None
+        await self._open_case(run, "analyst" if analyst_only else "held")
 
         await pacer.wait(800)
         self._emit(
             run,
             "verification.requested",
             {
-                "contactName": contact.name,
-                "contactMasked": contact.msisdn_masked,
-                "contactSince": contact.since,
-                "channel": "ANALYST" if sim_swap_recent else "SMS",
+                "contactName": contact.name if contact else texts.NO_CONTACT,
+                "contactMasked": contact.msisdn_masked if contact else "—",
+                "contactSince": contact.since if contact else "—",
+                "channel": "ANALYST" if analyst_only else "SMS",
                 "simSwapChecked": True,
                 "simSwapRecent": sim_swap_recent,
                 "simSwapSource": self.telecom.source,
             },
             simulated=True,
         )
-        if sim_swap_recent:
-            # Rule R-OOB-01: the known number cannot be trusted, so nobody is texted and the analyst decides.
+        if analyst_only:
+            # Rule R-OOB-01 (number not trusted) or R-OOB-02 (no contact on file): the known number cannot be trusted, so nobody is texted and the analyst decides.
             who, answer = "analyst", await self._await_analyst(run)
         else:
             who, answer = await self._await_supplier_or_analyst(run)
