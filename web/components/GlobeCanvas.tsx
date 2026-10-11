@@ -9,7 +9,6 @@ import type { ViewState } from "@/lib/store";
 import { arcDotPositions } from "@/lib/arcDots";
 import {
   CAMERA_VIEWS,
-  angularDistanceDegrees,
   heldView,
   hopView,
   stoppedView,
@@ -27,6 +26,7 @@ import {
 } from "@/lib/globeFrame";
 import { isOnVisibleHemisphere } from "@/lib/globeVisibility";
 import { resolveLabelOverlap } from "@/lib/labelPlacement";
+import { labelSides, type LabelAnchor } from "@/lib/globeLabels";
 import {
   particleSizeBucket,
   particleSizeForBucket,
@@ -415,7 +415,7 @@ export default function GlobeCanvas({
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
         const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
-        const excludedByNorms = route.status === "EXCLUDED";
+        if (!unavailable) continue;
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
           dots(
@@ -423,12 +423,16 @@ export default function GlobeCanvas({
             hop.from,
             hop.to,
             altitude,
-            unavailable
-              ? { color: DANGER_COLOR, opacity: 0.55 }
-              : excludedByNorms
-                ? { color: "#0a0a0a", opacity: 0.12, radius: DOT_RADIUS * 0.8 }
-                : { color: HOP_COLORS[hop.kind], opacity: 0.35, taper: true },
+            { color: DANGER_COLOR, opacity: 0.55 },
           );
+        });
+      }
+      if (state.routes.length > 0) {
+        dots("corridor", "payer_rhone", (state.scenario === "diverted" || state.scenario === "mule_wave") ? "mule_bank" : "supplier_ssx", null, {
+          color: "#0a0a0a",
+          opacity: 0.22,
+          radius: DOT_RADIUS * 0.85,
+          taper: true,
         });
       }
       return { arcs: list, tracks };
@@ -512,18 +516,14 @@ export default function GlobeCanvas({
         ids.add(hop.to);
       });
     } else if (state.routes.length) {
-      state.routes.forEach((route) =>
-        route.hops.forEach((hop) => {
-          ids.add(hop.from);
-          ids.add(hop.to);
-        }),
-      );
+      ids.add("payer_rhone");
+      ids.add((state.scenario === "diverted" || state.scenario === "mule_wave") ? "mule_bank" : "supplier_ssx");
     } else {
       ids.add("payer_rhone");
       ids.add("supplier_ssx");
     }
     return ids;
-  }, [state.hops, state.routes, state.selectedRouteId, state.wave]);
+  }, [state.hops, state.routes, state.scenario, state.selectedRouteId, state.wave]);
 
   const points = useMemo<PointDatum[]>(() => {
     if (!institutions) return [];
@@ -577,23 +577,20 @@ export default function GlobeCanvas({
       state.payment?.status === "in_transit"
         ? state.hops.find((hop) => hop.state === "active")?.to
         : undefined;
-    const closePair = focusedHop
-      ? angularDistanceDegrees(institutions[focusedHop.from], institutions[focusedHop.to]) < 10
-      : false;
     for (const id of labelIds) {
       const institution = institutions[id];
       if (!institution) continue;
       const isLive = liveTarget === id;
-      const preferredSide = closePair && focusedHop?.to === id ? "below" : "above";
+      const preferredSide = "above" as const;
       list.push(
         stable(`lbl-${id}`, `${preferredSide}:${isLive}`, () => ({
           id: `lbl-${id}`,
           lat: institution.lat,
           lng: institution.lng,
           altitude: 0.01,
-          className: `globe-label${preferredSide === "below" ? " below" : ""}`,
+          className: "globe-label",
           preferredSide,
-          html: `<span class="globe-label-connector"></span><span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
+          html: `<span class="globe-label-anchor"></span><span class="globe-label-connector"></span><span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
         })),
       );
     }
@@ -738,15 +735,36 @@ export default function GlobeCanvas({
           id === "mule_bank" ? 0 : id === "accra" || id === "tamale" ? 1 : 2;
         return priority(left.id) - priority(right.id);
       });
+      const visibleLabels: { label: HtmlDatum; element: HTMLElement; screen: { x: number; y: number } }[] = [];
+      const anchors: LabelAnchor[] = [];
       for (const label of orderedLabels) {
         if (!label.className.startsWith("globe-label")) continue;
         const element = document.querySelector<HTMLElement>(
           `.globe-label[data-globe-label-id="${label.id}"]`,
         );
-        const pill = element?.querySelector<HTMLElement>(".globe-label-pill");
-        if (!element || !pill) continue;
-
+        if (!element) continue;
         const screen = globe.getScreenCoords(label.lat, label.lng, label.altitude);
+        const behindGlobe =
+          element.dataset.globeVisible === "false" ||
+          !isOnVisibleHemisphere(label, cameraPov);
+        const anchorOutside =
+          screen.x < viewportLeft ||
+          screen.x > viewportRight ||
+          screen.y < viewportTop ||
+          screen.y > viewportBottom;
+        if (behindGlobe || anchorOutside) {
+          visibleLabels.push({ label, element, screen });
+          continue;
+        }
+        anchors.push({ id: label.id, x: screen.x, y: screen.y, preferred: label.preferredSide ?? "above" });
+        visibleLabels.push({ label, element, screen });
+      }
+      const sides = labelSides(anchors);
+
+      for (const { label, element, screen } of visibleLabels) {
+        const pill = element.querySelector<HTMLElement>(".globe-label-pill");
+        if (!pill) continue;
+
         const behindGlobe =
           element.dataset.globeVisible === "false" ||
           !isOnVisibleHemisphere(label, cameraPov);
@@ -760,7 +778,7 @@ export default function GlobeCanvas({
         element.style.opacity = hidden ? "0" : "1";
         if (hidden) continue;
 
-        let below = label.preferredSide === "below";
+        let below = (sides[label.id] ?? label.preferredSide ?? "above") === "below";
         element.classList.toggle("below", below);
         element.style.setProperty("--globe-label-shift-x", "0px");
         let rect = pill.getBoundingClientRect();
@@ -801,6 +819,27 @@ export default function GlobeCanvas({
           shiftX += placement.shiftX;
           element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
           rect = pill.getBoundingClientRect();
+        }
+
+        // A label must always sit over its own anchor: hide it rather than
+        // letting the pill drift sideways away from its dot.
+        if (Math.abs(shiftX) > rect.width / 2 - 14) {
+          element.classList.add("panel-hidden");
+          element.style.opacity = "0";
+          continue;
+        }
+
+        const stillCollides = placed.some(
+          (other) =>
+            rect.left < other.right + 8 &&
+            rect.right > other.left - 8 &&
+            rect.top < other.bottom + 6 &&
+            rect.bottom > other.top - 6,
+        );
+        if (stillCollides) {
+          element.classList.add("panel-hidden");
+          element.style.opacity = "0";
+          continue;
         }
 
         const connectorLength = Math.hypot(shiftX, gap);
