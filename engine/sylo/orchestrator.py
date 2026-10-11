@@ -52,7 +52,7 @@ from . import texts
 from .approvals import ApprovalSession, required_approvers
 from .breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from .bus import EventBus
-from .case import CaseService, rules_case_file
+from .case import CaseService, redact_case_document, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .config import Settings
 from .journal import Journal
@@ -200,6 +200,7 @@ class PaymentRun:
     signed: list[dict[str, Any]] = field(default_factory=list)
     transactions: list[dict[str, Any]] = field(default_factory=list)
     last_seq: int = 0
+    invoice_text: str | None = None
 
     @property
     def tier(self) -> Tier | None:
@@ -292,23 +293,39 @@ class Orchestrator:
     def running(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    def start(self, name: str, *, speed: float = 1.0, auto: bool = False, auto_answer: str = "deny") -> str:
+    def start(
+        self,
+        name: str,
+        *,
+        speed: float = 1.0,
+        auto: bool = False,
+        auto_answer: str = "deny",
+        invoice_text: str | None = None,
+    ) -> str:
         """Start a scenario in the background and return its payment id."""
         if name not in SCENARIOS:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
-        run = self._new_run(name, speed, auto, auto_answer)
+        run = self._new_run(name, speed, auto, auto_answer, invoice_text)
         self._task = asyncio.create_task(self._execute(run))
         return run.order.id
 
-    async def run_to_end(self, name: str, *, speed: float = 1.0, auto: bool = True, auto_answer: str = "deny") -> PaymentRun:
+    async def run_to_end(
+        self,
+        name: str,
+        *,
+        speed: float = 1.0,
+        auto: bool = True,
+        auto_answer: str = "deny",
+        invoice_text: str | None = None,
+    ) -> PaymentRun:
         """Run a scenario in the foreground (tests and the fixture recorder)."""
         if name not in SCENARIOS:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
-        run = self._new_run(name, speed, auto, auto_answer)
+        run = self._new_run(name, speed, auto, auto_answer, invoice_text)
         await self._execute(run)
         if run.case_task is not None:
             await run.case_task
@@ -681,7 +698,9 @@ class Orchestrator:
             raise UnknownPayment(payment_id)
         return run
 
-    def _new_run(self, name: str, speed: float, auto: bool, auto_answer: str) -> PaymentRun:
+    def _new_run(
+        self, name: str, speed: float, auto: bool, auto_answer: str, invoice_text: str | None = None
+    ) -> PaymentRun:
         scenario = SCENARIOS.get(name)
         if scenario is None:
             raise UnknownScenario(name)
@@ -696,6 +715,7 @@ class Orchestrator:
             pacer=self.pacer_factory(speed),
             auto=auto,
             auto_answer=auto_answer,
+            invoice_text=invoice_text,
         )
         self._runs[order.id] = run
         return run
@@ -1133,9 +1153,14 @@ class Orchestrator:
         """
         assert run.risk is not None
         events = [event for event in self.bus.events if event["paymentId"] == run.order.id]
-        if self.case.writer is None:
+        live_invoice_ready = run.invoice_text is not None and self.case.live_writer_ready
+        if run.invoice_text is not None and not live_invoice_ready:
+            self._degrade("llm")
+        if self.case.writer is None and not live_invoice_ready:
             await run.pacer.wait(700)
-            self._case_ready(run, self.case.write(run.order, run.risk, events, situation))
+            self._case_ready(
+                run, self.case.write(run.order, run.risk, events, situation, document=run.invoice_text)
+            )
         else:
             run.case_task = asyncio.create_task(self._write_case(run, events, situation))
 
@@ -1143,15 +1168,25 @@ class Orchestrator:
         assert run.risk is not None
         try:
             case = await asyncio.wait_for(
-                asyncio.to_thread(self.case.write, run.order, run.risk, events, situation), timeout=CASE_TIMEOUT_S
+                asyncio.to_thread(
+                    self.case.write,
+                    run.order,
+                    run.risk,
+                    events,
+                    situation,
+                    document=run.invoice_text,
+                ),
+                timeout=CASE_TIMEOUT_S,
             )
         except Exception as err:
-            log.warning("case file not ready in time (%s); using the one built from the rules", err)
+            log.warning("case file not ready in time (%s); using the one built from the rules", type(err).__name__)
             self._degrade("llm")
             case = rules_case_file(run.order, run.risk, events, situation)
         self._case_ready(run, case)
 
     def _case_ready(self, run: PaymentRun, case: CaseFile) -> None:
+        if run.invoice_text is not None:
+            case = redact_case_document(case, run.invoice_text)
         run.case = case
         self._emit(run, "case.ready", case.model_dump(by_alias=True, mode="json"))
 
@@ -1481,7 +1516,7 @@ def build_orchestrator(
     signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
-    writer, llm_degraded = load_case_writer(settings, env)
+    writer, llm_degraded, live_writer, live_writer_ready = load_case_writer(settings, env)
     if llm_degraded:
         degraded.append("llm")
     journal = Journal(settings.journal_path)
@@ -1499,7 +1534,12 @@ def build_orchestrator(
         beneficiary=env.get("GH_VASP_ADDRESS") or None,
         payer_address=env.get("EU_CASP_ADDRESS") or None,
         token=settings.token_address,
-        case=CaseService(settings.llm_mode, writer),
+        case=CaseService(
+            settings.llm_mode,
+            writer,
+            live_writer=live_writer,
+            live_writer_ready=live_writer_ready,
+        ),
         journal=journal,
     )
     holder["o"] = orchestrator

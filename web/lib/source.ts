@@ -16,13 +16,45 @@ export interface Source {
   kind: SourceKind;
   start(callbacks: SourceCallbacks): void;
   stop(): void;
-  runScenario(name: ScenarioName, opts: { speed: number }): Promise<void>;
+  runScenario(name: ScenarioName, opts: { speed: number; invoiceText?: string }): Promise<void>;
   supplierResponse(
     paymentId: string,
     answer: "confirm" | "deny",
   ): Promise<void>;
   attack(paymentId: string): Promise<void>;
   reset(): Promise<void>;
+}
+
+export class EngineRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly retryAfter: string | null = null,
+  ) {
+    super(message);
+    this.name = "EngineRequestError";
+  }
+}
+
+export function invoiceComposerVisible(sourceKind: SourceKind): boolean {
+  return sourceKind === "live";
+}
+
+export function formatInvoiceError(error: unknown): string {
+  if (error instanceof EngineRequestError) {
+    if (error.status === 403) return error.message;
+    if (error.status === 422) {
+      return error.message.startsWith("Engine request failed")
+        ? "Invoice text was rejected. Scene 2 accepts up to 2,000 characters."
+        : error.message;
+    }
+    if (error.status === 429) {
+      return error.retryAfter
+        ? `${error.message} Retry in ${error.retryAfter} seconds.`
+        : error.message;
+    }
+  }
+  return "The invoice run could not be started. Please try again.";
 }
 
 function isEvent(value: unknown): value is SyloEvent {
@@ -52,7 +84,25 @@ async function post(
       : {}),
   });
   if (!response.ok) {
-    throw new Error(`Engine request failed (${response.status})`);
+    let message = `Engine request failed (${response.status})`;
+    try {
+      const payload: unknown = await response.json();
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "detail" in payload &&
+        typeof payload.detail === "string"
+      ) {
+        message = payload.detail;
+      }
+    } catch {
+      // Keep the status-based message when the engine returned no JSON body.
+    }
+    throw new EngineRequestError(
+      response.status,
+      message,
+      response.headers.get("Retry-After"),
+    );
   }
 }
 
@@ -96,6 +146,7 @@ export function createLiveSource(engineUrl: string): Source {
       return post(engineUrl, `/v1/scenarios/${name}/run`, {
         speed: opts.speed,
         auto: false,
+        ...(opts.invoiceText === undefined ? {} : { invoiceText: opts.invoiceText }),
       });
     },
     supplierResponse(paymentId, answer) {

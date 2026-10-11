@@ -363,6 +363,16 @@ class CaseWriter:
         template = template_case(payment_id, events, text_signals=text_signals)
         if self.mode == "off":
             return template
+        if (
+            self.mode == "live"
+            and getattr(self.text_screen, "mode", None) == "live"
+            and isinstance(document, str)
+            and document.strip()
+            and text_signals is not None
+            and text_signals.source == "unavailable"
+        ):
+            log.warning("CaseWriter live text screening is unavailable; using the template")
+            return template
         if self.mode == "cached":
             return self._cached(payment_id, events, template) or template
         if not self.api_key:

@@ -110,6 +110,7 @@ export default function SyloApp() {
         state={sylo.state}
         actions={sylo.actions}
         available={sylo.available}
+        sourceKind={sylo.sourceKind}
         speed={sylo.speed}
         setSpeed={sylo.setSpeed}
       />

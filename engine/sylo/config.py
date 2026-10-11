@@ -43,6 +43,7 @@ class Settings:
     dual_control_new_payee_eur: float = 5_000.0
     sim_swap_max_age_hours: int = 168
     journal_path: str | None = None
+    live_invoice: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -66,4 +67,5 @@ class Settings:
             dual_control_new_payee_eur=float(_get(env, "DUAL_CONTROL_NEW_PAYEE_EUR", "5000")),
             sim_swap_max_age_hours=int(_get(env, "SIM_SWAP_MAX_AGE_HOURS", "168")),
             journal_path=_journal_path(env),
+            live_invoice=_get(env, "LIVE_INVOICE", "off").lower() == "on",
         )
