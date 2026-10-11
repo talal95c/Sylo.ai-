@@ -28,5 +28,7 @@ services:
         value: cached
       - key: CHAIN_MODE
         value: mock
+      - key: DEMO_PUBLIC
+        value: "1"
       - key: MISTRAL_API_KEY
         sync: false

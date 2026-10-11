@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -164,6 +164,12 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator
 
+    def operator_only() -> None:
+        if settings.demo_public:
+            raise HTTPException(403, "this endpoint is closed on the public demo (DEMO_PUBLIC=1)")
+
+    operator = [Depends(operator_only)]
+
     @app.get("/health")
     async def health(request: Request) -> dict[str, Any]:
         return {"ok": True, "mode": orch(request).mode()}
@@ -219,7 +225,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
             raise HTTPException(409, "this payment is not waiting for a supplier answer") from None
         return {"ok": True}
 
-    @app.post("/v1/payments/{payment_id}/approve")
+    @app.post("/v1/payments/{payment_id}/approve", dependencies=operator)
     async def approve(payment_id: str, body: ApproveBody, request: Request) -> dict[str, Any]:
         try:
             return orch(request).approve(payment_id, body.approver.strip().lower())
@@ -230,7 +236,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except ApprovalError as err:
             raise HTTPException(409, str(err)) from None
 
-    @app.post("/v1/cases/{payment_id}/actions")
+    @app.post("/v1/cases/{payment_id}/actions", dependencies=operator)
     async def case_action(payment_id: str, body: CaseActionBody, request: Request) -> dict[str, Any]:
         try:
             return await orch(request).case_action(payment_id, body.action)
@@ -262,7 +268,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except ScenarioBusy:
             raise HTTPException(409, "a scenario is running; wait for it to finish or POST /v1/reset") from None
 
-    @app.post("/v1/sim/rails/{route_id}/{state}")
+    @app.post("/v1/sim/rails/{route_id}/{state}", dependencies=operator)
     async def rail_state(route_id: str, state: Literal["down", "up"], request: Request, body: RailBody | None = None) -> dict[str, Any]:
         try:
             if state == "down":
@@ -305,7 +311,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
     async def cases(request: Request) -> dict[str, Any]:
         return {"cases": orch(request).cases()}
 
-    @app.post("/v1/payees/{payee_id}/verify")
+    @app.post("/v1/payees/{payee_id}/verify", dependencies=operator)
     async def verify_payee(payee_id: str, body: VerifyBody, request: Request) -> dict[str, Any]:
         try:
             if body.action == "start":
@@ -318,7 +324,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except ActionNotAllowed as err:
             raise HTTPException(409, str(err)) from None
 
-    @app.post("/v1/sim/events")
+    @app.post("/v1/sim/events", dependencies=operator)
     async def sim_event(body: SimEventBody, request: Request) -> dict[str, Any]:
         try:
             return await orch(request).sim_event(body.type, body.model_dump(exclude_none=True))
@@ -335,7 +341,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except ChainUnavailable as err:
             raise HTTPException(503, f"the chain did not answer during {err.step}") from None
 
-    @app.post("/v1/rails/{route_id}/webhook")
+    @app.post("/v1/rails/{route_id}/webhook", dependencies=operator)
     async def rail_webhook(route_id: str, body: WebhookBody, request: Request) -> dict[str, Any]:
         try:
             return orch(request).rail_webhook(route_id, body.model_dump())
@@ -349,11 +355,11 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except UnknownRoute:
             raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
 
-    @app.post("/v1/sim/clock")
+    @app.post("/v1/sim/clock", dependencies=operator)
     async def clock(body: ClockBody, request: Request) -> dict[str, Any]:
         return orch(request).advance_clock(body.advanceHours)
 
-    @app.post("/v1/breakers/{breaker_id}/{decision}")
+    @app.post("/v1/breakers/{breaker_id}/{decision}", dependencies=operator)
     async def breaker(breaker_id: str, decision: Literal["confirm", "lift"], request: Request) -> dict[str, Any]:
         try:
             if decision == "confirm":
@@ -364,7 +370,7 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
         except ActionNotAllowed as err:
             raise HTTPException(409, str(err)) from None
 
-    @app.post("/v1/guardian/incidents")
+    @app.post("/v1/guardian/incidents", dependencies=operator)
     async def guardian_incident(body: IncidentBody, request: Request) -> dict[str, Any]:
         return orch(request).guardian_incident(body.model_dump(exclude_none=True))
 
