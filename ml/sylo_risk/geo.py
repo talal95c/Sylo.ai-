@@ -20,6 +20,19 @@ GH_REGIONS = (
 BORDER_REGIONS = frozenset({"Upper East", "Volta"})
 _REGION_CODES = {f"{index:02d}": region for index, region in enumerate(GH_REGIONS)}
 
+GH_REGION_CENTROIDS = {
+    "Ashanti": (6.7, -1.6),
+    "Bono": (7.8, -2.4),
+    "Central": (5.6, -1.4),
+    "Eastern": (6.2, -0.5),
+    "Greater Accra": (5.7, -0.2),
+    "Northern": (9.2, -0.8),
+    "Upper East": (10.8, -0.8),
+    "Volta": (6.6, 0.6),
+    "Western": (5.0, -2.2),
+    "Savannah": (8.2, -1.9),
+}
+
 INSTITUTION_REGION = {
     "bank_gh": "Ashanti",
     "supplier_ssx": "Northern",

@@ -142,6 +142,83 @@
       "typology": "T4"
     }
   ],
+  "clusters": {
+    "hardNegativeSeedFormula": "np.random.default_rng(SEEDS[seed] + 1_000_003)",
+    "hardNegativeSeeds": {
+      "B": 21261005,
+      "C": 21261006
+    },
+    "hardNegatives": "30 old popular suppliers and 30 young popular accounts per seed; evaluation only",
+    "limits": [
+      "Synthetic T3 accounts concentrate payer fan-in and are easy to detect.",
+      "Region points are coarse region centroids, not account locations."
+    ],
+    "method": "NetworkX payer-account bipartite windows; age <120 days or <10 successes",
+    "results": {
+      "B": {
+        "campaignCount": 30,
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "detectedClusters": 31,
+        "falseClusters": {
+          "legit": 0,
+          "popularSupplier": 0,
+          "youngPopular": 30
+        },
+        "hardNegativeAccounts": {
+          "popularSupplier": 30,
+          "youngPopular": 30
+        },
+        "isolatedClusters": 72,
+        "isolatedInstitution": {
+          "campaignDetectionRate": 1.0,
+          "campaignsDetected": 30,
+          "paymentsToDetect": {
+            "p50": 11.5,
+            "p90": 16.1
+          }
+        },
+        "payments": 150000,
+        "paymentsToDetect": {
+          "p50": 7.0,
+          "p90": 10.100000000000001
+        },
+        "runtimeSeconds": 4.5143065829997795,
+        "t3FanInP50": 14.0
+      },
+      "C": {
+        "campaignCount": 30,
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "detectedClusters": 33,
+        "falseClusters": {
+          "legit": 0,
+          "popularSupplier": 0,
+          "youngPopular": 30
+        },
+        "hardNegativeAccounts": {
+          "popularSupplier": 30,
+          "youngPopular": 30
+        },
+        "isolatedClusters": 60,
+        "isolatedInstitution": {
+          "campaignDetectionRate": 0.9666666666666667,
+          "campaignsDetected": 29,
+          "paymentsToDetect": {
+            "p50": 10.0,
+            "p90": 15.2
+          }
+        },
+        "payments": 150000,
+        "paymentsToDetect": {
+          "p50": 7.5,
+          "p90": 10.200000000000003
+        },
+        "runtimeSeconds": 4.486946434999481,
+        "t3FanInP50": 15.0
+      }
+    }
+  },
   "dataset": {
     "days": 30,
     "payments": 150000,

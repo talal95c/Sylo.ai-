@@ -199,6 +199,28 @@ class RiskContext(SpecModel):
     history: PairHistory | None = None
 
 
+class ClusterCentroid(SpecModel):
+    lat: float
+    lng: float
+
+
+class ClusterPoint(SpecModel):
+    lat: float
+    lng: float
+    weight: float
+
+
+class Cluster(SpecModel):
+    cluster_id: str
+    accounts: list[str]
+    agents: list[str] = Field(default_factory=list)
+    region: str
+    centroid: ClusterCentroid
+    points: list[ClusterPoint]
+    linked_payments: list[str]
+    detected_at_day: int | None = None
+
+
 class RiskReason(SpecModel):
     ref: str
     text: str

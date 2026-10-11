@@ -83,3 +83,18 @@ All nonzero risk-tier permissiveness remains reported; no tuning was done to hid
 | C | 95.13% / 75.56% / 91.25% / 0.79% | 96.80% / 84.44% / 92.34% / 0.84% | 96.60% / 84.00% / 91.62% / 0.83% |
 
 The baseline and earlier feature-on columns are from the read-only experiment; Pass 5 is `modelOnlyMetrics` from this evaluation. Golden cases remain legit 25/LOW (`oobResolvable=True`) and diverted 77/HIGH (`oobResolvable=True`). The exact gate passed on both B and C: total recall stayed within 0.3 pp of Pass 4, T1 and T1-evasive recall remained 100%, MEDIUM+ FPR stayed within +0.5 pp, and both golden cases retained their required decisions. **Decision: keep the feature and report the measured results; no post-evaluation tuning.**
+
+## B2.1 clusters
+
+- Command: `cd ml && uv run python -m sylo_risk.eval_clusters`; 150,000 original payments on each of seeds B and C. The seeded evaluation-only augmentation adds 30 old popular suppliers (4–15 payers) and 30 young popular accounts (3–6 payers) per seed; no training data or Pass 5 model metrics are changed. RNG: `np.random.default_rng(SEEDS[seed] + 1_000_003)` (B: 21,261,005; C: 21,261,006).
+- Detector: NetworkX payer→account graph in rolling two-day windows; flag at ≥3 payers and account age <120 days or <10 successful payments. Suspicious accounts merge on a shared payer or shared holder/border-region bank.
+- `paymentsToDetect` counts campaign payments through the first detection day; the source frame is daily, so this is a day-boundary index, not intra-day latency. Runtime includes the detector and isolated-institution baseline.
+
+| Seed | T3 campaigns detected | Payments-to-detect p50 / p90 | False clusters: original legit / old suppliers / young popular | Isolated-institution detection | Isolated payments-to-detect p50 / p90 | T3 payer fan-in p50 | Runtime |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| B | 30/30 (100.0%) | 7 / 10.1 | 0 / 0 / 30 | 30/30 (100.0%) | 11.5 / 16.1 | 14 | 4.17 s |
+| C | 30/30 (100.0%) | 7.5 / 10.2 | 0 / 0 / 30 | 29/30 (96.7%) | 10 / 15.2 | 15 | 4.43 s |
+
+The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; the old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
+
+The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. No engine/web wiring was done. Lane A will need to invoke the `ClusterPort` implementation from the future mule-wave scene and publish the resulting roadmap-shaped `cluster.detected` event before wiring the breaker or globe.
