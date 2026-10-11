@@ -1,0 +1,11 @@
+{
+  "paymentId": "PAY-2026-0002",
+  "variants": 20,
+  "passValidatorRate": 0.5,
+  "fallbackRate": 0.5,
+  "acceptedLessStrictCount": 0,
+  "latencyMs": {
+    "p50": 3673.3477974999005,
+    "p95": 4130.79535199995
+  }
+}

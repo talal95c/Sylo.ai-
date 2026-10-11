@@ -7,9 +7,10 @@ mock chain, and reports the dependency in ``system.mode.degraded`` so the banner
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping
 
-from sylo_spec.ports import ChainPort, RiskPort
+from sylo_spec.ports import CasePort, ChainPort, RiskPort
 
 from .chain_mock import MockChain
 from .config import Settings
@@ -19,8 +20,15 @@ from .signer import Signer
 log = logging.getLogger("sylo.ports")
 
 
-def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]) -> tuple[RiskPort, ChainPort, list[str]]:
+def load_ports(
+    settings: Settings,
+    *,
+    signer: Signer,
+    clock: Callable[[], float],
+    env: Mapping[str, str] | None = None,
+) -> tuple[RiskPort, ChainPort, CasePort | None, list[str]]:
     degraded: list[str] = []
+    environment = os.environ if env is None else env
 
     risk: RiskPort = RulesRisk()
     if settings.risk_mode == "model":
@@ -53,8 +61,21 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
             clock=clock,
         )
 
-    if settings.llm_mode != "off":
-        log.warning("LLM_MODE=%s is not available in v0; running without LLM", settings.llm_mode)
+    case: CasePort | None = None
+    try:
+        from sylo_risk import CaseWriter
+
+        api_key = environment.get("MISTRAL_API_KEY")
+        case_mode = settings.llm_mode
+        if case_mode == "live" and not api_key:
+            log.warning("LLM_MODE=live but MISTRAL_API_KEY is not configured; trying cached then template")
+        case = CaseWriter(
+            mode=case_mode,
+            api_key=api_key,
+            model=environment.get("MISTRAL_MODEL"),
+        )
+    except Exception as err:
+        log.warning("LLM_MODE=%s CasePort is unavailable (%s); running without case files", settings.llm_mode, type(err).__name__)
         degraded.append("llm")
 
-    return risk, chain, degraded
+    return risk, chain, case, degraded

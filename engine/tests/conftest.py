@@ -25,11 +25,13 @@ DIVERTED_PREFIX = FIRST_SEVEN + ["leg.sent", "leg.settled"] * 2 + [
     "leg.sent",
     "escrow.deposited",
     "payment.held",
+    "case.ready",
     "verification.requested",
 ]
-DENY_SEQUENCE = ["verification.recorded", "intent.revoked", "escrow.refunded", "payment.stopped"]
+DENY_SEQUENCE = ["verification.recorded", "case.ready", "intent.revoked", "escrow.refunded", "payment.stopped"]
 CONFIRM_SEQUENCE = [
     "verification.recorded",
+    "case.ready",
     "escrow.released",
     "intent.executed",
     "leg.settled",

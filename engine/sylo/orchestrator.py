@@ -23,6 +23,7 @@ from sylo_spec.canonical import corridor_id_of, hash_record, keccak_text, offcha
 from sylo_spec.devkeys import dev_address
 from sylo_spec.eip712 import digest
 from sylo_spec.models import (
+    CaseFile,
     PaymentIntent,
     PaymentOrder,
     Revocation,
@@ -35,7 +36,7 @@ from sylo_spec.models import (
     VerificationMethod,
     VerificationResult,
 )
-from sylo_spec.ports import ChainPort, ChainReverted, RiskPort
+from sylo_spec.ports import CasePort, ChainPort, ChainReverted, RiskPort
 from sylo_spec.scenarios import ACCOUNTS, ORDERS, PAYEES, PAYER, build_risk_context
 
 from . import texts
@@ -109,6 +110,7 @@ class Orchestrator:
         bus: EventBus,
         risk: RiskPort,
         chain: ChainPort,
+        case: CasePort | None,
         signer: Signer,
         norms: NormsEngine,
         settings: Settings,
@@ -121,6 +123,7 @@ class Orchestrator:
         self.bus = bus
         self.risk = risk
         self.chain = chain
+        self.case = case
         self.signer = signer
         self.norms = norms
         self.settings = settings
@@ -135,6 +138,7 @@ class Orchestrator:
         self._runs: dict[str, PaymentRun] = {}
         self._run_counts: dict[str, int] = {}
         self._task: asyncio.Task[None] | None = None
+        self._case_tasks: set[asyncio.Task[None]] = set()
         self._current_pacer: Pacer | None = None
 
     # --- mode and clock ----------------------------------------------------------------------
@@ -146,7 +150,7 @@ class Orchestrator:
         return {
             "risk": "model" if isinstance(self.risk, CombinedRisk) else "rules",
             "chain": self.chain.mode,
-            "llm": "off",
+            "llm": self.settings.llm_mode if self.case is not None else "off",
             "rails": "simulated",
             "degraded": list(self.degraded),
             "bootId": self.boot_id,
@@ -241,6 +245,11 @@ class Orchestrator:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        for task in list(self._case_tasks):
+            task.cancel()
+        if self._case_tasks:
+            await asyncio.gather(*self._case_tasks, return_exceptions=True)
+        self._case_tasks.clear()
         self._runs.clear()
         self._current_pacer = None
         self.bus.clear()
@@ -283,6 +292,32 @@ class Orchestrator:
     def _emit(self, run: PaymentRun, type_: str, data: dict[str, Any], *, simulated: bool = False) -> None:
         event = self.bus.publish(type_, data, payment_id=run.order.id, simulated=simulated, ts=run.pacer.now())
         run.last_seq = event["seq"]
+
+    def _schedule_case_ready(self, run: PaymentRun) -> None:
+        if self.case is None:
+            return
+        events = [event for event in self.bus.events if event.get("paymentId") == run.order.id]
+        task = asyncio.create_task(self._write_case_ready(run, events))
+        self._case_tasks.add(task)
+        task.add_done_callback(self._case_tasks.discard)
+
+    async def _write_case_ready(self, run: PaymentRun, events: list[dict[str, Any]]) -> None:
+        if self.case is None:
+            return
+        try:
+            if getattr(self.case, "mode", None) == "off":
+                result = self.case.write(run.order.id, events)
+            else:
+                result = await asyncio.to_thread(self.case.write, run.order.id, events)
+            case = result if isinstance(result, CaseFile) else CaseFile.model_validate(result)
+            self._emit(
+                run,
+                "case.ready",
+                case.model_dump(by_alias=True, mode="json"),
+                simulated=self.chain_simulated,
+            )
+        except Exception as err:
+            log.warning("CasePort failed (%s); continuing payment flow", type(err).__name__)
 
     async def _chain(self, fn: Callable[..., T], *args: Any) -> T:
         return await asyncio.to_thread(fn, *args)
@@ -567,6 +602,7 @@ class Orchestrator:
             },
             simulated=self.chain_simulated,
         )
+        self._schedule_case_ready(run)
 
         await pacer.wait(1500)
         payee = PAYEES[order.payee_id]
@@ -614,6 +650,7 @@ class Orchestrator:
             },
             simulated=True,
         )
+        self._schedule_case_ready(run)
 
         if result == VerificationResult.DENIED:
             await pacer.wait(1500)
@@ -675,11 +712,17 @@ def build_orchestrator(
     settings = settings or Settings.from_env(env)
     signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
-    risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
+    risk, chain, case, degraded = load_ports(
+        settings,
+        signer=signer,
+        clock=lambda: holder["o"].now().timestamp(),
+        env=env,
+    )
     orchestrator = Orchestrator(
         bus=bus or EventBus(),
         risk=risk,
         chain=chain,
+        case=case,
         signer=signer,
         norms=NormsEngine(),
         settings=settings,

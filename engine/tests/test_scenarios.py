@@ -1,4 +1,6 @@
 import asyncio
+import threading
+import time
 from datetime import datetime
 
 import pytest
@@ -15,6 +17,7 @@ from .conftest import (
     DIVERTED_PREFIX,
     LEGIT_SEQUENCE,
     START,
+    make_orchestrator,
 )
 
 
@@ -83,7 +86,8 @@ async def test_supplier_answer_through_the_api_path(orchestrator):
             break
     orchestrator.supplier_response(payment_id, "deny")
     await orchestrator._task
-    assert types(orchestrator)[-4:] == DENY_SEQUENCE
+    decision_types = [type_ for type_ in types(orchestrator) if type_ != "case.ready"]
+    assert decision_types[-4:] == [type_ for type_ in DENY_SEQUENCE if type_ != "case.ready"]
     with pytest.raises(UnknownPayment):
         orchestrator.supplier_response("PAY-0000", "deny")
 
@@ -92,6 +96,50 @@ async def test_attack_needs_a_revoked_payment(orchestrator):
     await orchestrator.run_to_end("legit")
     with pytest.raises(AttackNotApplicable):
         await orchestrator.attack("release_revoked", "PAY-2026-0001")
+
+
+@pytest.mark.parametrize("behavior", ["garbage", "raises", "slow"])
+async def test_case_writer_is_advisory_and_never_delays_payment_flow(behavior):
+    class Writer:
+        mode = "test"
+
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def write(self, payment_id, events):
+            self.started.set()
+            if behavior == "raises":
+                raise RuntimeError("case failure")
+            if behavior == "slow":
+                self.release.wait(timeout=30)
+                return None
+            return object()
+
+    baseline = make_orchestrator()
+    await baseline.run_to_end("diverted", auto=True, auto_answer="deny")
+
+    writer = Writer()
+    affected = make_orchestrator()
+    affected.case = writer
+    started = time.perf_counter()
+    await affected.run_to_end("diverted", auto=True, auto_answer="deny")
+    elapsed = time.perf_counter() - started
+    writer.release.set()
+    await asyncio.sleep(0)
+
+    def decisions(engine):
+        return [
+            (event["type"], event["data"])
+            for event in engine.bus.events
+            if event["type"] != "case.ready"
+        ]
+
+    assert decisions(affected) == decisions(baseline)
+    assert elapsed < 1.0
+    assert writer.started.is_set()
+    if affected._case_tasks:
+        await asyncio.gather(*affected._case_tasks, return_exceptions=True)
 
 
 async def test_a_scenario_can_run_twice(orchestrator):
