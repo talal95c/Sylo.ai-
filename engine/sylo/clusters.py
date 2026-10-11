@@ -20,6 +20,8 @@ log = logging.getLogger("sylo.clusters")
 
 SAMPLE_PATH = SPEC_DIR / "fixtures" / "cluster-sample.json"
 MIN_LINKED_PAYMENTS = 3
+# Lane B's detector is used only if it reads the spec's WindowPayment; otherwise the stub stays.
+_PROBE = WindowPayment(payment_id="probe", account_id="probe", institution_id="probe", amount_eur=1.0, at="2026-10-11T00:00:00.000Z")
 
 
 @lru_cache(maxsize=1)
@@ -57,6 +59,7 @@ def load_cluster_port() -> tuple[ClusterPort, bool]:
         if detect is None:
             raise ImportError("sylo_risk.clusters has no detect()")
         port = lane_b if isinstance(lane_b, ClusterPort) else _FunctionPort(detect)
+        port.detect([_PROBE])
         return port, False
     except Exception as err:
         log.info("cluster detector of Lane B not available (%s); using the sample cluster", err)

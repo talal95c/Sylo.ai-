@@ -8,7 +8,8 @@ stricter), the mock chain or a case file built from the rules, and reports the d
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from sylo_spec.ports import ChainPort, RiskPort
@@ -58,7 +59,7 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
     return risk, chain, degraded
 
 
-def load_case_writer(settings: Settings) -> tuple[Any | None, bool]:
+def load_case_writer(settings: Settings, env: Mapping[str, str] | None = None) -> tuple[Any | None, bool]:
     """Lane B's ``CasePort`` for ``LLM_MODE=cached|live``. Returns (writer or None, degraded).
 
     The writer (``sylo_risk.CaseWriter``, the Mistral investigator) is optional: without it the
@@ -66,13 +67,17 @@ def load_case_writer(settings: Settings) -> tuple[Any | None, bool]:
     """
     if settings.llm_mode == "off":
         return None, False
+    env = os.environ if env is None else env
     try:
         try:
             from sylo_risk import CaseWriter
         except ImportError:
             from sylo_risk.case import CaseWriter
 
-        return CaseWriter(), False
+        api_key = env.get("MISTRAL_API_KEY") or None
+        if settings.llm_mode == "live" and not api_key:
+            log.warning("LLM_MODE=live but MISTRAL_API_KEY is not set; the case writer falls back to cached, then template")
+        return CaseWriter(mode=settings.llm_mode, api_key=api_key, model=env.get("MISTRAL_MODEL") or None), False
     except Exception as err:
         log.warning("LLM_MODE=%s but the case writer is unavailable (%s); case files come from the rules", settings.llm_mode, err)
         return None, True

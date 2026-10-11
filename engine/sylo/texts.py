@@ -68,6 +68,7 @@ REASON_NOT_NOMINATED = (
     "Ghanaian rules require export payments to reach the exporter's nominated bank. This account is not it."
 )
 REASON_SANCTIONS = "A party matches the sanctions list (synthetic list)."
+REASON_MODEL_UNAVAILABLE = "Risk model unavailable: held for verification as a precaution."
 REASON_VERIFIED_REGISTRY = "Bank details come from the verified supplier registry."
 
 

@@ -5,7 +5,25 @@ import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 import { ease, euros, LockIcon, Spinner } from "./ui";
 
-const REF_LABEL: Record<string, string> = { V: "Provenance", B: "Behaviour", R: "Regulation", N: "Network" };
+const REF_LABEL: Record<string, string> = {
+  V: "Provenance",
+  B: "Beneficiary",
+  R: "Regulation",
+  N: "Network",
+  G: "Geography",
+  H: "History",
+  P: "Payer session",
+  S: "Structuring",
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  CONFIRM_REVOCATION: "Confirm revocation",
+  RELEASE_AFTER_CONFIRMATION: "Release only after confirmation",
+  ESCALATE_AML: "Escalate to AML",
+  NO_ACTION: "No action",
+};
+
+const LLM_LABEL: Record<string, string> = { off: "template", cached: "Mistral · cached", live: "Mistral · live" };
 
 export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: () => void }) {
   const held = state.held;
@@ -74,6 +92,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                   <Verification state={state} nextStep={held.nextStep} />
                 </div>
               </motion.div>
+              <CaseFile state={state} />
             </div>
           </motion.section>
         ) : null}
@@ -167,4 +186,45 @@ function Verification({ state, nextStep }: { state: ViewState; nextStep: string 
     );
   }
   return <div className="text-ink-3">{nextStep}</div>;
+}
+
+function CaseFile({ state }: { state: ViewState }) {
+  const file = state.caseFile;
+  return (
+    <AnimatePresence>
+      {file ? (
+        <motion.details
+          key="case"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.45, ease }}
+          className="group mt-3 rounded-[18px] border border-[var(--line)] p-4 text-[12.5px]"
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <span className="font-medium text-ink">Analyst case file</span>
+            <span className="flex items-center gap-2 text-[11px] text-ink-2">
+              <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5">{ACTION_LABEL[file.recommendedAction] ?? file.recommendedAction}</span>
+              <span>{LLM_LABEL[file.llm] ?? file.llm} · advisory only</span>
+            </span>
+          </summary>
+          <div className="mt-3 max-h-[150px] overflow-y-auto pr-1">
+            {file.sentences?.length ? (
+              <ul className="space-y-1.5">
+                {file.sentences.map((sentence) => (
+                  <li key={sentence.text} className="leading-snug text-ink-2">
+                    {sentence.text}{" "}
+                    <span className="font-mono text-[10.5px] text-ink-3">{sentence.refs.join(" · ")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="leading-snug text-ink-2">{file.explanation}</p>
+            )}
+          </div>
+          <div className="mt-3 text-[11px] text-ink-3">{file.typology} · {file.model} · every sentence cites a system event or rule</div>
+        </motion.details>
+      ) : null}
+    </AnimatePresence>
+  );
 }

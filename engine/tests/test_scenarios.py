@@ -2,9 +2,12 @@ from datetime import datetime
 
 import pytest
 
-from sylo.orchestrator import AttackNotApplicable, NotWaiting, UnknownPayment
+from sylo.config import Settings
+from sylo.orchestrator import AttackNotApplicable, NotWaiting, UnknownPayment, build_orchestrator
+from sylo.pacer import VirtualPacer
+from sylo.risk_rules import CombinedRisk, RulesRisk
 
-from .conftest import ATTACK_SEQUENCE, CONFIRM_SEQUENCE, DENY_SEQUENCE, DIVERTED_PREFIX, LEGIT_SEQUENCE, types, until
+from .conftest import ATTACK_SEQUENCE, CONFIRM_SEQUENCE, DENY_SEQUENCE, DIVERTED_PREFIX, LEGIT_SEQUENCE, START, types, until
 
 
 def assert_valid(orchestrator, validator):
@@ -89,3 +92,71 @@ async def test_reset_clears_the_session_but_seq_keeps_increasing(orchestrator):
     await orchestrator.reset()
     assert [e["type"] for e in orchestrator.bus.events] == ["session.reset"]
     assert orchestrator.bus.events[0]["seq"] == last + 1
+
+
+def model_orchestrator():
+    return build_orchestrator(
+        Settings(risk_mode="model"),
+        env={},
+        pacer_factory=lambda speed: VirtualPacer(START, speed),
+    )
+
+
+async def test_model_mode_routes_legit_direct_and_diverted_through_escrow():
+    legit_orchestrator = model_orchestrator()
+    assert legit_orchestrator.mode()["risk"] == "model"
+    legit = await legit_orchestrator.run_to_end("legit")
+    legit_risk = next(
+        event["data"] for event in legit_orchestrator.bus.events if event["type"] == "risk.scored"
+    )
+    legit_route = next(
+        event["data"] for event in legit_orchestrator.bus.events if event["type"] == "route.selected"
+    )
+    assert legit_risk["tier"] == "LOW"
+    assert legit_route["settlement"] == "DIRECT"
+    assert not any(event["type"] == "escrow.deposited" for event in legit_orchestrator.bus.events)
+    assert legit.status == "credited"
+
+    diverted_orchestrator = model_orchestrator()
+    diverted = await diverted_orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    events = diverted_orchestrator.bus.events
+    risk = next(event["data"] for event in events if event["type"] == "risk.scored")
+    held = next(event["data"] for event in events if event["type"] == "payment.held")
+    assert risk["tier"] == "HIGH" and risk["oobResolvable"] is True
+    assert diverted.intent.tier == 1
+    committed = next(event["data"] for event in events if event["type"] == "intent.committed")
+    assert committed["tier"] == "MEDIUM"
+    assert any(event["type"] == "escrow.deposited" for event in events)
+    assert any(event["type"] == "verification.requested" for event in events)
+    assert any(event["type"] == "escrow.refunded" for event in events)
+    assert held["nextStep"].endswith(
+        "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
+    )
+    assert diverted.status == "stopped"
+
+
+async def test_model_mode_blocks_diverted_payment_when_session_has_sim_swap():
+    from sylo_risk import ModelRisk
+
+    class SimSwapModel:
+        def __init__(self):
+            self.model = ModelRisk()
+            self.name = self.model.name
+
+        def score(self, order, ctx):
+            session = ctx.payer_session.model_copy(update={"sim_swap_72h": True})
+            return self.model.score(order, ctx.model_copy(update={"payer_session": session}))
+
+    orchestrator = model_orchestrator()
+    orchestrator.risk = CombinedRisk(RulesRisk(), SimSwapModel())
+    run = await orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    risk = next(
+        event["data"] for event in orchestrator.bus.events if event["type"] == "risk.scored"
+    )
+
+    assert risk["oobResolvable"] is False
+    assert risk["tier"] == "HIGH"
+    assert run.status == "stopped"
+    assert run.intent is None
+    assert any(event["type"] == "payment.stopped" for event in orchestrator.bus.events)
+    assert not any(event["type"] == "escrow.deposited" for event in orchestrator.bus.events)

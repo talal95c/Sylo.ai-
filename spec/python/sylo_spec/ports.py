@@ -1,13 +1,14 @@
 """Port interfaces between the engine and the lanes (v0 spec §4.7).
 
-Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``) and ``CasePort``
-(``sylo_risk.CaseWriter``); Lane C implements ``ChainPort``
+Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``), ``CasePort``
+(``sylo_risk.CaseWriter``), and ``ClusterPort``; Lane C implements ``ChainPort``
 (``sylo_chain.FujiChain``). Both must pass the suites in ``sylo_spec.conformance``.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, Union, runtime_checkable
+from collections.abc import Mapping
+from typing import Any, Protocol, Union, runtime_checkable
 
 from .models import (
     CaseFile,

@@ -1,6 +1,7 @@
 """v2: mule wave and regional circuit breaker, rail outage, kill switch, degraded mode, guardian incidents."""
 
 import json
+import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -265,8 +266,10 @@ async def test_a_single_refusal_or_refusals_ten_minutes_apart_do_not_cut_the_ada
 # --- degraded mode and guardian incidents ------------------------------------------------------
 
 
-async def test_a_missing_dependency_shows_in_the_mode_and_leaves_known_payees_alone():
-    orchestrator = make_orchestrator(llm_mode="cached")  # no case writer is installed in the engine's own tests
+async def test_a_missing_dependency_shows_in_the_mode_and_leaves_known_payees_alone(monkeypatch):
+    monkeypatch.setitem(sys.modules, "sylo_risk", None)
+    monkeypatch.setitem(sys.modules, "sylo_risk.case", None)
+    orchestrator = make_orchestrator(llm_mode="cached")
     assert orchestrator.mode()["degraded"] == ["llm"]
     run = await orchestrator.run_to_end("legit")
     assert run.tier == Tier.LOW and types(orchestrator) == LEGIT_SEQUENCE

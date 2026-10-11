@@ -1481,7 +1481,7 @@ def build_orchestrator(
     signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
-    writer, llm_degraded = load_case_writer(settings)
+    writer, llm_degraded = load_case_writer(settings, env)
     if llm_degraded:
         degraded.append("llm")
     journal = Journal(settings.journal_path)

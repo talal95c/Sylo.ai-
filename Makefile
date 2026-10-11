@@ -4,7 +4,7 @@ SHELL := /bin/bash
 LOAD_ENV := set -a; if [ -f ../.env ]; then . ../.env; fi; set +a
 
 .PHONY: help setup dev engine web test test-spec test-engine test-ml test-chain test-contracts test-web \
-        fixtures fixtures-check demo-check verify-log integrity anvil-deploy
+        fixtures fixtures-check demo-check verify-log integrity eval anvil-deploy
 
 help:
 	@echo "Sylo.ai — make targets"
@@ -17,6 +17,7 @@ help:
 	@echo "  demo-check      run the demo scenes and the three attacks against the engine and assert the events"
 	@echo "  verify-log      recompute the hash chain of the decision log (engine/data/log.jsonl)"
 	@echo "  integrity       run 300 changed or replayed payments through the adapters; writes engine/reports/integrity.json"
+	@echo "  eval            evaluate the frozen Lane B model (SEED=B or C)"
 	@echo "  anvil-deploy    deploy the contracts to a throwaway local Anvil node"
 
 setup:
@@ -72,6 +73,10 @@ verify-log:
 
 integrity:
 	cd engine && uv run python -m sylo.integrity
+
+eval:
+	@test -n "$(SEED)" || (echo "Usage: make eval SEED=B" >&2; exit 2)
+	cd engine && uv run --extra model python -m sylo_risk.evaluate --seed "$(SEED)"
 
 anvil-deploy:
 	./scripts/anvil_deploy.sh

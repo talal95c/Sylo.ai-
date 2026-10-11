@@ -1,5 +1,7 @@
 """Analyst case file: built from the rules, or by Lane B's CasePort when its answer can be trusted (roadmap A1.7)."""
 
+import sys
+
 import pytest
 
 from sylo_spec.models import CaseFile, Event, Tier
@@ -109,9 +111,11 @@ def test_the_writer_is_a_case_port_called_with_events_and_replaced_by_the_rules_
         assert fallback.llm == "off" and "[R-PV-01]" in fallback.summary
 
 
-def test_without_a_writer_the_mode_is_off_and_llm_is_reported_degraded_when_it_was_asked_for():
+def test_without_a_writer_the_mode_is_off_and_llm_is_reported_degraded_when_it_was_asked_for(monkeypatch):
     assert (CaseService("off").mode, CaseService("off").degraded) == ("off", False)
     assert (CaseService("cached", None).mode, CaseService("cached", None).degraded) == ("off", True)
+    monkeypatch.setitem(sys.modules, "sylo_risk", None)
+    monkeypatch.setitem(sys.modules, "sylo_risk.case", None)
     orchestrator = make_orchestrator(llm_mode="cached")
     assert orchestrator.mode()["llm"] == "off" and "llm" in orchestrator.mode()["degraded"]
 

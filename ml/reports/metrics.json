@@ -1,0 +1,569 @@
+{
+  "ablations": [
+    {
+      "auc": 0.9768396924803591,
+      "fprMediumPlus": 0.07003367003367003,
+      "recallAll": 0.8626666666666667,
+      "recallAtFpr": 0.8626666666666667,
+      "recallT1Evasive": 1.0,
+      "step": "drop_B"
+    },
+    {
+      "auc": 0.9983613041526376,
+      "fprMediumPlus": 0.06713804713804714,
+      "recallAll": 0.978,
+      "recallAtFpr": 0.978,
+      "recallT1Evasive": 1.0,
+      "step": "drop_V"
+    },
+    {
+      "auc": 0.9983458922558922,
+      "fprMediumPlus": 0.06704377104377104,
+      "recallAll": 0.9786666666666667,
+      "recallAtFpr": 0.9786666666666667,
+      "recallT1Evasive": 1.0,
+      "step": "drop_P"
+    },
+    {
+      "auc": 0.9982554096520763,
+      "fprMediumPlus": 0.06710437710437711,
+      "recallAll": 0.982,
+      "recallAtFpr": 0.982,
+      "recallT1Evasive": 1.0,
+      "step": "drop_G"
+    },
+    {
+      "auc": 0.9968693131313131,
+      "fprMediumPlus": 0.0687070707070707,
+      "recallAll": 0.9446666666666667,
+      "recallAtFpr": 0.9446666666666667,
+      "recallT1Evasive": 1.0,
+      "step": "drop_H"
+    },
+    {
+      "auc": 0.9974631470258136,
+      "fprMediumPlus": 0.06830303030303031,
+      "recallAll": 0.93,
+      "recallAtFpr": 0.93,
+      "recallT1Evasive": 1.0,
+      "step": "drop_S"
+    },
+    {
+      "auc": 0.9982217553310887,
+      "fprMediumPlus": 0.06672053872053872,
+      "recallAll": 0.9713333333333334,
+      "recallAtFpr": 0.9713333333333334,
+      "recallT1Evasive": 1.0,
+      "step": "drop_R"
+    }
+  ],
+  "baselines": [
+    {
+      "alertBudget": 750,
+      "auc": 0.9970339573512907,
+      "diversionRate": 9.241668681866313e-05,
+      "fprHardNegatives": 0.476,
+      "fprMediumPlus": 0.06871380471380471,
+      "name": "logistic_regression",
+      "precisionAtAlertBudget": 0.8493333333333334,
+      "precisionHigh": 0.9808917197452229,
+      "recallAll": 0.9833333333333333,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.9312861952861953,
+      "valueStoppedPct": 0.9909988374609677
+    },
+    {
+      "alertBudget": 750,
+      "auc": 0.9662993333333334,
+      "diversionRate": 0.0036043523319879657,
+      "fprHardNegatives": 0.4842222222222222,
+      "fprMediumPlus": 0.07063973063973064,
+      "name": "lightgbm_without_B_G",
+      "precisionAtAlertBudget": 0.8066666666666666,
+      "precisionHigh": 0.9547619047619048,
+      "recallAll": 0.68,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.9293602693602694,
+      "valueStoppedPct": 0.6489447706362566
+    },
+    {
+      "alertBudget": 750,
+      "auc": 0.667633719416386,
+      "diversionRate": 0.005627593369026353,
+      "fprHardNegatives": 0.4746666666666667,
+      "fprMediumPlus": 0.06277441077441077,
+      "name": "rules_only",
+      "precisionAtAlertBudget": 0.050666666666666665,
+      "precisionHigh": 1.0,
+      "recallAll": 0.398,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.9372255892255892,
+      "valueStoppedPct": 0.45188597035967476
+    }
+  ],
+  "byTypology": [
+    {
+      "confidenceInterval95": [
+        1.0,
+        1.0
+      ],
+      "count": 450,
+      "recall": 1.0,
+      "typology": "T1"
+    },
+    {
+      "confidenceInterval95": [
+        0.9882254603969247,
+        1.0
+      ],
+      "count": 300,
+      "recall": 0.9966666666666667,
+      "typology": "T2"
+    },
+    {
+      "confidenceInterval95": [
+        0.9724468857413773,
+        0.9937655446857901
+      ],
+      "count": 450,
+      "recall": 0.9844444444444445,
+      "typology": "T3"
+    },
+    {
+      "confidenceInterval95": [
+        0.9025248745267236,
+        0.9602654983623019
+      ],
+      "count": 300,
+      "recall": 0.9333333333333333,
+      "typology": "T4"
+    }
+  ],
+  "clusters": {
+    "hardNegativeSeedFormula": "np.random.default_rng(SEEDS[seed] + 1_000_003)",
+    "hardNegativeSeeds": {
+      "B": 21261005,
+      "C": 21261006
+    },
+    "hardNegatives": "30 old popular suppliers and 30 young popular accounts per seed; evaluation only",
+    "limits": [
+      "Synthetic T3 accounts concentrate payer fan-in and are easy to detect.",
+      "Region points are coarse region centroids, not account locations."
+    ],
+    "method": "NetworkX payer-account bipartite windows; age <120 days or <10 successes",
+    "results": {
+      "B": {
+        "campaignCount": 30,
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "detectedClusters": 31,
+        "falseClusters": {
+          "legit": 0,
+          "popularSupplier": 0,
+          "youngPopular": 30
+        },
+        "hardNegativeAccounts": {
+          "popularSupplier": 30,
+          "youngPopular": 30
+        },
+        "isolatedClusters": 72,
+        "isolatedInstitution": {
+          "campaignDetectionRate": 1.0,
+          "campaignsDetected": 30,
+          "paymentsToDetect": {
+            "p50": 11.5,
+            "p90": 16.1
+          }
+        },
+        "payments": 150000,
+        "paymentsToDetect": {
+          "p50": 7.0,
+          "p90": 10.100000000000001
+        },
+        "runtimeSeconds": 4.5143065829997795,
+        "t3FanInP50": 14.0
+      },
+      "C": {
+        "campaignCount": 30,
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "detectedClusters": 33,
+        "falseClusters": {
+          "legit": 0,
+          "popularSupplier": 0,
+          "youngPopular": 30
+        },
+        "hardNegativeAccounts": {
+          "popularSupplier": 30,
+          "youngPopular": 30
+        },
+        "isolatedClusters": 60,
+        "isolatedInstitution": {
+          "campaignDetectionRate": 0.9666666666666667,
+          "campaignsDetected": 29,
+          "paymentsToDetect": {
+            "p50": 10.0,
+            "p90": 15.2
+          }
+        },
+        "payments": 150000,
+        "paymentsToDetect": {
+          "p50": 7.5,
+          "p90": 10.200000000000003
+        },
+        "runtimeSeconds": 4.486946434999481,
+        "t3FanInP50": 15.0
+      }
+    }
+  },
+  "dataset": {
+    "days": 30,
+    "payments": 150000,
+    "seedEval": "B",
+    "seedTrain": "A",
+    "synthetic": true
+  },
+  "degraded": [
+    {
+      "fprMediumPlus": 0.42997979797979796,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.8435012345679013,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.7604444444444445,
+        "fprMediumPlus": 0.42997979797979796,
+        "precisionAtAlertBudget": 0.35333333333333333,
+        "precisionHigh": 0.01819392980557059,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.570020202020202,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "model_missing_rules_only",
+      "neverLooser": false,
+      "permissiveActionPct": 0.0010733333333333333,
+      "permissivePct": 0.00352,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 522,
+        "mediumToLow": 6
+      },
+      "seed": "B"
+    },
+    {
+      "fprMediumPlus": 1.0,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.9805010168350169,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 1.0,
+        "fprMediumPlus": 1.0,
+        "precisionAtAlertBudget": 0.9173333333333333,
+        "precisionHigh": 0.07910658750353407,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.0,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "history_missing",
+      "neverLooser": false,
+      "permissiveActionPct": 0.00188,
+      "permissivePct": 4.6666666666666665e-05,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 7,
+        "mediumToLow": 0
+      },
+      "seed": "B"
+    },
+    {
+      "fprMediumPlus": 0.43256565656565654,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.8302090819304152,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.7568888888888889,
+        "fprMediumPlus": 0.43256565656565654,
+        "precisionAtAlertBudget": 0.24133333333333334,
+        "precisionHigh": 0.01827231645818325,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.5674343434343434,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "model_missing_rules_only",
+      "neverLooser": false,
+      "permissiveActionPct": 0.0010066666666666666,
+      "permissivePct": 0.00376,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 1,
+        "highToMedium": 554,
+        "mediumToLow": 9
+      },
+      "seed": "C"
+    },
+    {
+      "fprMediumPlus": 1.0,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.9767473535353535,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 1.0,
+        "fprMediumPlus": 1.0,
+        "precisionAtAlertBudget": 0.8666666666666667,
+        "precisionHigh": 0.08005348526248474,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.0,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "history_missing",
+      "neverLooser": false,
+      "permissiveActionPct": 0.00172,
+      "permissivePct": 0.00013333333333333334,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 20,
+        "mediumToLow": 0
+      },
+      "seed": "C"
+    }
+  ],
+  "evaluationRows": {
+    "B": 150000,
+    "C": 150000
+  },
+  "frozenThresholds": {
+    "precision_target_met": true,
+    "t_high": 0.4510718837561716,
+    "t_med": 0.04457334309526271
+  },
+  "generatedAt": "2026-10-11T01:23:23.699268+00:00",
+  "integrity": [
+    {
+      "case": "I1",
+      "count": 100,
+      "refusedPct": 100.0
+    },
+    {
+      "case": "I2",
+      "count": 100,
+      "refusedPct": 100.0
+    },
+    {
+      "case": "I3",
+      "count": 100,
+      "refusedPct": 100.0
+    }
+  ],
+  "legitimateHoldBreakdown": {
+    "byCause": {
+      "guarantee": {
+        "count": 8035,
+        "shareOfHolds": 0.8048682760693179,
+        "shareOfLegitimate": 0.054107744107744105
+      },
+      "modelOnly": {
+        "count": 661,
+        "shareOfHolds": 0.06621256135430231,
+        "shareOfLegitimate": 0.0044511784511784514
+      },
+      "otherRules": {
+        "count": 1287,
+        "shareOfHolds": 0.12891916257637984,
+        "shareOfLegitimate": 0.008666666666666666
+      }
+    },
+    "heldCount": 9983,
+    "legitimateCount": 148500
+  },
+  "limits": [
+    "Data are synthetic and generated by this project.",
+    "Value stopped assumes flagged identity-risk transfers are held until the real supplier denies them out of band.",
+    "Seed C is shifted but uses the same-family generator.",
+    "Latency is measured on this VM, single thread."
+  ],
+  "metrics": {
+    "alertBudget": 750,
+    "auc": 0.9984556790123458,
+    "confidenceIntervals95": {
+      "fprHardNegatives": [
+        0.4617246338456674,
+        0.49039839272869645
+      ],
+      "fprMediumPlus": [
+        0.0659266304317205,
+        0.06851640811249114
+      ],
+      "precisionAtAlertBudget": [
+        0.9786666666666667,
+        0.9946666666666667
+      ],
+      "precisionHigh": [
+        0.880793722203173,
+        0.9143477277984564
+      ],
+      "recallAll": [
+        0.9737725891400024,
+        0.9878728511029577
+      ],
+      "recallT1": [
+        1.0,
+        1.0
+      ],
+      "recallT1Evasive": [
+        1.0,
+        1.0
+      ],
+      "recallT2": [
+        0.9882254603969247,
+        1.0
+      ],
+      "recallT3": [
+        0.9724468857413773,
+        0.9937655446857901
+      ],
+      "recallT4": [
+        0.9025248745267236,
+        0.9602654983623019
+      ]
+    },
+    "diversionRate": 5.680753084098305e-05,
+    "fprHardNegatives": 0.4757777777777778,
+    "fprMediumPlus": 0.06722558922558923,
+    "precisionAtAlertBudget": 0.9866666666666667,
+    "precisionHigh": 0.8986212489862125,
+    "recallAll": 0.9813333333333333,
+    "recallT1": 1.0,
+    "recallT1Evasive": 1.0,
+    "stpRate": 0.9327744107744108,
+    "ttdP95Ms": 0.733122199471836,
+    "valueStoppedPct": 0.9944670834224548
+  },
+  "modelOnlyMetrics": {
+    "B": {
+      "fprMediumPlus": 0.0105993265993266,
+      "precisionHigh": 0.8986212489862125,
+      "recallAll": 0.962,
+      "recallT1": 0.94,
+      "recallT1Evasive": 0.8
+    },
+    "C": {
+      "fprMediumPlus": 0.00826936026936027,
+      "precisionHigh": 0.916243654822335,
+      "recallAll": 0.966,
+      "recallT1": 0.92,
+      "recallT1Evasive": 0.84
+    }
+  },
+  "modelVersion": "gbm-20261011",
+  "outOfDistribution": {
+    "alertBudget": 750,
+    "auc": 0.9988092772166106,
+    "byTypology": [
+      {
+        "confidenceInterval95": [
+          1.0,
+          1.0
+        ],
+        "count": 450,
+        "recall": 1.0,
+        "typology": "T1"
+      },
+      {
+        "confidenceInterval95": [
+          0.9896193771626297,
+          1.0
+        ],
+        "count": 300,
+        "recall": 0.9966666666666667,
+        "typology": "T2"
+      },
+      {
+        "confidenceInterval95": [
+          0.9700426160607611,
+          0.9932591810572355
+        ],
+        "count": 450,
+        "recall": 0.9822222222222222,
+        "typology": "T3"
+      },
+      {
+        "confidenceInterval95": [
+          0.9624554655653867,
+          0.9937323485738132
+        ],
+        "count": 300,
+        "recall": 0.98,
+        "typology": "T4"
+      }
+    ],
+    "confidenceIntervals95": {
+      "fprHardNegatives": [
+        0.45586172386297485,
+        0.4839676936236099
+      ],
+      "fprMediumPlus": [
+        0.08179520131990847,
+        0.08449195231873737
+      ],
+      "precisionAtAlertBudget": [
+        0.9626666666666667,
+        0.9853333333333333
+      ],
+      "precisionHigh": [
+        0.8994972734199105,
+        0.9315347573774541
+      ],
+      "recallAll": [
+        0.9845555775633077,
+        0.994730340315427
+      ],
+      "recallT1": [
+        1.0,
+        1.0
+      ],
+      "recallT1Evasive": [
+        1.0,
+        1.0
+      ],
+      "recallT2": [
+        0.9896193771626297,
+        1.0
+      ],
+      "recallT3": [
+        0.9700426160607611,
+        0.9932591810572355
+      ],
+      "recallT4": [
+        0.9624554655653867,
+        0.9937323485738132
+      ]
+    },
+    "diversionRate": 8.237723587236701e-05,
+    "fprHardNegatives": 0.4702222222222222,
+    "fprMediumPlus": 0.08315151515151516,
+    "precisionAtAlertBudget": 0.976,
+    "precisionHigh": 0.916243654822335,
+    "recallAll": 0.99,
+    "recallT1": 1.0,
+    "recallT1Evasive": 1.0,
+    "seed": "C",
+    "stpRate": 0.9168484848484848,
+    "ttdP95Ms": 0.6441549497139931,
+    "valueStoppedPct": 0.9921639451858553
+  },
+  "runtimeSeconds": 490.38899990200025,
+  "sample": false
+}

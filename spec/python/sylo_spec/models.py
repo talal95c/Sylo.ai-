@@ -180,6 +180,13 @@ class PayerSession(SpecModel):
     country: str = "FR"
 
 
+class PairHistory(SpecModel):
+    successful_count: int = 0
+    median_amount_eur: float | None = None
+    payments_24h: int = 0
+    last_account_id: str | None = None
+
+
 class RiskContext(SpecModel):
     payee: Payee | None
     account: Account | None
@@ -189,6 +196,7 @@ class RiskContext(SpecModel):
     account_age_hours: float
     amount_eur: float
     sanctions_hit: bool = False
+    history: PairHistory | None = None
 
 
 class RiskReason(SpecModel):
@@ -288,6 +296,11 @@ class Cluster(SpecModel):
     centroid: GeoPoint
     points: list[WeightedPoint] = Field(default_factory=list)
     linked_payments: list[str] = Field(default_factory=list)
+    detected_at_day: int | None = None
+
+
+ClusterCentroid = GeoPoint
+ClusterPoint = WeightedPoint
 
 
 # --- EIP-712 structs (field order is binding, see eip712.py) --------------------------------
