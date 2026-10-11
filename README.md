@@ -26,6 +26,13 @@ Open <http://localhost:3000> and use the demo buttons at the bottom left:
 
 Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
 
+## Deploy
+
+- **Render:** choose **New → Blueprint** for this repository, then set `CORS_ORIGINS` to the Vercel URL(s).
+- **Vercel:** import the repository, set Root Directory to `web`, and keep **Include files outside the Root Directory** enabled (the prebuild copies `../spec`).
+- Set `NEXT_PUBLIC_ENGINE_URL=https://<render-service>.onrender.com`, `NEXT_PUBLIC_SOURCE=live`, and `NEXT_PUBLIC_ENGINE_CONNECT_TIMEOUT_MS=60000`.
+- One engine is one shared demo session: visitors to that deployment share its in-memory state and event stream.
+
 ### Engine v1 (Lane A)
 
 The engine now also runs the human steps and the integrity checks of v1 ([`spec/api.md`](spec/api.md)):
