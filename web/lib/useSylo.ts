@@ -16,6 +16,7 @@ import {
   type Source,
   type SourceKind,
 } from "./source";
+import { engineConnectTimeoutMs, engineUrl } from "./engine";
 
 type UiAction = { type: "ui.closeAlert" } | { type: "ui.sourceChanged" };
 type HookAction = SyloEvent | UiAction;
@@ -42,8 +43,6 @@ export function useSylo() {
 
   useEffect(() => {
     dispatch({ type: "ui.sourceChanged" });
-    const engineUrl =
-      process.env.NEXT_PUBLIC_ENGINE_URL ?? "http://localhost:8000";
     const source =
       sourceKind === "live"
         ? createLiveSource(engineUrl)
@@ -81,7 +80,7 @@ export function useSylo() {
     if (sourceKind === "live") {
       initialTimer = setTimeout(() => {
         if (!opened) switchToReplay();
-      }, 2000);
+      }, engineConnectTimeoutMs);
     }
 
     return () => {
