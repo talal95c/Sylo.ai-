@@ -48,6 +48,7 @@ export function useSylo() {
   );
   const [notice, setNotice] = useState<string>();
   const [speed, setSpeedState] = useState<1 | 2>(1);
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
   const [ready, setReady] = useState(false);
   const sourceRef = useRef<Source | null>(null);
@@ -94,6 +95,9 @@ export function useSylo() {
       },
       onStatus(status) {
         if (status.notice) setNotice(status.notice);
+        if (status.kind === "live") {
+          setConnectionStatus(status.connected ? "live" : "offline");
+        }
         if (status.connected) {
           setReady(true);
           scheduleBacklogCheck();
@@ -125,7 +129,7 @@ export function useSylo() {
       source.stop();
       if (sourceRef.current === source) sourceRef.current = null;
     };
-  }, [sourceKind]);
+  }, [sourceKind, setConnectionStatus]);
 
   const setSpeed = useCallback((nextSpeed: 1 | 2) => {
     setSpeedState(nextSpeed);
@@ -133,8 +137,9 @@ export function useSylo() {
 
   const setSourceKind = useCallback((kind: SourceKind) => {
     setNotice(undefined);
+    if (kind === "live") setConnectionStatus("connecting");
     setSourceKindState(kind);
-  }, []);
+  }, [setConnectionStatus]);
 
   const runScenario = useCallback(
     (name: ScenarioName, invoiceText?: string) =>
@@ -188,6 +193,7 @@ export function useSylo() {
     state,
     scenarioStartedVersion,
     sourceKind,
+    connectionStatus,
     notice,
     ready,
     speed,

@@ -2,13 +2,14 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import type { SystemModeData } from "@/lib/events";
 import type { SourceKind } from "@/lib/source";
 import { cx, Dot, ease } from "./ui";
 
 export type DemoView = "globe" | "nodes";
 
-type IconName = "risk" | "chain" | "rails";
+type IconName = "risk" | "chain" | "rails" | "llm";
 
 function ModeIcon({ name, color }: { name: IconName; color: string }) {
   const common = { stroke: color, strokeWidth: 1.4, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -32,17 +33,19 @@ function ModeIcon({ name, color }: { name: IconName; color: string }) {
           <path d="M13.5 10.5h-10m0 0L6 8m-2.5 2.5L6 13" {...common} />
         </>
       ) : null}
+      {name === "llm" ? (
+        <>
+          <path d="M3 3.5h10v7H8l-3.5 2v-2H3z" {...common} />
+          <circle cx="5.5" cy="7" r=".5" fill={color} />
+          <circle cx="8" cy="7" r=".5" fill={color} />
+          <circle cx="10.5" cy="7" r=".5" fill={color} />
+        </>
+      ) : null}
     </svg>
   );
 }
 
-export function ModeBanner({
-  mode,
-  riskMode,
-}: {
-  mode: SystemModeData | null;
-  riskMode?: "rules" | "model";
-}) {
+function modeItems(mode: SystemModeData | null, riskMode?: "rules" | "model") {
   const value = mode ?? { risk: "rules", chain: "mock", llm: "off", rails: "simulated", degraded: [] };
   const degraded = value.degraded.map((item) => item.toLowerCase());
   const items: { icon: IconName; label: string; color: string }[] = [
@@ -61,7 +64,30 @@ export function ModeBanner({
       label: `Rails · ${String(value.rails).toLowerCase()}`,
       color: value.rails === "simulated" || degraded.some((item) => item.includes("rail")) ? "var(--medium)" : "var(--low)",
     },
+    {
+      icon: "llm",
+      label: `LLM · ${String(value.llm).toLowerCase()}`,
+      color: value.llm === "off" || degraded.some((item) => item.includes("llm")) ? "var(--medium)" : "var(--low)",
+    },
   ];
+  if (value.confidential) {
+    items.push({
+      icon: "llm",
+      label: `Confidential · ${value.confidential.toLowerCase()}`,
+      color: value.confidential === "off" ? "var(--medium)" : "var(--low)",
+    });
+  }
+  return { value, items };
+}
+
+export function ModeBanner({
+  mode,
+  riskMode,
+}: {
+  mode: SystemModeData | null;
+  riskMode?: "rules" | "model";
+}) {
+  const { value, items } = modeItems(mode, riskMode);
   return (
     <div
       className="flex h-7 items-center divide-x divide-[var(--line-strong)] rounded-full border border-[var(--line)] bg-white/70"
@@ -75,6 +101,72 @@ export function ModeBanner({
           {label}
         </span>
       ))}
+    </div>
+  );
+}
+
+function ModePopover({ mode, riskMode }: { mode: SystemModeData | null; riskMode: "rules" | "model" }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { items, value } = modeItems(mode, riskMode);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls="system-modes-popover"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-8 items-center gap-1.5 rounded-full border border-[var(--line)] bg-white/80 px-3 text-[11px] font-medium text-ink-2"
+      >
+        Modes
+        <svg className={`transition-transform ${open ? "rotate-180" : ""}`} width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          id="system-modes-popover"
+          role="dialog"
+          aria-label="System modes"
+          className="card absolute left-1/2 top-[calc(100%+10px)] z-50 w-64 -translate-x-1/2 rounded-xl p-3 shadow-[var(--shadow-float)]"
+        >
+          <div className="mb-2 text-[11px] font-semibold text-ink">System modes</div>
+          <div className="grid gap-2">
+            {items.map(({ icon, label, color }) => (
+              <div key={label} className="flex items-center gap-2 text-[11px] text-ink-2">
+                <ModeIcon name={icon} color={color} />
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+          {value.degraded.length ? (
+            <p className="mt-3 border-t border-[var(--line)] pt-2 text-[11px] leading-snug text-amber-800">
+              Degraded mode: {value.degraded.join(", ")}.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -103,6 +195,7 @@ export function TopBar({
   mode,
   riskMode,
   sourceKind,
+  connectionStatus,
   notice,
   onSource,
   view,
@@ -112,6 +205,7 @@ export function TopBar({
   mode: SystemModeData | null;
   riskMode: "rules" | "model";
   sourceKind: SourceKind;
+  connectionStatus: "connecting" | "live" | "offline";
   notice?: string;
   onSource: (kind: SourceKind) => void;
   view: DemoView;
@@ -164,8 +258,13 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="hidden whitespace-nowrap xl:block">
-        <ModeBanner mode={mode} riskMode={riskMode} />
+      <div className="justify-self-center">
+        <div className="hidden whitespace-nowrap xl:block">
+          <ModeBanner mode={mode} riskMode={riskMode} />
+        </div>
+        <div className="xl:hidden">
+          <ModePopover mode={mode} riskMode={riskMode} />
+        </div>
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-2.5">
@@ -181,6 +280,20 @@ export function TopBar({
         ) : sourceKind === "replay" ? (
           <span className="hidden whitespace-nowrap text-[10.5px] text-ink-3 sm:block" title="Recorded events">
             Recorded events
+          </span>
+        ) : null}
+        {sourceKind === "live" ? (
+          <span
+            className="hidden items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-2 md:flex"
+            role="status"
+            aria-live="polite"
+            aria-label={`Live stream ${connectionStatus}`}
+          >
+            <Dot
+              color={connectionStatus === "live" ? "var(--low)" : connectionStatus === "offline" ? "var(--danger)" : "var(--medium)"}
+              pulse={connectionStatus === "connecting"}
+            />
+            {connectionStatus === "live" ? "Live" : connectionStatus === "offline" ? "Offline" : "Connecting…"}
           </span>
         ) : null}
         {onHelp ? (
@@ -214,7 +327,7 @@ export function TopBar({
                 />
               ) : null}
               <span className="relative flex items-center gap-1.5">
-                {kind === "live" ? <Dot color={sourceKind === "live" ? "var(--low)" : "rgba(0,0,0,.25)"} pulse={sourceKind === "live"} /> : null}
+                {kind === "live" ? <Dot color={sourceKind === "live" ? (connectionStatus === "live" ? "var(--low)" : connectionStatus === "offline" ? "var(--danger)" : "var(--medium)") : "rgba(0,0,0,.25)"} pulse={sourceKind === "live" && connectionStatus === "connecting"} /> : null}
                 {kind}
               </span>
             </button>
