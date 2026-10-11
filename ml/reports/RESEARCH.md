@@ -12,8 +12,8 @@ Scripts and raw outputs: `ml/experiments/*.py|json`.
 | Bahnsen, Aouada, Ottersten — *Ensemble of example-dependent cost-sensitive decision trees* (arXiv:1505.04637, 2015) | decide on expected loss `p × amount`, not on `p` | tested (R1) |
 | Vovk & Petej — *Venn-Abers predictors* (arXiv:1211.0025) | calibrated probability *interval*; use the upper bound to be stricter | not tested: isotonic already calibrated (Brier logged in model.json); interval adds latency for little demo value |
 | *Graph-Transformer fraud detection … conformal risk control* (arXiv:2609.14234, 2026); *Temporal graph prototype-conditioned conformal prediction* (arXiv:2608.15768, 2026) | guarantee a miss-rate bound per typology | noted: our `t_med` is already a validation-quantile threshold; a conformal wrapper would only formalise it |
-| Johannessen & Jullum — *Finding money launderers using heterogeneous GNNs* (arXiv:2307.13499); DELATOR (arXiv:2205.10293) | graph features for mule networks | used as design input for B2.1 (lightweight connected components, no GNN at hackathon scale) |
-| UK Finance / PSR APP-fraud reports; EU Reg. 2024/886 (VoP) | “payee amendment” (bank-detail change) is the core BEC/APP signal | tested (R3) — **strongest result** |
+| *Finding money launderers using heterogeneous graph neural networks* (arXiv:2307.13499, 2023); *DELATOR* (arXiv:2205.10293, 2022) | graph features for mule networks | used as design input for B2.1 (lightweight connected components, no GNN at hackathon scale) |
+| EU Reg. 2024/886 (VoP) and the BEC/APP sources in `docs/ia-securite-references.md` | a change of bank details is the central BEC/APP pattern | tested (R3) — **strongest result** |
 | BEC literature (arXiv:2007.02415, 2309.14166) | compromised genuine mailbox defeats domain checks | confirmed by R2 |
 
 ## R1 — amount-aware (expected-loss) hold policy
