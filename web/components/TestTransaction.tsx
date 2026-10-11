@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { HOP_COLORS, TIER_COLORS } from "@/lib/colors";
+import { CSS_HOP_COLORS, CSS_TIER_COLORS } from "@/lib/colors";
 import { loadGeo, type Institution } from "@/lib/geo";
 import {
   EngineError,
@@ -174,7 +174,7 @@ function RoutePath({
     <div className="mx-4 mt-3 flex items-start">
       {stops.map((stop, index) => {
         const hop = route.hops[index];
-        const color = tone === "excluded" ? "var(--danger)" : tone === "chosen" ? HOP_COLORS[hop?.kind ?? "bank"] : "rgba(0,0,0,0.28)";
+        const color = tone === "excluded" ? "var(--danger)" : tone === "chosen" ? CSS_HOP_COLORS[hop?.kind ?? "bank"] : "rgba(0,0,0,0.28)";
         return (
           <div key={`${stop}-${index}`} className={cx("flex min-w-0 items-start", hop && "flex-1")}>
             <div className="flex w-0 flex-col items-center">
@@ -194,7 +194,7 @@ function RoutePath({
                 {hop.kind === "chain" ? (
                   <span
                     className="absolute -top-[15px] left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px]"
-                    style={{ color: tone === "excluded" ? "var(--danger)" : HOP_COLORS.chain }}
+                    style={{ color: tone === "excluded" ? "var(--danger)" : CSS_HOP_COLORS.chain }}
                   >
                     Avalanche
                   </span>
@@ -585,7 +585,7 @@ export default function TestTransaction() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="font-mono text-[12px] text-ink-3">
-                <span className="text-ink">{pad(step + 1)}</span> / {pad(STEPS.length)}
+                <span className="text-ink">{pad(step + 1)}</span> · {pad(STEPS.length)}
               </p>
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
@@ -785,7 +785,7 @@ export default function TestTransaction() {
                     {
                       label: "Fraud check",
                       value: quote ? `${quote.risk.tier} · ${quote.risk.score}` : "—",
-                      color: quote ? TIER_COLORS[quote.risk.tier] : undefined,
+                      color: quote ? CSS_TIER_COLORS[quote.risk.tier] : undefined,
                     },
                     ...(swiftCost !== null && chosen?.routeId !== "R1" ? [{ label: "Same payment via SWIFT", value: money(swiftCost), muted: true }] : []),
                   ].map((line) => (
@@ -915,7 +915,7 @@ export default function TestTransaction() {
                   </Row>
                   <Row label="Settlement">{SETTLEMENT[quote.route.settlement] ?? quote.route.settlement}</Row>
                   <Row label="Fraud check">
-                    <span className="font-mono" style={{ color: TIER_COLORS[quote.risk.tier] }}>
+                    <span className="font-mono" style={{ color: CSS_TIER_COLORS[quote.risk.tier] }}>
                       {quote.risk.tier} · {quote.risk.score}
                     </span>
                     {quote.risk.topReasons[0] ? (

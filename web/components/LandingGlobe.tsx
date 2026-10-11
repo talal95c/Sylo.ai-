@@ -2,11 +2,13 @@
 
 import createGlobe from "cobe";
 import { greatCirclePoint } from "@/lib/arcDots";
+import { ACCENT as ACCENT_HEX } from "@/lib/colors";
+import { CORRIDOR_LABEL } from "@/lib/corridor";
 import { useEffect, useRef } from "react";
 
 const LYON: [number, number] = [45.764, 4.836];
 const TAMALE: [number, number] = [9.403, -0.842];
-const ACCENT: [number, number, number] = [1 / 255, 43 / 255, 1];
+const ACCENT = ACCENT_HEX.slice(1).match(/.{2}/g)!.map((channel) => Number.parseInt(channel, 16) / 255) as [number, number, number];
 
 // Dotted ground track Lyon → Tamale, evenly spaced along the great circle.
 const CORRIDOR_DOTS = (() => {
@@ -85,7 +87,7 @@ export default function LandingGlobe() {
     <div className="relative aspect-square w-full">
       <canvas
         ref={canvasRef}
-        aria-label="Globe showing the Lyon to Tamale payment corridor"
+        aria-label={`Globe showing the ${CORRIDOR_LABEL} payment corridor`}
         className="size-full cursor-grab opacity-0 transition-opacity duration-[1200ms] ease-out active:cursor-grabbing [contain:layout_paint_size]"
         onPointerDown={(event) => {
           drag.current = { x: event.clientX, offset: offset.current };
