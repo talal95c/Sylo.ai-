@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
-import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
+import { paymentStatusView } from "@/lib/paymentStatus";
+import { CSS_REFUND_COLOR, CSS_TIER_COLORS } from "@/lib/colors";
 import { revertMessage } from "@/lib/revert";
 import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
 import { MarketCompare } from "./MarketCompare";
@@ -64,7 +65,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   const status = state.payment?.status;
   const terminal = status === "credited" || status === "stopped";
   const showHeld = Boolean(held && state.alertOpen && !terminal);
-  const showOutcome = terminal;
+  const showOutcome = terminal && state.alertOpen;
   const receipt = buildQuote(state);
   const paymentId = state.payment?.paymentId;
   const detailsKey = `${state.feed[0]?.seq ?? 0}:${paymentId ?? "none"}:${held?.headline ?? "none"}`;
@@ -109,7 +110,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             data-globe-occluder="bottom"
             className="card pointer-events-auto max-h-[calc(100dvh-196px)] w-[min(560px,100%)] overflow-y-auto overscroll-contain rounded-[20px]"
           >
-            <div className="h-1 w-full" style={{ background: state.incident ? "var(--danger)" : state.revoked ? "var(--danger)" : state.released ? "var(--low)" : TIER_COLORS[held.tier] }} />
+            <div className="h-1 w-full" style={{ background: state.incident ? "var(--danger)" : state.revoked ? "var(--danger)" : state.released ? "var(--low)" : CSS_TIER_COLORS[held.tier] }} />
             <div className="px-4 pb-4 pt-3.5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -128,7 +129,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                <AlertChip color={TIER_COLORS[held.tier]}>{held.tier} · {state.risk?.score ?? "--"}</AlertChip>
+                <AlertChip color={CSS_TIER_COLORS[held.tier]}>{held.tier} · {state.risk?.score ?? "--"}</AlertChip>
                 <AlertChip color="var(--accent)">{held.at === "escrow" ? "In escrow" : "At the bank"}</AlertChip>
                 <AlertChip color={check.color}>{check.label}</AlertChip>
                 <button
@@ -187,14 +188,14 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             data-globe-occluder="bottom"
             className="card pointer-events-auto flex w-[min(560px,100%)] items-center gap-4 rounded-[20px] p-4 pr-5"
           >
-            <span className="grid size-10 shrink-0 place-items-center rounded-full text-white" style={{ background: status === "credited" ? "var(--low)" : state.refunded && !state.attack.reverted ? REFUND_COLOR : "var(--danger)" }}>
+            <span className="grid size-10 shrink-0 place-items-center rounded-full text-white" style={{ background: status === "credited" ? "var(--low)" : state.refunded && !state.attack.reverted ? CSS_REFUND_COLOR : "var(--danger)" }}>
               {status === "credited" ? (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8.4 6.4 11.6 13 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : <LockIcon size={16} />}
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[14.5px] font-medium">
-                {status === "credited" ? creditedHeadline(state) : state.stopped?.headline}
+                {paymentStatusView(state).label}
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
                 {status === "credited"
@@ -204,7 +205,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                     : state.stopped?.detail}
               </div>
               {status !== "credited" && state.attack.reverted && state.attack.reason ? (
-                <span className="mt-1 block font-mono text-[9px] text-ink-3" title={state.attack.reason}>
+                <span className="mt-1 block font-mono text-[11px] text-ink-3" title={state.attack.reason}>
                   {state.attack.reason}
                 </span>
               ) : null}

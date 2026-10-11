@@ -5,6 +5,7 @@ import type { SyloEvent } from "./events";
 import {
   availableActions,
   closeAlert,
+  openAlert,
   initialState,
   reduce,
   resetForSourceChange,
@@ -23,6 +24,7 @@ import { engineConnectTimeoutMs, engineUrl } from "./engine";
 
 type UiAction =
   | { type: "ui.closeAlert" }
+  | { type: "ui.openAlert" }
   | { type: "ui.liveBacklogSettled" }
   | { type: "ui.sourceChanged" };
 type HookAction = SyloEvent | UiAction;
@@ -30,6 +32,7 @@ type HookAction = SyloEvent | UiAction;
 function hookReducer(state: ViewState, action: HookAction): ViewState {
   if (!("v" in action)) {
     if (action.type === "ui.closeAlert") return closeAlert(state);
+    if (action.type === "ui.openAlert") return openAlert(state);
     if (action.type === "ui.liveBacklogSettled") {
       return readyAfterTerminalBacklog(state);
     }
@@ -169,6 +172,9 @@ export function useSylo() {
   const dismissAlert = useCallback(() => {
     dispatch({ type: "ui.closeAlert" });
   }, []);
+  const showAlert = useCallback(() => {
+    dispatch({ type: "ui.openAlert" });
+  }, []);
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
@@ -224,6 +230,7 @@ export function useSylo() {
       replayAttack: () => safeAction(() => attack("replay")),
       reset: () => safeAction(reset),
       closeAlert: () => safeAction(dismissAlert),
+      openAlert: () => safeAction(showAlert),
     },
     available: availableActions(state, sourceKind),
   };
