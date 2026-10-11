@@ -47,6 +47,7 @@
         "rail.down",
         "rail.up",
         "clock.advanced",
+        "payee.verification",
         "timelock.on",
         "timelock.off",
         "killswitch.on",
@@ -94,6 +95,7 @@
     { "if": { "properties": { "type": { "const": "rail.down" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailDown" } } } },
     { "if": { "properties": { "type": { "const": "rail.up" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailUp" } } } },
     { "if": { "properties": { "type": { "const": "clock.advanced" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ClockAdvanced" } } } },
+    { "if": { "properties": { "type": { "const": "payee.verification" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PayeeVerification" } } } },
     { "if": { "properties": { "type": { "const": "timelock.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOn" } } } },
     { "if": { "properties": { "type": { "const": "timelock.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOff" } } } },
     { "if": { "properties": { "type": { "const": "killswitch.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/KillSwitchOn" } } } },
@@ -661,6 +663,22 @@
       "required": ["hours", "now"],
       "additionalProperties": true,
       "properties": { "hours": { "type": "number", "exclusiveMinimum": 0 }, "now": { "$ref": "#/$defs/Timestamp" }, "text": { "type": "string" } }
+    },
+    "PayeeVerification": {
+      "description": "Out-of-band check of a payee's account before any payment (POST /v1/payees/{id}/verify). No names of people beyond the contact already shown in verification.requested.",
+      "type": "object",
+      "required": ["payeeId", "accountId", "step", "channel", "simSwapChecked", "simSwapRecent"],
+      "additionalProperties": true,
+      "properties": {
+        "payeeId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "step": { "enum": ["REQUESTED", "RECORDED"] },
+        "channel": { "enum": ["SMS", "ANALYST"] },
+        "simSwapChecked": { "type": "boolean" },
+        "simSwapRecent": { "type": "boolean" },
+        "result": { "enum": ["CONFIRMED", "DENIED", null] },
+        "text": { "type": "string" }
+      }
     },
     "TimeLockOn": {
       "description": "A confirmed first payment to a new account stays in the bank hold until the lock ends (PRD §12.3).",

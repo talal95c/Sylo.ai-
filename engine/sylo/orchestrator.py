@@ -19,7 +19,7 @@ import random
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, TypeVar
@@ -76,6 +76,9 @@ SUPPLIER_AUTO_MS = 3000
 ANALYST_AUTO_MS = 1500
 GUARDIAN_REACTION_MS = 700
 TIME_LOCK_AUTO_MS = 2000
+QUOTE_VALIDITY_S = 600
+CONTACT_MIN_DAYS = 30
+SIM_EVENTS = ("rail_down", "rail_up", "mule_wave", "sim_swap", "clock", "compromised_connector", "stolen_verifier_key")
 THIEF_RELEASE_MS = 900
 CASE_TIMEOUT_S = 10.0
 KILL_REFUSALS = 2
@@ -167,6 +170,23 @@ class UnknownBreaker(Exception):
 
 class ActionNotAllowed(Exception):
     """A case action that makes no sense in the payment's current state. ``str(error)`` says why."""
+
+
+class UnknownQuote(Exception):
+    pass
+
+
+class UnknownPayee(Exception):
+    pass
+
+
+@dataclass
+class Quote:
+    id: str
+    order_name: str
+    order: PaymentOrder
+    valid_until: datetime
+    executable: bool
 
 
 class ChainUnavailable(Exception):
@@ -261,6 +281,10 @@ class Orchestrator:
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
         self._clock_offset = timedelta(0)
+        self._quotes: dict[str, Quote] = {}
+        self._submitted: dict[str, dict[str, Any]] = {}
+        self._payee_checks: dict[str, dict[str, Any]] = {}
+        self._injected_sim_swap: float | None = None
         self._window: list[WindowPayment] = []
         self._announced_breakers: set[str] = set()
         self._rng = random.Random(settings.seed)
@@ -440,6 +464,10 @@ class Orchestrator:
         self._runs.clear()
         self._current_pacer = None
         self._clock_offset = timedelta(0)
+        self._quotes.clear()
+        self._submitted.clear()
+        self._payee_checks.clear()
+        self._injected_sim_swap = None
         self.telecom.clear()
         for route_id in list(self._paused_corridors):
             self._reopen_corridor(route_id)
@@ -450,11 +478,40 @@ class Orchestrator:
         self.bus.clear()
         self.bus.publish("session.reset", {})
 
+    def _legs(self, payment_id: str) -> list[dict[str, Any]]:
+        """Status leg by leg, from the events of the payment (pacs.002-style)."""
+        legs: dict[int, dict[str, Any]] = {}
+        refused: list[dict[str, Any]] = []
+        for event in self.bus.events:
+            if event["paymentId"] != payment_id:
+                continue
+            data = event["data"]
+            if event["type"] == "leg.sent":
+                legs[data["hop"]] = {
+                    "hop": data["hop"],
+                    "from": data["from"],
+                    "to": data["to"],
+                    "rail": data["rail"],
+                    "status": "pending",
+                    "idempotencyKey": data["idempotencyKey"],
+                    "sentAt": event["ts"],
+                }
+            elif event["type"] == "leg.settled" and data["hop"] in legs:
+                legs[data["hop"]].update(status="settled", settledAt=event["ts"])
+            elif event["type"] == "leg.rejected":
+                refused.append(
+                    {"hop": data["hop"], "from": data["from"], "to": data["to"], "rail": data["rail"], "status": "rejected", "reason": data["reason"], "at": event["ts"]}
+                )
+        return [legs[hop] for hop in sorted(legs)] + refused
+
     async def payment_info(self, payment_id: str) -> dict[str, Any]:
         run = self._get(payment_id)
+        payment_id = run.order.id
         chain_status = Status(int(await asyncio.to_thread(self.chain.status, run.chain_pid)))
         return {
             "paymentId": payment_id,
+            "uetr": run.order.uetr,
+            "legs": self._legs(payment_id),
             "status": run.status,
             "tier": run.tier.name if run.tier is not None else None,
             "routeId": run.decision.route.id if run.decision and run.decision.route else None,
@@ -495,6 +552,265 @@ class Orchestrator:
             "log": self.journal.for_payment(payment_id),
             "logHead": self.journal.head,
         }
+
+    # --- integration API: quote, payment, cases, payee verification (PRD §16.2) ---------------
+
+    def _decision(self, order: PaymentOrder) -> dict[str, Any]:
+        """Norms, risk and route for an order, without committing anything (the PRD's ``Decision``)."""
+        norms = self.norms.evaluate(order)
+        risk = self._overlays(order, self.risk.score(order, build_risk_context(order, norms.signal_codes)))
+        amount = order.amount.as_float
+        decision = choose_route(
+            norms,
+            risk.tier,
+            amount,
+            self.norms.pack.route_model,
+            oob_resolvable=risk.oob_resolvable,
+            unavailable=self.rails.unavailable(),
+            limits=RerouteLimits(self.settings.reroute_max_fees_eur, self.settings.reroute_max_days),
+        )
+        account = ACCOUNTS.get(order.creditor_account_id)
+        payee = PAYEES.get(order.payee_id)
+        approvers, method = required_approvers(
+            PAYER,
+            amount,
+            known_account=bool(account and payee and payee.owns(account.id)),
+            dual_control_eur=self.settings.dual_control_eur,
+            new_payee_eur=self.settings.dual_control_new_payee_eur,
+        )
+        conditional = decision.route is not None and action_tier(risk) == Tier.MEDIUM
+        legal_refs = {rule.id: rule.legal_ref for rule in self.norms.pack.rules}
+        return {
+            "paymentId": order.id,
+            "uetr": order.uetr,
+            "packVersion": norms.pack_version,
+            "normChecks": [
+                {"routeId": route.route.id, "ruleId": check["ruleId"], "result": check["result"], "legalRef": legal_refs.get(check["ruleId"])}
+                for route in norms.routes
+                for check in route.checks
+            ],
+            "signals": norms.signals,
+            "taxNotices": norms.tax_notices,
+            "controls": norms.controls,
+            "risk": {
+                "score": risk.score,
+                "tier": risk.tier.name,
+                "rulesFired": risk.rules_fired,
+                "topReasons": [reason.to_json_dict() for reason in risk.reasons],
+                "modelVersion": risk.model,
+                "oobResolvable": risk.oob_resolvable,
+            },
+            "route": {
+                "chosen": decision.route.id if decision.route else None,
+                "candidates": decision.scores,
+                "settlement": decision.settlement or "NONE",
+                "reason": decision.reason,
+                "feesEur": decision.fees_eur,
+                "etaLabel": decision.route.eta_label if decision.route else None,
+                "priceOfSafetyEur": decision.price_of_safety,
+                "blockedBy": decision.blocked_by,
+            },
+            "approval": {
+                "required": [{"id": approver.id, "name": approver.name, "role": approver.role} for approver in approvers],
+                "method": method,
+                "conditional": conditional,
+            },
+            "verifications": ["SIM_SWAP_CHECK", "OOB_KNOWN_CONTACT"] if conditional else [],
+            "rails": self.rails.quotes(amount),
+        }
+
+    def quote(self, order_name: str, amount: str | None = None) -> dict[str, Any]:
+        """Norms, risk, best route and reason for one of the demo orders, valid 600 s. Nothing is committed.
+
+        ``amount`` prices the same order for another amount; such a quote cannot be executed, because the
+        PoC only runs the two recorded orders."""
+        if order_name not in ORDERS:
+            raise UnknownScenario(order_name)
+        order = self._verified_order(ORDERS[order_name])
+        if amount is not None:
+            order = order.model_copy(update={"amount": order.amount.model_copy(update={"value": amount})})
+        quote = Quote(
+            id=f"Q-{len(self._quotes) + 1:04d}",
+            order_name=order_name,
+            order=order,
+            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
+            executable=amount is None,
+        )
+        self._quotes[quote.id] = quote
+        decision = self._decision(order)
+        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
+        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+
+    def submit(
+        self,
+        *,
+        quote_id: str | None = None,
+        order_name: str | None = None,
+        speed: float = 1.0,
+        auto: bool = False,
+        auto_answer: str = "deny",
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Submit one of the demo orders, or execute a quote. Returns the decision and what it still needs
+        from people; the payment then runs like a scenario. The same ``Idempotency-Key`` never starts two."""
+        if idempotency_key and idempotency_key in self._submitted:
+            return {**self._submitted[idempotency_key], "replayed": True}
+        if quote_id is not None:
+            quote = self._quotes.get(quote_id)
+            if quote is None:
+                raise UnknownQuote(quote_id)
+            if not quote.executable:
+                raise ActionNotAllowed("this quote prices another amount: the PoC only executes the recorded orders")
+            if self.now() > quote.valid_until:
+                raise ActionNotAllowed(f"quote {quote_id} expired at {iso_ms(quote.valid_until)}: ask for a new one")
+            order_name = quote.order_name
+        if order_name not in ORDERS:
+            raise UnknownScenario(str(order_name))
+        decision = self._decision(self._verified_order(ORDERS[order_name]))
+        payment_id = self.start(order_name, speed=speed, auto=auto, auto_answer=auto_answer)
+        answer = {"paymentId": payment_id, "quoteId": quote_id, "status": "deciding", "replayed": False, "decision": decision}
+        if idempotency_key:
+            self._submitted[idempotency_key] = answer
+        return answer
+
+    def cases(self) -> list[dict[str, Any]]:
+        """The analyst's queue: every payment that was held, blocked or touched by an incident."""
+        queue: list[dict[str, Any]] = []
+        for run in self._runs.values():
+            if run.case is None and run.hold is None and run.incident_id is None:
+                continue
+            actions: list[str] = []
+            if run.analyst is not None and not run.analyst.done():
+                actions.append("CONFIRM_REVOCATION")
+            if run.hold is not None and not run.frozen:
+                actions.append("FREEZE")
+                if run.status == "confirmed":
+                    actions.append("RELEASE")
+            queue.append(
+                {
+                    "paymentId": run.order.id,
+                    "uetr": run.order.uetr,
+                    "status": run.status,
+                    "tier": run.tier.name if run.tier is not None else None,
+                    "score": run.risk.score if run.risk else None,
+                    "rulesFired": list(run.risk.rules_fired) if run.risk else [],
+                    "hold": run.hold,
+                    "holdExpiresAt": run.hold_expires_at if run.hold is not None else None,
+                    "frozen": run.frozen,
+                    "incidentId": run.incident_id,
+                    "caseReady": run.case is not None,
+                    "allowedActions": actions,
+                }
+            )
+        return queue
+
+    def _payee_account(self, payee_id: str, account_id: str):
+        payee = PAYEES.get(payee_id)
+        account = ACCOUNTS.get(account_id)
+        if payee is None or account is None:
+            raise UnknownPayee(payee_id if payee is None else account_id)
+        return payee, account
+
+    def start_payee_verification(self, payee_id: str, account_id: str) -> dict[str, Any]:
+        """Ask the payee, on a contact already on file, whether an account is theirs: before any payment."""
+        payee, account = self._payee_account(payee_id, account_id)
+        contact = payee.known_contacts[0]
+        days_known = (self.now().date() - date.fromisoformat(contact.since)).days
+        sim_swap_recent = self.telecom.check(contact.msisdn_masked, self.settings.sim_swap_max_age_hours)
+        why = (
+            texts.CONTACT_TOO_RECENT.format(days=CONTACT_MIN_DAYS)
+            if days_known < CONTACT_MIN_DAYS
+            else texts.CONTACT_SIM_SWAP if sim_swap_recent else None
+        )
+        check = {
+            "payeeId": payee.id,
+            "accountId": account.id,
+            "accountMasked": account.account_masked,
+            "accountHolder": account.holder_name,
+            "step": "REQUESTED",
+            "channel": "SMS" if why is None else "ANALYST",
+            "contactName": contact.name,
+            "contactMasked": contact.msisdn_masked,
+            "contactSince": contact.since,
+            "simSwapChecked": True,
+            "simSwapRecent": sim_swap_recent,
+            "result": None,
+            "text": (
+                texts.PAYEE_VERIFICATION_REQUESTED.format(
+                    account=account.account_masked, holder=account.holder_name, contact=contact.name, since=contact.since
+                )
+                if why is None
+                else texts.PAYEE_VERIFICATION_ANALYST.format(payee=texts.payee_short(payee), why=why, account=account.account_masked)
+            ),
+        }
+        self._payee_checks[account.id] = check
+        self._publish("payee.verification", dict(check))
+        return {"ok": True, **check}
+
+    def record_payee_verification(self, payee_id: str, account_id: str, result: str) -> dict[str, Any]:
+        """The known contact's answer. A denied account is blocked before approval; a confirmed one is no
+        longer 'details from an untrusted source' (the other risk reasons still apply)."""
+        payee, account = self._payee_account(payee_id, account_id)
+        check = self._payee_checks.get(account.id)
+        if check is None or check["step"] != "REQUESTED":
+            raise ActionNotAllowed("no verification is waiting for an answer on this account: start one first")
+        if check["channel"] != "SMS":
+            raise ActionNotAllowed("the known contact cannot be trusted for this check: an analyst decides")
+        check = {
+            **check,
+            "step": "RECORDED",
+            "result": result,
+            "at": iso_ms(self.now()),
+            "text": texts.PAYEE_VERIFICATION_RECORDED[result].format(
+                contact=check["contactName"], account=account.account_masked, holder=account.holder_name, payee=texts.payee_short(payee)
+            ),
+        }
+        self._payee_checks[account.id] = check
+        self._publish("payee.verification", dict(check))
+        return {"ok": True, **check}
+
+    def _verified_order(self, order: PaymentOrder) -> PaymentOrder:
+        """The order as the engine sees it after a recorded payee verification of its account."""
+        check = self._payee_checks.get(order.creditor_account_id)
+        if check is None or check.get("result") != "CONFIRMED":
+            return order
+        return order.model_copy(update={"provenance": {**order.provenance, "creditorAccount": "verified_registry"}})
+
+    async def sim_event(self, kind: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Attack console: one entry point for the simulated events (fraud wave, outage, compromised connector)."""
+        if kind == "rail_down":
+            return self.rail_down(str(params.get("routeId")), params.get("reason"))
+        if kind == "rail_up":
+            return self.rail_up(str(params.get("routeId")))
+        if kind == "mule_wave":
+            return self.start_wave(speed=float(params.get("speed") or 1.0), auto=bool(params.get("auto", False)))
+        if kind == "clock":
+            return self.advance_clock(float(params.get("advanceHours") or 24.0))
+        if kind == "sim_swap":
+            self._injected_sim_swap = float(params.get("hoursAgo") or 5.0)
+            return {"ok": True, "hoursAgo": self._injected_sim_swap, "appliesTo": "the next out-of-band check"}
+        payment_id = str(params.get("paymentId") or "")
+        if kind == "stolen_verifier_key":
+            return await self.attack("stolen_verifier_key", payment_id)
+        if kind == "compromised_connector":
+            # A connector that keeps changing legs: the adapter refuses each one, then the kill switch cuts it.
+            attempts = [await self.attack("swap_beneficiary", payment_id) for _ in range(KILL_REFUSALS)]
+            run = self._get(payment_id)
+            adapter = self.rails.adapter(run.decision.route.id) if run.decision and run.decision.route else None
+            return {"ok": True, "attempts": attempts, "killSwitch": bool(adapter and adapter.killed_reason is not None)}
+        raise UnknownAction(kind)
+
+    def rail_webhook(self, route_id: str, notification: Mapping[str, Any]) -> dict[str, Any]:
+        adapter = self.rails.get(route_id)
+        if adapter is None:
+            raise UnknownRoute(route_id)
+        return {"routeId": adapter.id, **adapter.on_webhook(notification)}
+
+    def rail_reconcile(self, route_id: str) -> dict[str, Any]:
+        adapter = self.rails.get(route_id)
+        if adapter is None:
+            raise UnknownRoute(route_id)
+        return adapter.reconcile()
 
     # --- network defence and incidents (v2) --------------------------------------------------
 
@@ -806,7 +1122,8 @@ class Orchestrator:
     # --- internals ---------------------------------------------------------------------------
 
     def _get(self, payment_id: str) -> PaymentRun:
-        run = self._runs.get(payment_id)
+        """A payment by its id or by its UETR."""
+        run = self._runs.get(payment_id) or next((r for r in self._runs.values() if r.order.uetr == payment_id), None)
         if run is None:
             raise UnknownPayment(payment_id)
         return run
@@ -1087,9 +1404,12 @@ class Orchestrator:
         pacer, order = run.pacer, run.order
         scenario = SCENARIOS[run.scenario]
         self.telecom.clear()
-        if scenario.sim_swap_hours_ago is not None:
+        swap_hours = scenario.sim_swap_hours_ago if scenario.sim_swap_hours_ago is not None else self._injected_sim_swap
+        self._injected_sim_swap = None
+        if swap_hours is not None:
             contact = PAYEES[order.payee_id].known_contacts[0]
-            self.telecom.declare_swap(contact.msisdn_masked, hours_ago=scenario.sim_swap_hours_ago)
+            self.telecom.declare_swap(contact.msisdn_masked, hours_ago=swap_hours)
+        order = run.order = self._verified_order(order)
 
         self._emit(run, "scenario.started", {"scenario": run.scenario, "speed": pacer.speed, "auto": run.auto})
         if scenario.rail_down is not None:
@@ -1097,6 +1417,25 @@ class Orchestrator:
             self.rail_down(scenario.rail_down)
         await pacer.wait(400)
         self._emit(run, "payment.created", self._payment_created(order))
+        check = self._payee_checks.get(order.creditor_account_id)
+        if check is not None and check.get("result") == "DENIED":
+            # Protect before approval: the supplier already said this account is not theirs.
+            account = ACCOUNTS[order.creditor_account_id]
+            run.status = "stopped"
+            self._emit(
+                run,
+                "payment.stopped",
+                {
+                    "headline": texts.DENIED_ACCOUNT_HEADLINE,
+                    "detail": texts.DENIED_ACCOUNT_DETAIL.format(
+                        payee=texts.payee_short(PAYEES[order.payee_id]), at=check["at"], account=account.account_masked, holder=account.holder_name
+                    ),
+                    "blockedBy": "PAYEE_VERIFICATION_DENIED",
+                },
+                simulated=True,
+            )
+            self._alert(run, "payer", PAYER.approvers[0].name, "IN_APP", texts.ALERT_DENIED_ACCOUNT)
+            return
         self._observe_order(order)
         await self._detect_clusters(pacer, self._auto_humans(run))
 

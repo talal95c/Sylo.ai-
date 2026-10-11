@@ -205,6 +205,23 @@ STOPPED_DETAIL_ANALYST_BANK = (
 )
 FROZEN_DETAIL = "The analyst froze this payment: it cannot be released. Only a refund to the payer is possible."
 
+# Payee verification before any payment (PRD §6.3 "protect before approval", §12.3)
+PAYEE_VERIFICATION_REQUESTED = "Out-of-band check of {account} ({holder}) with {contact}, on a number on file since {since}."
+PAYEE_VERIFICATION_ANALYST = (
+    "The known contact of {payee} cannot be used ({why}): nobody is texted and an analyst checks {account}."
+)
+PAYEE_VERIFICATION_RECORDED = {
+    "CONFIRMED": "{contact} confirmed that {account} ({holder}) belongs to {payee}.",
+    "DENIED": "{contact} denied that {account} ({holder}) belongs to {payee}.",
+}
+CONTACT_TOO_RECENT = "it was registered less than {days} days ago"
+CONTACT_SIM_SWAP = "its SIM card changed recently"
+DENIED_ACCOUNT_HEADLINE = "Payment blocked: the supplier denied this account"
+DENIED_ACCOUNT_DETAIL = (
+    "{payee} said on {at} that {account} ({holder}) is not theirs. Nothing was sent and no approval was asked."
+)
+ALERT_DENIED_ACCOUNT = "Payment not sent: your supplier told us this bank account is not theirs."
+
 # Hold expiry and time-lock (PRD §12.3), shown in seconds with the demo clock
 EXPIRY_BY = "Hold expiry (automatic)"
 STOPPED_DETAIL_EXPIRED = (
