@@ -40,6 +40,19 @@ forge script script/Approve.s.sol --rpc-url fuji --broadcast                  # 
 
 Verification goes through Routescan (configured in `foundry.toml`). After a redeploy, update `REGISTRY_ADDRESS`, `ESCROW_ADDRESS` and `TOKEN_ADDRESS` in every `.env` and the table above.
 
+### Attack scripts (demo backup, no engine needed)
+
+Each script sets up its own payment, sends the attack with a fixed gas limit so it is mined as a failed transaction, and prints the Snowtrace link and the revert reason:
+
+```bash
+script/attacks/release-revoked.sh     # attacker calls release() on a revoked payment -> PaymentNotReleasable
+PAYMENT_ID=0x... script/attacks/release-revoked.sh   # same, on an engine payment that is already REVOKED
+script/attacks/swap-beneficiary.sh    # escrow the committed payment with the attacker as beneficiary -> CommitmentMismatch
+script/attacks/replay-intent.sh       # resubmit a signed intent that is already committed -> InvalidTransition
+```
+
+They read `../.env`; set `RPC_URL` to point them at another chain that has a `deployments/<chainId>.json` (the chain tests run them on Anvil).
+
 If a signer key leaks, `script/rotate-signer.sh ROUTER_SIGNER` (or `VERIFIER_SIGNER`, `ANALYST_SIGNER`) grants the role to a fresh wallet, rewrites `.env` and revokes the old address. Run it in a shell where no old `*_PK` variables are exported, and share the new `.env` values with whoever runs the engine on Fuji.
 
 ## Signatures
