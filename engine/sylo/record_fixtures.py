@@ -59,6 +59,7 @@ class _Timeline:
 
 
 def _orchestrator(timeline: _Timeline | None = None, **settings: Any) -> Orchestrator:
+    settings.setdefault("cluster_mode", "sample")  # the files must not depend on Lane B's package being installed
     return build_orchestrator(
         Settings(seed=SEED, **settings), env={}, pacer_factory=timeline or (lambda speed: VirtualPacer(START, speed))
     )

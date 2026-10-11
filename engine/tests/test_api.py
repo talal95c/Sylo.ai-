@@ -39,13 +39,13 @@ def _serve(settings: Settings):
 
 @pytest.fixture(scope="module")
 def base_url():
-    yield from _serve(Settings())
+    yield from _serve(Settings(cluster_mode="sample"))
 
 
 @pytest.fixture(scope="module")
 def manual_url():
     """An engine where the payer approvals and the analyst's decision must come through the API."""
-    yield from _serve(Settings(human_steps="manual"))
+    yield from _serve(Settings(human_steps="manual", cluster_mode="sample"))
 
 
 def read_stream_until(base_url: str, stop_type: str, timeout: float = 15.0) -> list[dict]:

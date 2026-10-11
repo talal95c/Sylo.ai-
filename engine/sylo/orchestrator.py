@@ -247,7 +247,7 @@ class Orchestrator:
         self.telecom = SimSwapMock(clock=self.now)
         self.rails = Rails(norms.pack, chain, clock=lambda: self.now().timestamp())
         self.breakers = Breakers()
-        self.cluster_port, self.cluster_stub = load_cluster_port()
+        self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
         self._window: list[WindowPayment] = []
@@ -272,6 +272,7 @@ class Orchestrator:
             "degraded": list(self.degraded),
             "bootId": self.boot_id,
             "humanSteps": self.settings.human_steps,
+            "clusters": "sample" if self.cluster_stub else "detector",
         }
 
     def mode_event(self) -> dict[str, Any]:
@@ -633,25 +634,49 @@ class Orchestrator:
                     },
                     payment_id=payment["paymentId"],
                 )
-                self._observe(payment["paymentId"], payment["accountId"], institution, float(payment["amount"]))
+                self._observe(
+                    WindowPayment(
+                        payment_id=payment["paymentId"],
+                        account_id=payment["accountId"],
+                        institution_id=institution,
+                        amount_eur=float(payment["amount"]),
+                        at=iso_ms(self.now()),
+                        payer_id=payment["payer"]["id"],
+                        payee_id=payment.get("payeeName"),
+                        account_age_days=payment.get("accountAgeDays"),
+                        successful_payments=payment.get("successfulPayments"),
+                    )
+                )
                 await self._detect_clusters(pacer, auto or self.settings.human_steps != "manual")
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("mule wave failed")
 
-    def _observe(self, payment_id: str, account_id: str, institution_id: str, amount_eur: float) -> None:
+    def _observe(self, seen: WindowPayment) -> None:
         """Remember a payment for the cluster detector (last hour; a re-run of the same payment counts once)."""
-        now = self.now()
-        cutoff = now - timedelta(minutes=CLUSTER_WINDOW_MINUTES)
+        cutoff = self.now() - timedelta(minutes=CLUSTER_WINDOW_MINUTES)
         self._window = [
             payment
             for payment in self._window
-            if payment.payment_id != payment_id and datetime.fromisoformat(payment.at.replace("Z", "+00:00")) >= cutoff
+            if payment.payment_id != seen.payment_id and datetime.fromisoformat(payment.at.replace("Z", "+00:00")) >= cutoff
         ]
-        self._window.append(
+        self._window.append(seen)
+
+    def _observe_order(self, order: PaymentOrder) -> None:
+        account = ACCOUNTS[order.creditor_account_id]
+        first_seen = datetime.fromisoformat(account.first_seen).replace(tzinfo=timezone.utc)
+        self._observe(
             WindowPayment(
-                payment_id=payment_id, account_id=account_id, institution_id=institution_id, amount_eur=amount_eur, at=iso_ms(now)
+                payment_id=order.id,
+                account_id=account.id,
+                institution_id=account.institution_id,
+                amount_eur=order.amount.as_float,
+                at=iso_ms(self.now()),
+                payer_id=PAYER.id,
+                payee_id=order.payee_id,
+                account_age_days=max((self.now() - first_seen).total_seconds() / 86_400, 0.0),
+                successful_payments=account.successful_payments,
             )
         )
 
@@ -1029,8 +1054,7 @@ class Orchestrator:
             self.rail_down(scenario.rail_down)
         await pacer.wait(400)
         self._emit(run, "payment.created", self._payment_created(order))
-        creditor_account = ACCOUNTS[order.creditor_account_id]
-        self._observe(order.id, creditor_account.id, creditor_account.institution_id, order.amount.as_float)
+        self._observe_order(order)
         await self._detect_clusters(pacer, self._auto_humans(run))
 
         await pacer.wait(900)

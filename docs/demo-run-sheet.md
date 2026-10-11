@@ -22,6 +22,7 @@ Flags in `.env` (the banner shows what is really running):
 | `RISK_MODE` | `model` once Lane B's model is installed | `rules`: diverted is MEDIUM 64 instead of HIGH 77, same hold |
 | `LLM_MODE` | `cached` once Lane B's case writer exists | `off`: the case file is built from the rules |
 | `HUMAN_STEPS` | `manual` once the payer panel and the analyst drawer call the API | `auto`: the engine plays the approvals and the analyst |
+| `CLUSTER_MODE` | `auto`: Lane B's detector finds the cluster of Scene 3 | `sample`, or the package is missing: the sample cluster near Aflao is shown; say "sample cluster" |
 | `DEMO_SPEED` | `1` | `2` if the slot is short |
 
 On macOS the model needs the OpenMP library (`brew install libomp`). Without it the engine starts with the rules, made stricter, and the banner says `risk` is degraded.
@@ -39,7 +40,7 @@ Times are at speed 1. "UI" means a button exists on the demo screen today; "curl
 | 2b | Attack 1: release a revoked payment | UI: **Try release() attack** | `tx.reverted`, `PaymentNotReleasable` | 1 s |
 | 2b | Attack 2: swap the beneficiary | `curl -X POST $E/v1/attacks/swap_beneficiary -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `leg.rejected` `INTENT_HASH_MISMATCH` at hop 3, then `tx.reverted` `CommitmentMismatch` | 2 s |
 | 2b | Attack 3: replay the intent | same with `/v1/attacks/replay` | `tx.reverted` `InvalidTransition` | 1 s |
-| 3 | Mule wave | `curl -X POST $E/v1/sim/mule-wave -H 'content-type: application/json' -d '{"auto":true}'` | Three payments seen on the network; `cluster.detected` near Aflao; `breaker.on` for 24 h | 6 s |
+| 3 | Mule wave | `curl -X POST $E/v1/sim/mule-wave -H 'content-type: application/json' -d '{"auto":true}'` | Three unrelated payers are sent to the same nine-day-old account; `cluster.detected` in the Volta region; `breaker.on` for 24 h | 6 s |
 | 3 | Next payment into the region | UI: **Diverted invoice** | Rule `R-CB-01` among the reasons; HIGH and held (rules), or CRITICAL and blocked (model) | 11 s |
 | 4 | Stolen verifier key (simulated chain) | UI: **Diverted invoice**, wait for "Payment held", then `curl -X POST $E/v1/attacks/stolen_verifier_key -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `guardian.incident` `CONFIRMED_WITHOUT_OOB_RECORD`, action `FREEZE_AND_PAUSE`, DORA draft; R3 closed; the thief's `release()` reverts `PaymentNotReleasable`; the analyst revokes; refunded; "Payment stopped" | 8 s |
 | 4 | Stolen verifier key (Fuji) | Guardian watching (`cd chain && uv run python -m sylo_chain.guardian watch`), UI: **Diverted invoice**, wait for "Payment held", then `cd chain && uv run python -m sylo_chain.stolen_verifier_key PAY-2026-0002` | Same story with real transactions: the failed `release()` is public on Snowtrace. The engine answers the guardian's report by itself | 30 s |
@@ -57,7 +58,7 @@ With `HUMAN_STEPS=manual` and no panel yet, the human steps are:
 curl -X POST $E/v1/payments/PAY-2026-0002/approve -H 'content-type: application/json' -d '{"approver":"claire"}'
 curl -X POST $E/v1/payments/PAY-2026-0002/approve -H 'content-type: application/json' -d '{"approver":"marc"}'
 curl -X POST $E/v1/cases/PAY-2026-0002/actions -H 'content-type: application/json' -d '{"action":"CONFIRM_REVOCATION"}'
-curl -X POST $E/v1/breakers/CB-CL-AFLAO-01/confirm
+curl -X POST $E/v1/breakers/CB-cluster-4e0e9e32c724/confirm   # the id is in cluster.detected (CB-CL-AFLAO-01 with the sample cluster)
 ```
 
 ## If something breaks
@@ -75,4 +76,4 @@ curl -X POST $E/v1/breakers/CB-CL-AFLAO-01/confirm
 
 ## What is simulated
 
-Rails, banks, people, accounts, the supplier's phone, the SIM-swap check, strong customer authentication, the mule cluster (a sample until Lane B's detector is installed) and, in mock mode, the chain. Every such event carries `simulated: true`. Nothing has been measured on real payment flows.
+Rails, banks, people, accounts, the supplier's phone, the SIM-swap check, strong customer authentication, the three payments of the mule wave (the cluster itself is found by Lane B's detector when the banner says `clusters: detector`, and is a sample when it says `clusters: sample`) and, in mock mode, the chain. Every such event carries `simulated: true`. Nothing has been measured on real payment flows.

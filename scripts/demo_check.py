@@ -228,7 +228,10 @@ def check_wave(engine: Engine, speed: float) -> str:
     expect(scored["tier"] != "LOW", "a payment into a region under a breaker is LOW")
     expect(not any(e["type"] == "payment.credited" for e in events), "the payment into the region was paid")
     outcome = "held then revoked" if any(e["type"] == "payment.held" for e in events) else "blocked, no route"
-    return f"cluster {detected['clusterId']} ({len(detected['linkedPayments'])} payments), breaker on, next payment {scored['tier']} with R-CB-01 ({outcome})"
+    return (
+        f"cluster {detected['clusterId']} found by {detected.get('detector', 'unknown')} ({len(detected['linkedPayments'])} payments), "
+        f"breaker on, next payment {scored['tier']} with R-CB-01 ({outcome})"
+    )
 
 
 def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:
@@ -348,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
             process, url = spawn_engine()
         engine = Engine(url, args.timeout)
         mode = engine.get("/health")["mode"]
-        flags = f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']}"
+        flags = f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']} clusters={mode.get('clusters', '?')}"
         print(f"engine {url}: {flags} degraded={mode['degraded'] or 'nothing'}")
 
         diverted = "PAY-2026-0002"
