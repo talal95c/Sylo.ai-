@@ -61,7 +61,7 @@ from .pacer import Pacer, RealPacer, iso_ms
 from .ports_loader import load_case_writer, load_ports
 from .rails import LegMessage, LegRejected, RailAdapter, Rails
 from .risk_rules import CombinedRisk
-from .router import RouteDecision, choose_route
+from .router import PAYER_LIMIT, RerouteLimits, RouteDecision, choose_route
 from .signer import Signer
 from .telecom import SimSwapMock
 
@@ -75,6 +75,7 @@ APPROVAL_STEP_MS = 600
 SUPPLIER_AUTO_MS = 3000
 ANALYST_AUTO_MS = 1500
 GUARDIAN_REACTION_MS = 700
+TIME_LOCK_AUTO_MS = 2000
 THIEF_RELEASE_MS = 900
 CASE_TIMEOUT_S = 10.0
 KILL_REFUSALS = 2
@@ -111,6 +112,8 @@ class ScenarioDef:
     """When set, the SIM behind the supplier's known number changed that many hours before the run."""
     rail_down: str | None = None
     """When set, that route's rail goes down before the payment and comes back after it (Scene 5)."""
+    supplier_silent: bool = False
+    """The supplier never answers: with ``auto`` the demo clock jumps to the hold's expiry."""
 
 
 SCENARIOS: dict[str, ScenarioDef] = {
@@ -118,6 +121,8 @@ SCENARIOS: dict[str, ScenarioDef] = {
     "diverted": ScenarioDef("diverted"),
     "diverted_simswap": ScenarioDef("diverted", sim_swap_hours_ago=5.0),
     "outage": ScenarioDef("legit", rail_down="R3"),
+    "diverted_expiry": ScenarioDef("diverted", supplier_silent=True),
+    "diverted_timelock": ScenarioDef("diverted", rail_down="R3"),
 }
 ATTACKS = ("release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
@@ -196,6 +201,11 @@ class PaymentRun:
     escalation: asyncio.Future[str] | None = None
     """Resolved by a guardian incident that froze the hold: the supplier is no longer waited for."""
     incident_id: str | None = None
+    expiry: asyncio.Future[str] | None = None
+    """Resolved when the hold expires (demo clock or real time) before anybody decided."""
+    hold_until: datetime | None = None
+    time_lock: asyncio.Future[str] | None = None
+    locked_until: datetime | None = None
     hold: str | None = None
     hold_hop: int | None = None
     hold_expires_at: str | None = None
@@ -250,6 +260,7 @@ class Orchestrator:
         self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
+        self._clock_offset = timedelta(0)
         self._window: list[WindowPayment] = []
         self._announced_breakers: set[str] = set()
         self._rng = random.Random(settings.seed)
@@ -261,7 +272,37 @@ class Orchestrator:
     # --- mode and clock ----------------------------------------------------------------------
 
     def now(self) -> datetime:
-        return self._current_pacer.now() if self._current_pacer else datetime.now(timezone.utc)
+        return self._current_pacer.now() if self._current_pacer else datetime.now(timezone.utc) + self._clock_offset
+
+    def _pacer(self, speed: float) -> Pacer:
+        pacer = self.pacer_factory(speed)
+        if isinstance(pacer, RealPacer) and self._clock_offset:
+            pacer.advance(self._clock_offset)  # a wall-clock pacer joins the session's demo clock
+        return pacer
+
+    def advance_clock(self, hours: float) -> dict[str, Any]:
+        """Demo clock (PRD P1-9): jump the session's time forward, so that a hold's expiry or a time-lock
+        is shown in seconds. Whatever was waiting for that moment goes on."""
+        delta = timedelta(hours=hours)
+        self._clock_offset += delta
+        pacers = {id(run.pacer): run.pacer for run in self._runs.values()}
+        if self._current_pacer is not None:
+            pacers[id(self._current_pacer)] = self._current_pacer
+        for pacer in pacers.values():
+            pacer.advance(delta)
+        now = self.now()
+        shown = round(hours, 2)
+        self._publish("clock.advanced", {"hours": shown, "now": iso_ms(now), "text": texts.CLOCK_ADVANCED.format(hours=shown)})
+        for expired in self.breakers.expire(now):
+            self._publish("breaker.off", {"breakerId": expired.id, "reason": "EXPIRED"})
+        for run in self._runs.values():
+            if run.hold is None:
+                continue
+            if run.expiry is not None and not run.expiry.done() and run.hold_until is not None and now >= run.hold_until:
+                run.expiry.set_result("EXPIRED")
+            if run.time_lock is not None and not run.time_lock.done() and run.locked_until is not None and now >= run.locked_until:
+                run.time_lock.set_result("ELAPSED")
+        return {"ok": True, "now": iso_ms(now)}
 
     def mode(self) -> dict[str, Any]:
         return {
@@ -398,6 +439,7 @@ class Orchestrator:
         self._task = None
         self._runs.clear()
         self._current_pacer = None
+        self._clock_offset = timedelta(0)
         self.telecom.clear()
         for route_id in list(self._paused_corridors):
             self._reopen_corridor(route_id)
@@ -422,6 +464,7 @@ class Orchestrator:
             "pendingApprovers": [a.id for a in run.approval.pending] if run.approval else [],
             "hold": run.hold,
             "holdExpiresAt": run.hold_expires_at,
+            "lockedUntil": iso_ms(run.locked_until) if run.locked_until else None,
             "frozen": run.frozen,
             "incidentId": run.incident_id,
             "caseReady": run.case is not None,
@@ -482,14 +525,14 @@ class Orchestrator:
         """Scene 3: three payments from other payers reach accounts of one mule cluster."""
         if self.running:
             raise ScenarioBusy()
-        self._task = asyncio.create_task(self._wave(self.pacer_factory(speed), auto))
+        self._task = asyncio.create_task(self._wave(self._pacer(speed), auto))
         return {"ok": True, "payments": [payment["paymentId"] for payment in wave_payments()]}
 
     async def run_wave(self, *, speed: float = 1.0, auto: bool = True) -> None:
         """The mule wave in the foreground (tests and the fixture recorder)."""
         if self.running:
             raise ScenarioBusy()
-        await self._wave(self.pacer_factory(speed), auto)
+        await self._wave(self._pacer(speed), auto)
 
     def confirm_breaker(self, breaker_id: str, by: str | None = None) -> dict[str, Any]:
         """The analyst switches a proposed circuit breaker on, for 24 hours."""
@@ -780,7 +823,7 @@ class Orchestrator:
             order=order,
             scenario=name,
             chain_pid=keccak_text(label),
-            pacer=self.pacer_factory(speed),
+            pacer=self._pacer(speed),
             auto=auto,
             auto_answer=auto_answer,
         )
@@ -1085,8 +1128,19 @@ class Orchestrator:
             self.norms.pack.route_model,
             oob_resolvable=risk.oob_resolvable,
             unavailable=self.rails.unavailable(),
+            limits=RerouteLimits(self.settings.reroute_max_fees_eur, self.settings.reroute_max_days),
         )
         run.decision = decision
+        if decision.route_eval is None and decision.blocked_by == PAYER_LIMIT:
+            # An operational wait, not a fraud case: nothing is sent and the payer is told in the app.
+            run.status = "stopped"
+            self._emit(
+                run,
+                "payment.stopped",
+                {"headline": texts.NO_ROUTE_LIMITS_HEADLINE, "detail": decision.reason, "blockedBy": PAYER_LIMIT, "scores": decision.scores},
+            )
+            self._alert(run, "payer", PAYER.approvers[0].name, "IN_APP", texts.ALERT_WAITING_ROUTE)
+            return
         if decision.route_eval is None:
             run.status = "stopped"
             self._emit(run, "payment.stopped", {"headline": texts.NO_ROUTE_HEADLINE, "detail": decision.reason})
@@ -1247,7 +1301,20 @@ class Orchestrator:
         run.case = case
         self._emit(run, "case.ready", case.model_dump(by_alias=True, mode="json"))
 
+    async def _until_decided(self, run: PaymentRun, *futures: asyncio.Future[str]) -> None:
+        """Wait for one of the futures, but not beyond the hold's expiry (demo clock or real time)."""
+        waiting = set(futures) | ({run.expiry} if run.expiry is not None else set())
+        timeout = max((run.hold_until - run.pacer.now()).total_seconds(), 0.0) if run.hold_until is not None else None
+        done, _ = await asyncio.wait(waiting, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        if not done and run.expiry is not None and not run.expiry.done():
+            run.expiry.set_result("EXPIRED")
+
+    @staticmethod
+    def _expired(run: PaymentRun) -> bool:
+        return run.expiry is not None and run.expiry.done()
+
     async def _await_analyst(self, run: PaymentRun) -> str:
+        """The analyst's decision, or ``EXPIRED`` when the hold ran out first."""
         assert run.analyst is not None
         run.status = "awaiting_analyst"
         if self._auto_humans(run) and not run.analyst.done():
@@ -1255,7 +1322,8 @@ class Orchestrator:
             if not run.analyst.done():
                 run.analyst_by = texts.REVOKED_BY
                 run.analyst.set_result("CONFIRM_REVOCATION")
-        return await run.analyst
+        await self._until_decided(run, run.analyst)
+        return run.analyst.result() if run.analyst.done() else "EXPIRED"
 
     async def _await_supplier_or_analyst(self, run: PaymentRun) -> tuple[str, str]:
         """The supplier's answer, unless the analyst revokes first or the guardian freezes the hold."""
@@ -1265,14 +1333,21 @@ class Orchestrator:
         if run.auto:
             await run.pacer.wait(SUPPLIER_AUTO_MS)
             if not (run.answer.done() or run.analyst.done() or run.escalation.done()):
-                run.answer.set_result(run.auto_answer)
-        await asyncio.wait({run.answer, run.analyst, run.escalation}, return_when=asyncio.FIRST_COMPLETED)
-        if run.analyst.done() or run.escalation.done():
-            if not run.answer.done():
-                run.answer.cancel()
-            if run.analyst.done():
-                return "analyst", run.analyst.result()
+                if SCENARIOS[run.scenario].supplier_silent:
+                    # Nobody answers: the demo clock jumps to the hold's expiry instead of waiting a day.
+                    self.advance_clock(self.settings.escrow_hold_seconds / 3600)
+                else:
+                    run.answer.set_result(run.auto_answer)
+        await self._until_decided(run, run.answer, run.analyst, run.escalation)
+        decided = run.analyst.done() or run.escalation.done() or self._expired(run)
+        if decided and not run.answer.done():
+            run.answer.cancel()
+        if run.analyst.done():
+            return "analyst", run.analyst.result()
+        if run.escalation.done():
             return "guardian", run.escalation.result()
+        if self._expired(run):
+            return "expired", "EXPIRED"  # a late answer cannot release a hold that ran out
         return "supplier", run.answer.result()
 
     async def _hold_and_verify(self, run: PaymentRun, intent: PaymentIntent, hop_index: int, mode: str) -> bool:
@@ -1294,9 +1369,10 @@ class Orchestrator:
                 {"amount": order.amount.value, "token": "tEURC", "expiresAt": iso_ms(expires), **self._tx_fields(tx)},
                 simulated=tx.simulated,
             )
-        run.hold, run.hold_hop, run.hold_expires_at = mode, hop_index, iso_ms(expires)
+        run.hold, run.hold_hop, run.hold_expires_at, run.hold_until = mode, hop_index, iso_ms(expires), expires
         run.analyst = asyncio.get_running_loop().create_future()
         run.escalation = asyncio.get_running_loop().create_future()
+        run.expiry = asyncio.get_running_loop().create_future()
 
         payee = PAYEES[order.payee_id]
         contact = payee.known_contacts[0]
@@ -1361,6 +1437,9 @@ class Orchestrator:
         if who == "guardian":
             # The hold is frozen on-chain: the supplier's answer no longer matters, the analyst decides.
             await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
+            return False
+        if who == "expired":
+            await self._stop_held(run, intent, mode, "EXPIRED", RevocationReason.EXPIRED)
             return False
 
         await pacer.wait(800)
@@ -1430,8 +1509,55 @@ class Orchestrator:
         if run.frozen:
             await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
             return False
+        started = expires - timedelta(seconds=self.settings.escrow_hold_seconds)
+        if not await self._time_lock(run, intent, mode, started):
+            return False
         run.hold = None
         run.status = "in_transit"
+        return True
+
+    def _time_lock_hours(self, order: PaymentOrder) -> float:
+        """First payment to a new account, by amount band (PRD §12.3). Zero when no lock applies."""
+        account = ACCOUNTS[order.creditor_account_id]
+        payee = PAYEES.get(order.payee_id)
+        if (payee is not None and payee.owns(account.id)) or account.successful_payments > 0:
+            return 0.0
+        amount = order.amount.as_float
+        if amount > self.settings.time_lock_long_from_eur:
+            return self.settings.time_lock_long_hours
+        return self.settings.time_lock_hours if amount >= self.settings.time_lock_from_eur else 0.0
+
+    async def _time_lock(self, run: PaymentRun, intent: PaymentIntent, mode: str, started: datetime) -> bool:
+        """Bank hold only (where an escrow exists it stands in for the lock): even confirmed, a first
+        payment to a new account does not leave the bank before the lock ends. Returns False when the
+        analyst stops the payment in the meantime."""
+        assert run.analyst is not None
+        hours = self._time_lock_hours(run.order)
+        until = started + timedelta(hours=hours)
+        if hours <= 0 or run.pacer.now() >= until:
+            return True
+        run.locked_until, run.time_lock = until, asyncio.get_running_loop().create_future()
+        run.status = "time_locked"
+        self._emit(
+            run,
+            "timelock.on",
+            {
+                "hours": hours,
+                "until": iso_ms(until),
+                "text": texts.TIME_LOCK_ON.format(amount=texts.eur(run.order.amount.as_float), bank="Banque Hexagone", hours=hours),
+            },
+            simulated=True,
+        )
+        if run.auto:
+            await run.pacer.wait(TIME_LOCK_AUTO_MS)
+            if not run.time_lock.done() and not run.analyst.done():
+                self.advance_clock((until - run.pacer.now()).total_seconds() / 3600)
+        timeout = max((until - run.pacer.now()).total_seconds(), 0.0)
+        await asyncio.wait({run.time_lock, run.analyst}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        if run.analyst.done():
+            await self._stop_held(run, intent, mode, run.analyst.result(), RevocationReason.ANALYST_DECISION)
+            return False
+        self._emit(run, "timelock.off", {"reason": "ELAPSED"}, simulated=True)
         return True
 
     async def _stop_held(
@@ -1439,7 +1565,13 @@ class Orchestrator:
     ) -> None:
         """Stop a held payment after the analyst's decision, or after the kill switch cut its route."""
         bank_name = "Banque Hexagone"
-        if action == "KILL_SWITCH":
+        cause: str | None
+        if action == "EXPIRED":
+            reason = RevocationReason.EXPIRED
+            run.analyst_by = texts.EXPIRY_BY
+            detail = texts.STOPPED_DETAIL_EXPIRED if mode == "escrow" else texts.STOPPED_DETAIL_EXPIRED_BANK.format(bank=bank_name)
+            alert, cause = texts.ALERT_STOPPED_EXPIRED, None  # silence is not proof: no freeze request to the other bank
+        elif action == "KILL_SWITCH":
             reason = RevocationReason.KILL_SWITCH
             detail = texts.STOPPED_DETAIL_KILL if mode == "escrow" else texts.STOPPED_DETAIL_KILL_BANK.format(bank=bank_name)
             alert, cause = texts.ALERT_STOPPED_KILL, texts.FREEZE_CAUSE_KILL
@@ -1461,13 +1593,13 @@ class Orchestrator:
         mode: str,
         detail: str,
         payer_alert: str,
-        freeze_cause: str,
+        freeze_cause: str | None,
     ) -> None:
         """Revoke in the registry, give the money back, tell who must know (analyst decision or kill switch)."""
         pacer, order, risk = run.pacer, run.order, run.risk
         assert risk is not None
         account = ACCOUNTS[order.creditor_account_id]
-        if reason != RevocationReason.KILL_SWITCH:
+        if reason not in (RevocationReason.KILL_SWITCH, RevocationReason.EXPIRED):
             self._emit(run, "case.action", {"action": "CONFIRM_REVOCATION", "by": run.analyst_by}, simulated=True)
 
         await pacer.wait(300)
@@ -1496,17 +1628,18 @@ class Orchestrator:
             )
         run.hold = None
 
-        await pacer.wait(1200)
-        self._alert(
-            run,
-            "beneficiary_bank",
-            account.institution_id,
-            "NETWORK",
-            texts.ALERT_FREEZE_REQUEST.format(
-                uetr=order.uetr, account=account.account_masked, holder=account.holder_name, cause=freeze_cause
-            ),
-            uetr=order.uetr,
-        )
+        if freeze_cause is not None:
+            await pacer.wait(1200)
+            self._alert(
+                run,
+                "beneficiary_bank",
+                account.institution_id,
+                "NETWORK",
+                texts.ALERT_FREEZE_REQUEST.format(
+                    uetr=order.uetr, account=account.account_masked, holder=account.holder_name, cause=freeze_cause
+                ),
+                uetr=order.uetr,
+            )
         await pacer.wait(2000)
         self._alert(run, "payer", PAYER.approvers[0].name, "SMS", payer_alert)
         run.status = "stopped"

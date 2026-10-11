@@ -7,7 +7,7 @@ Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, default settings 
 environment is ignored so the files do not depend on the machine). The scenes run with ``auto``;
 ``samples-v1`` is the diverted scenario with every human step done by hand, and the three
 ``samples-scene*`` files are the v2 scenes (mule wave and breaker, stolen verifier key and guardian,
-rail outage).
+rail outage). ``samples-hold-expiry`` and ``samples-time-lock`` show the demo clock.
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ NAMES = (
     "samples-scene3-mule-wave",
     "samples-scene4-guardian",
     "samples-scene5-outage",
+    "samples-hold-expiry",
+    "samples-time-lock",
 )
 
 
@@ -164,6 +166,14 @@ async def record() -> dict[str, list[dict[str, Any]]]:
     outage = _orchestrator()
     await outage.run_to_end("outage", auto=True)
     recorded["samples-scene5-outage"] = outage.bus.events
+    # Demo clock: nobody answers and the hold expires; then a confirmed first payment to a new account,
+    # held at the bank because the escrow route is down, waits for its 24-hour time-lock.
+    expiry = _orchestrator()
+    await expiry.run_to_end("diverted_expiry", auto=True)
+    recorded["samples-hold-expiry"] = expiry.bus.events
+    locked = _orchestrator()
+    await locked.run_to_end("diverted_timelock", auto=True, auto_answer="confirm")
+    recorded["samples-time-lock"] = locked.bus.events
     return recorded
 
 

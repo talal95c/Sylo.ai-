@@ -39,7 +39,7 @@ DENIED = HELD + ["verification.recorded"] + REVOKED
 CONFIRMED = HELD + ["verification.recorded", "escrow.released", "intent.executed", "leg.settled", "leg.sent", "leg.settled", "payment.credited"]
 SIM_SWAPPED = HELD + REVOKED
 # Not part of the story line: asked more than once, told to people, or written by a (possibly slow) case writer.
-SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up"}
+SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up", "clock.advanced"}
 
 
 class CheckFailed(Exception):
@@ -290,6 +290,23 @@ def check_stolen_key(engine: Engine, speed: float, payment_id: str, mode: dict[s
     return f"forged confirmation, {incident['action']}, release → {attack['reason']}, revoked and refunded, {down['routeId']} closed then reopened"
 
 
+def check_clock(engine: Engine, speed: float) -> str:
+    """Hold expiry with automatic refund, then the time-lock of a confirmed first payment held at the bank."""
+    events = run_scenario(engine, "diverted_expiry", speed, "payment.stopped")
+    revoked = first(events, "intent.revoked")
+    expect(revoked["reasonCode"] == "EXPIRED", f"the expired hold was revoked as {revoked['reasonCode']}")
+    kinds = [e["type"] for e in events]
+    expect("escrow.refunded" in kinds and "escrow.released" not in kinds, "the expired hold was not refunded")
+    audiences = [e["data"]["audience"] for e in events if e["type"] == "alert.raised"]
+    expect("beneficiary_bank" not in audiences, "a freeze request was sent although nobody denied anything")
+    events = run_scenario(engine, "diverted_timelock", speed, "rail.up", "confirm")
+    lock = first(events, "timelock.on")
+    kinds = [e["type"] for e in events]
+    expect(first(events, "route.selected")["routeId"] == "R1", "the payment was not held at the bank")
+    expect(kinds.index("timelock.off") < kinds.index("payment.credited"), "the money left before the time-lock ended")
+    return f"hold expired after {first(events, 'clock.advanced')['hours']:g} h: revoked EXPIRED and refunded; time-lock of {lock['hours']:g} h kept before the credit"
+
+
 def check_metrics(engine: Engine) -> str:
     metrics = engine.get("/v1/metrics")
     expect(isinstance(metrics.get("sample"), bool), "metrics do not say whether they are a sample")
@@ -366,6 +383,7 @@ def main(argv: list[str] | None = None) -> int:
             ("Scene 3  mule wave and circuit breaker", lambda: check_wave(engine, args.speed)),
             ("Scene 4  stolen verifier key and guardian", lambda: check_stolen_key(engine, args.speed, diverted, mode)),
             ("Kill switch on a rail adapter", lambda: check_kill_switch(engine, args.speed, diverted)),
+            ("Demo clock: hold expiry and time-lock", lambda: check_clock(engine, args.speed)),
             ("Metrics and integrity report", lambda: check_metrics(engine)),
         ]
         failures = 0

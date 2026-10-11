@@ -224,3 +224,13 @@ def test_v2_endpoints_wave_breaker_rails_guardian_and_metrics(manual_url):
     metrics = httpx.get(f"{manual_url}/v1/metrics").json()
     assert metrics["source"] in ("spec/metrics.sample.json", "ml/reports/metrics.json")
     assert metrics["integrity"]["diversionRate"] == 0.0 and metrics["metrics"]["diversionRate"] == 0.0
+
+
+def test_the_demo_clock_over_http(base_url):
+    post(base_url, "/v1/reset")
+    before = httpx.get(f"{base_url}/health").status_code
+    answer = post(base_url, "/v1/sim/clock", {"advanceHours": 24})
+    assert before == 200 and answer.status_code == 200 and answer.json()["ok"] and answer.json()["now"].endswith("Z")
+    assert post(base_url, "/v1/sim/clock", {"advanceHours": 0}).status_code == 422
+    assert read_stream_until(base_url, "clock.advanced")[-1]["data"]["hours"] == 24
+    post(base_url, "/v1/reset")

@@ -67,6 +67,10 @@ class RailBody(BaseModel):
     reason: str | None = Field(default=None, max_length=200)
 
 
+class ClockBody(BaseModel):
+    advanceHours: float = Field(gt=0, le=744)
+
+
 class IncidentBody(BaseModel):
     """What the guardian (Lane C) reports. Unknown fields are kept out; DORA fields are optional overrides."""
 
@@ -220,6 +224,10 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
             return orch(request).rail_up(route_id)
         except UnknownRoute:
             raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
+
+    @app.post("/v1/sim/clock")
+    async def clock(body: ClockBody, request: Request) -> dict[str, Any]:
+        return orch(request).advance_clock(body.advanceHours)
 
     @app.post("/v1/breakers/{breaker_id}/{decision}")
     async def breaker(breaker_id: str, decision: Literal["confirm", "lift"], request: Request) -> dict[str, Any]:

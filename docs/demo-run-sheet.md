@@ -11,7 +11,7 @@ Endpoints and events are described in [`spec/api.md`](../spec/api.md). `$E` is t
 | Install | `make setup` | no error |
 | Check everything | `make test` | green |
 | Start | `make dev` | engine on :8000, web on :3000 |
-| Check the scenes | `make demo-check` | `demo check OK: 11 checks`, with the flags of `.env` on the first line |
+| Check the scenes | `make demo-check` | `demo check OK: 12 checks`, with the flags of `.env` on the first line |
 | Clean session | `curl -X POST $E/v1/reset` | banner without "degraded" |
 
 Flags in `.env` (the banner shows what is really running):
@@ -46,6 +46,8 @@ Times are at speed 1. "UI" means a button exists on the demo screen today; "curl
 | 4 | Stolen verifier key (Fuji) | Guardian watching (`cd chain && uv run python -m sylo_chain.guardian watch`), UI: **Diverted invoice**, wait for "Payment held", then `cd chain && uv run python -m sylo_chain.stolen_verifier_key PAY-2026-0002` | Same story with real transactions: the failed `release()` is public on Snowtrace. The engine answers the guardian's report by itself | 30 s |
 | 4 | Reopen the route | `curl -X POST $E/v1/sim/rails/R3/up` (on Fuji, first `uv run python -m sylo_chain.guardian unpause`) | `rail.up` R3; the next payment uses R3 again | 1 s |
 | 5 | Rail outage | `curl -X POST $E/v1/scenarios/outage/run -H 'content-type: application/json' -d '{"auto":true}'` | `rail.down` R3; the payment goes through R1 (fees €80); still LOW; `rail.up` | 16 s |
+| — | Hold expiry (demo clock) | `curl -X POST $E/v1/scenarios/diverted_expiry/run -H 'content-type: application/json' -d '{"auto":true}'`, or UI: **Diverted invoice**, wait for "Payment held", then `curl -X POST $E/v1/sim/clock -H 'content-type: application/json' -d '{"advanceHours":24}'` | `clock.advanced` 24 h; `intent.revoked` `EXPIRED`; refunded; "Payment stopped"; no freeze request to the other bank | 8 s |
+| — | Time-lock (demo clock) | `curl -X POST $E/v1/scenarios/diverted_timelock/run -H 'content-type: application/json' -d '{"auto":true,"autoAnswer":"confirm"}'` | R3 down, so the payment is held at the bank on R1; the supplier confirms; `timelock.on` 24 h (first payment to a new account above EUR 50,000); the clock jumps; `timelock.off`; credited | 14 s |
 | — | Kill switch | Attack 2 twice | `killswitch.on` for R3; the next legitimate payment goes through R1 | 3 s |
 | — | Proof | `curl $E/v1/payments/PAY-2026-0002/proof` then `make verify-log` | Typed data and three signatures; `decision log OK` | — |
 | — | "Edit a decision" | change one value in `engine/data/log.jsonl`, then `make verify-log` | `decision log TAMPERED: line N` | — |

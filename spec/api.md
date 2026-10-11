@@ -22,10 +22,11 @@ Event payloads are defined in [`events.schema.json`](events.schema.json). Change
 | POST | `/v1/sim/rails/{routeId}/up` **v2** | — | `{ "ok": true, "routeId", "available": true }` | 404 unknown route |
 | POST | `/v1/guardian/incidents` **v2** | `{ "rule": string, "action"?: string, "txHash"?: hash, "explorerUrl"?, "paymentId"?, "incidentId"?, "simulated"?, + optional DORA fields }` | `{ "ok": true, "incidentId" }` | 422 invalid body |
 | GET | `/v1/metrics` **v2** | — | See "Metrics" below | — |
+| POST | `/v1/sim/clock` | `{ "advanceHours": number }` (0 < h ≤ 744) | `{ "ok": true, "now": timestamp }` — demo clock, see below | 422 invalid body |
 
-- Scenario names: `legit` (PAY-2026-0001), `diverted` (PAY-2026-0002), **v1** `diverted_simswap` (PAY-2026-0002 again, but the SIM behind the supplier's known number changed 5 hours ago), and **v2** `outage` (PAY-2026-0001 again, while the rail of R3 is down).
+- Scenario names: `legit` (PAY-2026-0001), `diverted` (PAY-2026-0002), **v1** `diverted_simswap` (PAY-2026-0002 again, but the SIM behind the supplier's known number changed 5 hours ago), **v2** `outage` (PAY-2026-0001 again, while the rail of R3 is down), `diverted_expiry` (PAY-2026-0002 again, but the supplier never answers: with `auto` the demo clock jumps to the hold's expiry) and `diverted_timelock` (PAY-2026-0002 again while R3 is down, so it is held at the bank on R1; run it with `autoAnswer: "confirm"` to see the time-lock).
 - Attack names: `release_revoked` (only when the payment is revoked on-chain), and **v1** `swap_beneficiary` and `replay` (any payment whose intent is committed).
-- `status` in `GET /v1/payments/{id}` is one of `deciding`, `awaiting_approval`, `in_transit`, `held`, `awaiting_supplier`, `confirmed`, `awaiting_analyst`, `stopped`, `credited`; `chainStatus` is the registry status name (`NONE` … `EXECUTED`). `hold` is `"escrow"`, `"bank"` or `null`.
+- `status` in `GET /v1/payments/{id}` is one of `deciding`, `awaiting_approval`, `in_transit`, `held`, `awaiting_supplier`, `confirmed`, `time_locked`, `awaiting_analyst`, `stopped`, `credited`; `chainStatus` is the registry status name (`NONE` … `EXECUTED`). `hold` is `"escrow"`, `"bank"` or `null`.
 
 ## Human steps (v1)
 
@@ -89,6 +90,19 @@ Events added in v2 (`paymentId` is `null` unless the event concerns one payment)
 - **Degraded mode (rule R-DG-01).** While `system.mode.degraded` is not empty, a payment to an account that is not on file for the payee is at least MEDIUM.
 - **Scene 4, guardian.** `POST /v1/guardian/incidents` is for Lane C's guardian. The engine emits `guardian.incident` with a DORA incident draft (also written to `engine/data/incidents/`), and when the action contains `FREEZE` it stops trying to release that payment: the supplier is no longer waited for (`supplier-response` answers 409), the analyst is alerted, and the payment ends with `intent.revoked` and `escrow.refunded` once the analyst sends `CONFIRM_REVOCATION` (played by the engine with `HUMAN_STEPS=auto`). When the action contains `PAUSE`, the escrow route is closed (`rail.down`, reason "Corridor paused by the guardian…") and payments are rerouted until `POST /v1/sim/rails/{routeId}/up`; on Fuji the corridor itself is reopened with the admin key (Lane C). `GET /v1/payments/{id}` carries `incidentId`. If the registry refuses the supplier's answer because its state changed outside the engine (`tx.reverted` on `recordVerification`), the engine also hands the payment to the analyst and refunds: it never ends as "stopped" with money left in escrow.
 - **Scene 4 on a simulated chain.** `POST /v1/attacks/stolen_verifier_key` on a payment held in escrow and waiting for the supplier plays the thief and the guardian: a CONFIRMED attestation signed with the verifier key that the engine never recorded, freeze and pause, `guardian.incident`, then the thief's `release()` reverts `PaymentNotReleasable`. The answer carries `incidentId`. With `CHAIN_MODE=fuji` it answers 409: run Lane C's `sylo_chain.stolen_verifier_key` with the guardian watching.
+
+## Demo clock, hold expiry, time-lock and reroute limits (PRD §11.3, §12.3, P1-9)
+
+| Event | When | `data` |
+|---|---|---|
+| `clock.advanced` | `POST /v1/sim/clock`, or an `auto` scenario that has to wait for an expiry or a lock | `{ hours, now, text }` |
+| `timelock.on` | A confirmed first payment to a new account must stay in the bank hold | `{ hours, until, text }` |
+| `timelock.off` | The lock ended | `{ reason: "ELAPSED" }` |
+
+- **Demo clock.** The jump moves the session's time forward (timestamps of later events, hold expiries, time-locks, circuit breakers). `POST /v1/reset` goes back to real time. On Fuji the chain's own clock does not jump: the engine therefore revokes before it refunds, which the contract accepts at any time.
+- **Hold expiry.** A hold nobody decided on within `ESCROW_HOLD_SECONDS` (24 h) ends with `intent.revoked` (`reasonCode: "EXPIRED"`, `by: "Hold expiry (automatic)"`), `escrow.refunded` on the escrow route, one `alert.raised` to the payer and `payment.stopped`. There is no `case.action` and no freeze request to the beneficiary's bank. A supplier answer that arrives after the expiry is refused (409) and cannot release the hold. The same happens when the analyst never handles a denied payment.
+- **Time-lock.** After the supplier confirms, a first payment to a new account held at the bank (route R1) stays there until the lock ends: 4 h from `TIME_LOCK_FROM_EUR` (5,000), 24 h above `TIME_LOCK_LONG_FROM_EUR` (50,000), counted from the start of the hold. `GET /v1/payments/{id}` shows `status: "time_locked"` and `lockedUntil`. `CONFIRM_REVOCATION` still stops the payment during the lock. On the escrow route there is no extra lock: the escrow stands in for it.
+- **Reroute limits.** When the route a payment would normally take is unavailable (rail down, kill switch, corridor paused), a replacement is used only within the payer's limits: fees up to `REROUTE_MAX_FEES_EUR` (500) and at most `REROUTE_MAX_DAYS` (3). A route above them is scored with `excludedBy: "PAYER_LIMIT"`. If none is left, `payment.stopped` carries `blockedBy: "PAYER_LIMIT"` and `scores`, the payer gets an in-app `alert.raised`, and no case is opened: it is an operational wait, not a fraud case. The limits never apply while the usual route is available.
 
 ## Norms rules added after v2
 

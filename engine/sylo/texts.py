@@ -132,6 +132,13 @@ NO_ROUTE_HEADLINE = "Payment blocked: no route is allowed at this risk level"
 NO_ROUTE_RAILS = (
     "No usable route is left ({routes} unavailable). The payment is not sent and a case is opened for the analyst."
 )
+NO_ROUTE_LIMITS_HEADLINE = "Payment waiting: no replacement route within the payer's limits"
+NO_ROUTE_LIMITS = (
+    "{usual} cannot be used right now, and the replacement ({routes}) is above what the payer accepts without "
+    "being asked (fees up to €{fees:.0f}, at most {days:.0f} days). Nothing is sent: the payment waits for "
+    "{usual} to come back, or for the payer to accept the other route."
+)
+ALERT_WAITING_ROUTE = "Your payment is waiting: its usual route is unavailable and the other one costs more than your limit."
 NO_ROUTE_DETAIL = "Risk is {tier}. The payment is blocked before any money moves and a case is opened for the analyst."
 
 # --- Approval --------------------------------------------------------------------------------
@@ -197,6 +204,23 @@ STOPPED_DETAIL_ANALYST_BANK = (
     "The analyst revoked the payment and the bank hold was lifted: the money never left {bank}."
 )
 FROZEN_DETAIL = "The analyst froze this payment: it cannot be released. Only a refund to the payer is possible."
+
+# Hold expiry and time-lock (PRD §12.3), shown in seconds with the demo clock
+EXPIRY_BY = "Hold expiry (automatic)"
+STOPPED_DETAIL_EXPIRED = (
+    "Nobody confirmed the new bank details before the hold expired. The payment was revoked on-chain and "
+    "refunded from escrow."
+)
+STOPPED_DETAIL_EXPIRED_BANK = (
+    "Nobody confirmed the new bank details before the hold expired. The payment was revoked and the money "
+    "never left {bank}."
+)
+ALERT_STOPPED_EXPIRED = "Payment returned: your supplier did not confirm the new account in time. Funds returned."
+TIME_LOCK_ON = (
+    "First payment to a new account: EUR {amount} stays at {bank} until {hours:g} h after the hold started, "
+    "even though the supplier confirmed."
+)
+CLOCK_ADVANCED = "Demo clock: {hours:g} h later."
 
 # --- Alerts (payer and supplier are told in the app or by SMS, never by e-mail) ---------------
 

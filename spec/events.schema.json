@@ -46,6 +46,9 @@
         "breaker.off",
         "rail.down",
         "rail.up",
+        "clock.advanced",
+        "timelock.on",
+        "timelock.off",
         "killswitch.on",
         "guardian.incident",
         "confidential.transfer",
@@ -90,6 +93,9 @@
     { "if": { "properties": { "type": { "const": "breaker.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/BreakerOff" } } } },
     { "if": { "properties": { "type": { "const": "rail.down" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailDown" } } } },
     { "if": { "properties": { "type": { "const": "rail.up" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailUp" } } } },
+    { "if": { "properties": { "type": { "const": "clock.advanced" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ClockAdvanced" } } } },
+    { "if": { "properties": { "type": { "const": "timelock.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOn" } } } },
+    { "if": { "properties": { "type": { "const": "timelock.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOff" } } } },
     { "if": { "properties": { "type": { "const": "killswitch.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/KillSwitchOn" } } } },
     { "if": { "properties": { "type": { "const": "guardian.incident" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/GuardianIncident" } } } },
     { "if": { "properties": { "type": { "const": "traffic.sample" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TrafficSample" } } } }
@@ -147,7 +153,7 @@
       "required": ["scenario", "speed", "auto"],
       "additionalProperties": true,
       "properties": {
-        "scenario": { "enum": ["legit", "diverted", "diverted_simswap", "outage", "mule_wave"] },
+        "scenario": { "enum": ["legit", "diverted", "diverted_simswap", "outage", "mule_wave", "diverted_expiry", "diverted_timelock"] },
         "speed": { "type": "number", "exclusiveMinimum": 0 },
         "auto": { "type": "boolean" }
       }
@@ -648,6 +654,26 @@
       "required": ["routeId"],
       "additionalProperties": true,
       "properties": { "routeId": { "type": "string" }, "name": { "type": "string" } }
+    },
+    "ClockAdvanced": {
+      "description": "Demo clock (PRD P1-9): the session's time jumped forward, so an expiry or a time-lock is shown in seconds.",
+      "type": "object",
+      "required": ["hours", "now"],
+      "additionalProperties": true,
+      "properties": { "hours": { "type": "number", "exclusiveMinimum": 0 }, "now": { "$ref": "#/$defs/Timestamp" }, "text": { "type": "string" } }
+    },
+    "TimeLockOn": {
+      "description": "A confirmed first payment to a new account stays in the bank hold until the lock ends (PRD §12.3).",
+      "type": "object",
+      "required": ["hours", "until"],
+      "additionalProperties": true,
+      "properties": { "hours": { "type": "number", "exclusiveMinimum": 0 }, "until": { "$ref": "#/$defs/Timestamp" }, "text": { "type": "string" } }
+    },
+    "TimeLockOff": {
+      "type": "object",
+      "required": ["reason"],
+      "additionalProperties": true,
+      "properties": { "reason": { "enum": ["ELAPSED"] } }
     },
     "KillSwitchOn": {
       "description": "v2. Repeated integrity refusals cut a rail adapter: nothing more goes through it until it is restored.",
