@@ -578,7 +578,7 @@ export default function GlobeCanvas({
           lng: lockPoint.lng,
           altitude: chainAltitude,
           className: "globe-marker",
-          html: `<div style="color:${color};display:flex;flex-direction:column;align-items:center;gap:6px"><div class="badge">${icon}</div><div class="caption">${caption}</div></div>`,
+          html: `<div style="color:${color};position:relative"><div class="badge">${icon}</div><div class="caption">${caption}</div></div>`,
         })),
       );
     }
@@ -728,14 +728,14 @@ export default function GlobeCanvas({
     const ring = (id: string, lat: number, lng: number, altitude: number, color: string, maxRadius = 3) =>
       stable(`ring-${id}`, color, () => ({ id, lat, lng, altitude, color, maxRadius }));
     if (state.attack.attempted && lockPoint) {
-      return [ring("attack", lockPoint.lat, lockPoint.lng, 0.005, DANGER_COLOR, 6)];
+      return [ring("attack", lockPoint.lat, lockPoint.lng, chainAltitude, DANGER_COLOR, 6)];
     }
     if (state.refunded) {
       const payer = at("payer_rhone");
       return payer ? [ring("refund", payer.lat, payer.lng, 0.005, REFUND_COLOR, 4)] : [];
     }
     if (holding && lockPoint) {
-      return [ring("held", lockPoint.lat, lockPoint.lng, 0.005, TIER_COLORS.MEDIUM, 5)];
+      return [ring("held", lockPoint.lat, lockPoint.lng, chainAltitude, TIER_COLORS.MEDIUM, 5)];
     }
     if (state.credited) {
       const target = at(state.credited.at);
