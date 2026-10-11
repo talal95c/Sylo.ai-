@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { SourceKind } from "@/lib/source";
 import type { ViewState } from "@/lib/store";
 import { formatInvoiceError, invoiceComposerVisible } from "@/lib/source";
@@ -64,8 +64,15 @@ function Button({
 
 function MoreScenes({ actions, available, sourceKind, state }: { actions: Actions; available: Available; sourceKind: SourceKind; state: ViewState }) {
   const [open, setOpen] = useState(false);
-  const run = (action: () => void) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeMenu = (restoreFocus = false) => {
     setOpen(false);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+  const run = (action: () => void) => {
+    closeMenu(true);
     action();
   };
   const confidentialEnabled =
@@ -83,12 +90,44 @@ function MoreScenes({ actions, available, sourceKind, state }: { actions: Action
     { label: "Replay intent", action: actions.replayAttack, enabled: available.replayAttack },
   ];
 
+  useEffect(() => {
+    if (!open) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    items[0]?.focus();
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+
+  const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    const activeIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      items[(activeIndex + delta + items.length) % items.length]?.focus();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      items.at(-1)?.focus();
+    }
+  };
+
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-controls="additional-scenes-menu"
         onClick={() => setOpen((value) => !value)}
         className="flex h-10 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--line-strong)] bg-white px-4 text-[13px] font-medium text-ink transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
@@ -100,15 +139,15 @@ function MoreScenes({ actions, available, sourceKind, state }: { actions: Action
       <AnimatePresence>
         {open ? (
           <motion.div
+            ref={menuRef}
+            id="additional-scenes-menu"
             role="menu"
             aria-label="Additional demo scenes"
             initial={{ opacity: 0, y: 6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.18, ease }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setOpen(false);
-            }}
+            onKeyDown={handleMenuKeyDown}
             className="card absolute bottom-[48px] right-0 w-52 overflow-hidden rounded-xl p-1.5 shadow-[var(--shadow-float)]"
           >
             {entries.map((entry) => (
@@ -118,7 +157,7 @@ function MoreScenes({ actions, available, sourceKind, state }: { actions: Action
                 role="menuitem"
                 disabled={!entry.enabled}
                 onClick={() => run(entry.action)}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12.5px] text-ink transition-colors hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] focus-visible:outline-none disabled:cursor-not-allowed disabled:text-ink-3"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12.5px] text-ink transition-colors hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:text-ink-3"
               >
                 <span>{entry.label}</span>
                 {entry.suffix ? <span className="font-mono text-[9px] uppercase text-ink-3">{entry.suffix}</span> : null}
@@ -259,7 +298,7 @@ export function DemoControls({
                           <form onSubmit={submitInvoice} className="flex flex-col gap-2.5">
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-[12px] font-medium text-ink">Jury-written invoice</span>
-                              <Tag className="h-5 border-amber-200 bg-amber-50 px-2 text-[9px] tracking-[0.08em] text-amber-800">
+                              <Tag className="h-5 border-amber-200 bg-amber-50 px-2 text-[11px] tracking-[0.08em] text-amber-800">
                                 SIMULATED
                               </Tag>
                             </div>
@@ -268,7 +307,7 @@ export function DemoControls({
                               maxLength={2000}
                               value={invoiceText}
                               onChange={(change) => setInvoiceText(change.currentTarget.value)}
-                              className="min-h-28 resize-y rounded-xl border border-[var(--line-strong)] bg-[var(--surface-2)] p-2.5 text-[11.5px] leading-relaxed text-ink outline-none transition focus:border-[var(--accent)]"
+                              className="min-h-28 resize-y rounded-xl border border-[var(--line-strong)] bg-[var(--surface-2)] p-2.5 text-[11.5px] leading-relaxed text-ink transition focus:border-[var(--accent)]"
                             />
                             <div className="flex justify-end font-mono text-[10px] text-ink-3">
                               {invoiceText.length.toLocaleString("en-US")} / 2,000
@@ -300,7 +339,9 @@ export function DemoControls({
           ) : null}
           {phase === "supplier" ? (
             <>
-              <span className="whitespace-nowrap px-3 text-[12.5px] text-ink-2">{state.verification.requested?.contactName ?? "Supplier"} replies</span>
+              <span className="absolute bottom-[calc(100%+8px)] left-1/2 z-40 w-max max-w-[min(280px,calc(100vw-32px))] -translate-x-1/2 rounded-full border border-[var(--line-strong)] bg-white/95 px-3 py-2 text-center text-[11px] leading-tight text-ink-2 shadow-[0_4px_20px_rgba(20,24,40,0.1)]">
+                Did Savanna Shea confirm the new bank details?
+              </span>
               <Button tone="secondary" onClick={actions.confirm}>“Yes, it’s our account”</Button>
               <Button tone="dark" onClick={actions.deny}>“We never changed it”</Button>
             </>
