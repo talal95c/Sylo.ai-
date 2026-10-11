@@ -94,6 +94,19 @@ class _RecordingRules(RulesRisk):
         return self.last_result
 
 
+class _RecordingModel:
+    """Keeps the model's own score: the combined score is floored by the rules' score."""
+
+    def __init__(self, model: Any) -> None:
+        self.model = model
+        self.name = model.name
+        self.last_result: Any = None
+
+    def score(self, order, ctx):
+        self.last_result = self.model.score(order, ctx)
+        return self.last_result
+
+
 def _load_frame(seed: str) -> pd.DataFrame:
     path = DATA_DIR / f"payments-{seed}.csv.gz"
     if not path.is_file():
@@ -121,8 +134,10 @@ def _score_engine(
     model = None if rules_only else FallbackRisk() if fallback_lr else ModelRisk()
     if no_history and model is not None:
         model._history = HistoryIndex({})
-    combined = rules if model is None else CombinedRisk(rules, model)
+    recorder = None if model is None else _RecordingModel(model)
+    combined = rules if recorder is None else CombinedRisk(rules, recorder)
     scores = np.zeros(len(frame), dtype=np.int16)
+    model_scores = np.zeros(len(frame), dtype=np.int16)
     tiers = np.zeros(len(frame), dtype=np.int8)
     rule_tiers = np.zeros(len(frame), dtype=np.int8)
     rule_ids = np.empty(len(frame), dtype=object)
@@ -136,6 +151,7 @@ def _score_engine(
             ctx = ctx.model_copy(update={"history": None})
         result = combined.score(order, ctx)
         scores[index] = result.score
+        model_scores[index] = result.score if recorder is None else recorder.last_result.score
         tiers[index] = int(result.tier)
         rule_tiers[index] = int(rules.last_result.tier)
         rule_ids[index] = tuple(rules.last_result.rules_fired)
@@ -164,6 +180,7 @@ def _score_engine(
 
     return {
         "scores": scores,
+        "modelScores": model_scores,
         "tiers": tiers,
         "ruleTiers": rule_tiers,
         "ruleIds": rule_ids,
@@ -317,7 +334,10 @@ def _evaluate_predictions(
     oob_resolvable: np.ndarray | None = None,
     p95_latency_ms: float | None = None,
     include_ci: bool = True,
+    model_scores: np.ndarray | None = None,
 ) -> dict[str, Any]:
+    # AUC and the alert-budget ranking rate the model's own score, not the rules-floored one.
+    scores = scores if model_scores is None else model_scores
     labels = frame["label"].to_numpy(dtype=bool)
     amounts = frame["amount_eur"].to_numpy(dtype=float)
     typology = frame["typology"].astype(str).to_numpy()
@@ -673,6 +693,7 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
         main_result["tiers"],
         oob_resolvable=main_result["oobResolvable"],
         p95_latency_ms=float(main_result["p95LatencyMs"][0]),
+        model_scores=main_result["modelScores"],
     )
     interval_values = main_metrics["confidenceIntervals95"]
     by_typology = _typology_breakdown(main_frame, main_result["tiers"], interval_values)
@@ -683,6 +704,7 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
         ood_result["tiers"],
         oob_resolvable=ood_result["oobResolvable"],
         p95_latency_ms=float(ood_result["p95LatencyMs"][0]),
+        model_scores=ood_result["modelScores"],
     )
     ood_metrics["seed"] = "C" if seed == "B" else "B"
     ood_metrics["byTypology"] = _typology_breakdown(ood_frame, ood_result["tiers"], ood_metrics["confidenceIntervals95"])
@@ -773,8 +795,8 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
     baselines = _baseline_models(seed_a, frame_b, rules_tiers_b)
     ablations = _ablations(seed_a, frame_b, rules_tiers_b)
     model_only_metrics = {
-        "B": _model_only_metrics(frame_b, result_by_seed["B"]["scores"]),
-        "C": _model_only_metrics(frame_c, result_by_seed["C"]["scores"]),
+        "B": _model_only_metrics(frame_b, result_by_seed["B"]["modelScores"]),
+        "C": _model_only_metrics(frame_c, result_by_seed["C"]["modelScores"]),
     }
     data = {
         "dataset": {

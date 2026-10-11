@@ -164,7 +164,7 @@ Timing assumes a 4-minute slot; the live demo carries most of it. The run sheet'
 3. **The signed intent is committed before any money moves.** Any leg that differs from it is refused.
 4. **We never alert the payer by email.** In BEC the mailbox is compromised, so alerts go in-app or by SMS. The event format has no email channel at all.
 5. **Text from invoices and emails is data, never instructions.** It never reaches rules or tools as a command.
-6. **Fail safe.** If the model, the chain or the LLM is missing, the system becomes stricter overall and shows a banner. Nothing is released by default. (Overall, not on every single payment: see §9, item 7.)
+6. **Fail safe.** If the model, the chain or the LLM is missing, the system becomes stricter and shows a banner. Nothing is released by default. Without the model, every payment is verified (measured gaps: see §9, item 7).
 7. **Simulated things are labelled as simulated. Synthetic data only.** Every security number comes from the evaluation script.
 
 Supporting lines from the PRD you can reuse:
@@ -358,9 +358,10 @@ Each item has **what we say** on stage and **what would fix it in production**.
 **6. The false-positive rate misses the PRD target.**
 - *What we say:* "6.72% of legitimate payments are held, against a 2% target. Most of those holds are by design (new or changed payee from an untrusted source), and they cost a confirmation call, not a lost payment. The model alone is at 1.06%. Precision at HIGH is 89.9%, just under our 90% target." Also, 47.6% of the "hard" legitimate cases (genuine bank changes, trading-name mismatches) are held.
 
-**7. Degraded mode is much stricter, but not perfectly "never looser".**
-- *What we say only if asked:* "When the model is missing, the stricter rules hold 43% of legitimate payments and catch 100% of fraud. Measured against the full system, 0.35% of payments get a lower risk tier and 0.1% a less strict action, and we report that."
-- *Don't claim* "degraded mode is never looser": the evaluation file reports `neverLooser: false`.
+**7. Degraded mode is stricter, with two measured gaps.**
+- *What we say only if asked:* "When the model is missing, the strict rules verify every payment, hold large payments from suppliers without a clean record, and catch 100% of fraud. Measured against the full system on 300,000 synthetic payments, one payment gets a lower risk tier (seed C; none on seed B). When the payment history is missing, risk tiers are never lower, but 0.17–0.19% of actions are less strict: the full system refuses a call-back for a second payment to the same supplier within 24 hours, which we can't see without the history."
+- *The cost:* while degraded, 100% of legitimate payments need a call-back. It is a fallback, not a way to run.
+- *Don't claim* "degraded mode is never looser": the two gaps above are in `ml/reports/metrics.json` (`degraded`).
 
 **8. The guardian has a same-block race.**
 - *What we say:* "It polls every 2 seconds. A thief who confirms and releases in the same block would beat it. A short release challenge window closes that gap." Even then, the money can only go to the beneficiary in the signed intent.

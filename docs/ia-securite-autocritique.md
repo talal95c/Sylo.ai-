@@ -59,7 +59,7 @@ E3 n'est pas proche de zéro : le moteur attrape encore 75,50 % à MEDIUM+ et 51
 
 ## 5. Mode dégradé
 
-C'est sûr mais peu exploitable. Sans modèle, 43 % des paiements légitimes sont retenus. Sans historique, 100 % le sont et plus rien ne passe en traitement direct (STP 0 %). Le mode reste aussi légèrement plus laxiste que le mode normal sur une petite fraction des paiements : 0,11 % des actions sans modèle, 0,19 % sans historique (`neverLooser = false`). Une panne d'historique gèle donc toute l'activité. *Parade (à faire) :* un cache d'historique local de secours, et un SLA de retour au mode normal.
+C'est sûr mais peu exploitable. Sans modèle comme sans historique, 100 % des paiements légitimes passent par une vérification et plus rien ne passe en traitement direct (STP 0 %). Depuis le durcissement des règles strictes (montant ≥ 10 000 € hors liste blanche ⇒ HIGH, vérification systématique, pas de levée par rappel pour un deuxième paiement au même fournisseur en 24 h), le niveau de risque n'est jamais plus bas qu'en mode normal sur seed B, et 1 paiement sur 150 000 l'est sur seed C. Sans historique, 0,19 % (B) et 0,17 % (C) des actions restent moins strictes : le système complet refuse la levée par rappel pour un deuxième paiement en 24 h, ce qu'on ne voit pas sans historique. Une panne d'historique gèle donc toute l'activité. *Parade (à faire) :* un cache d'historique local de secours, et un SLA de retour au mode normal.
 
 ## 6. Clusters de mules
 
