@@ -91,6 +91,7 @@ def choose_route(
     oob_resolvable: bool = False,
     unavailable: Mapping[str, str] | None = None,
     limits: RerouteLimits | None = None,
+    symbol: str = "€",
 ) -> RouteDecision:
     """``oob_resolvable``: the doubt is about the beneficiary's identity only, so a HIGH payment may still
     use a route that can hold the money (it is then handled like MEDIUM, never paid directly).
@@ -137,7 +138,7 @@ def choose_route(
         if over_limit:
             blocked_by = PAYER_LIMIT
             reason = texts.NO_ROUTE_LIMITS.format(
-                usual=usual, routes=", ".join(over_limit), fees=limits.max_fees_eur, days=limits.max_days
+                usual=usual, routes=", ".join(over_limit), fees=limits.max_fees_eur, days=limits.max_days, symbol=symbol
             )
         elif action_tier >= Tier.HIGH or not unavailable:
             blocked_by, reason = "TIER", texts.NO_ROUTE_DETAIL.format(tier=action_tier.name)
@@ -161,11 +162,11 @@ def choose_route(
     price_of_safety = round(best_s - cheapest_legal, 2)
     if action_tier == Tier.LOW:
         excluded = [(e.route.id, e.excluded_by or "") for e in norms.routes if e.status != PASS]
-        reason = texts.route_reason_low(best_id, best_s, swift, excluded)
+        reason = texts.route_reason_low(best_id, best_s, swift, excluded, symbol)
         settlement = "DIRECT"
     else:
         holding = [(c[2].route.id, c[2].route.settlement) for c in sorted(allowed, key=lambda c: c[1])]
-        reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety)
+        reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety, symbol)
         settlement = best.route.settlement
     reason += texts.rails_unavailable(unavailable)
     return RouteDecision(

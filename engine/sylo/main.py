@@ -72,7 +72,7 @@ class RailBody(BaseModel):
 
 
 class QuoteBody(BaseModel):
-    order: Literal["legit", "diverted"]
+    order: Literal["legit", "diverted", "lagos-accra"]
     amount: str | None = Field(default=None, pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
 
 

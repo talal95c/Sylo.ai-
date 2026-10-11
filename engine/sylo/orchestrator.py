@@ -19,6 +19,7 @@ import random
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -31,6 +32,8 @@ from sylo_spec.devkeys import dev_address
 from sylo_spec.eip712 import Message, digest, primary_type, typed_data
 from sylo_spec.models import (
     CaseFile,
+    Payer,
+    PayerSession,
     PaymentIntent,
     PaymentOrder,
     Revocation,
@@ -57,7 +60,7 @@ from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
 from .config import Settings
 from .journal import Journal
-from .norms import NormsEngine, NormsResult
+from .norms import NormsEngine, NormsResult, load_pack
 from .pacer import Pacer, RealPacer, iso_ms
 from .ports_loader import load_case_writer, load_ports
 from .rails import LegMessage, LegRejected, RailAdapter, Rails
@@ -132,6 +135,19 @@ SCENARIOS: dict[str, ScenarioDef] = {
 ATTACKS = ("release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
 HOLD_MODES = {"ONCHAIN_ESCROW": "escrow", "FIAT_HOLD": "bank"}
+
+
+CORRIDOR_DEMOS: dict[str, str] = {"lagos-accra": "NG-GH"}
+"""Quotable demo orders of other corridors: name -> pack id. Payer and order are read from the pack file."""
+
+
+@lru_cache(maxsize=None)
+def corridor_demo(name: str) -> tuple[NormsEngine, Payer, PaymentOrder]:
+    """A second corridor needs no code: its routes, rules, payer and demo order come from its pack file."""
+    pack = load_pack(CORRIDOR_DEMOS[name])
+    if not pack.demo:
+        raise ValueError(f"pack {pack.id} has no demo order")
+    return NormsEngine(pack), Payer.model_validate(pack.demo["payer"]), PaymentOrder.model_validate(pack.demo["order"])
 
 
 class ScenarioBusy(Exception):
@@ -560,35 +576,66 @@ class Orchestrator:
 
     # --- integration API: quote, payment, cases, payee verification (PRD §16.2) ---------------
 
-    def _decision(self, order: PaymentOrder) -> dict[str, Any]:
-        """Norms, risk and route for an order, without committing anything (the PRD's ``Decision``)."""
-        norms = self.norms.evaluate(order)
-        risk = self._overlays(order, self.risk.score(order, build_risk_context(order, norms.signal_codes)))
+    def _decision(self, order: PaymentOrder, *, engine: NormsEngine | None = None, payer: Payer = PAYER) -> dict[str, Any]:
+        """Norms, risk and route for an order, without committing anything (the PRD's ``Decision``).
+
+        ``engine`` and ``payer`` are those of another corridor's pack; by default the corridor the engine runs."""
+        own = engine is None
+        engine = engine or self.norms
+        pack = engine.pack
+        norms = engine.evaluate(order)
+        context = (
+            build_risk_context(order, norms.signal_codes)
+            if own
+            else build_risk_context(order, norms.signal_codes, session=PayerSession(country=order.channel.session_country))
+        )
+        risk = self._overlays(order, self.risk.score(order, context))
         amount = order.amount.as_float
         decision = choose_route(
             norms,
             risk.tier,
             amount,
-            self.norms.pack.route_model,
+            pack.route_model,
             oob_resolvable=risk.oob_resolvable,
-            unavailable=self.rails.unavailable(),
+            unavailable=self.rails.unavailable() if own else {},
             limits=RerouteLimits(self.settings.reroute_max_fees_eur, self.settings.reroute_max_days),
+            symbol=pack.symbol,
         )
         account = ACCOUNTS.get(order.creditor_account_id)
         payee = PAYEES.get(order.payee_id)
         approvers, method = required_approvers(
-            PAYER,
+            payer,
             amount,
             known_account=bool(account and payee and payee.owns(account.id)),
             dual_control_eur=self.settings.dual_control_eur,
             new_payee_eur=self.settings.dual_control_new_payee_eur,
         )
         conditional = decision.route is not None and action_tier(risk) == Tier.MEDIUM
-        legal_refs = {rule.id: rule.legal_ref for rule in self.norms.pack.rules}
+        legal_refs = {rule.id: rule.legal_ref for rule in pack.rules}
+        rails = (
+            self.rails.quotes(amount)
+            if own
+            else [
+                {
+                    "routeId": route.id,
+                    "rail": route.name,
+                    "settlement": route.settlement,
+                    "feesEur": round(route.fees(amount), 2),
+                    "etaLabel": route.eta_label,
+                    "available": True,
+                    "simulated": True,
+                }
+                for route in pack.routes
+            ]
+        )
         return {
             "paymentId": order.id,
             "uetr": order.uetr,
+            "corridor": order.corridor,
+            "currency": pack.currency,
+            "authorities": pack.authorities(),
             "packVersion": norms.pack_version,
+            "routes": [route.to_event() for route in norms.routes],
             "normChecks": [
                 {"routeId": route.route.id, "ruleId": check["ruleId"], "result": check["result"], "legalRef": legal_refs.get(check["ruleId"])}
                 for route in norms.routes
@@ -621,7 +668,7 @@ class Orchestrator:
                 "conditional": conditional,
             },
             "verifications": ["SIM_SWAP_CHECK", "OOB_KNOWN_CONTACT"] if conditional else [],
-            "rails": self.rails.quotes(amount),
+            "rails": rails,
         }
 
     def quote(self, order_name: str, amount: str | None = None) -> dict[str, Any]:
@@ -629,9 +676,14 @@ class Orchestrator:
 
         ``amount`` prices the same order for another amount; such a quote cannot be executed, because the
         PoC only runs the two recorded orders."""
-        if order_name not in ORDERS:
+        engine: NormsEngine | None = None
+        payer = PAYER
+        if order_name in CORRIDOR_DEMOS:
+            engine, payer, order = corridor_demo(order_name)  # another corridor: priced, never executed here
+        elif order_name in ORDERS:
+            order = self._verified_order(ORDERS[order_name])
+        else:
             raise UnknownScenario(order_name)
-        order = self._verified_order(ORDERS[order_name])
         if amount is not None:
             order = order.model_copy(update={"amount": order.amount.model_copy(update={"value": amount})})
         quote = Quote(
@@ -639,10 +691,10 @@ class Orchestrator:
             order_name=order_name,
             order=order,
             valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
-            executable=amount is None,
+            executable=amount is None and engine is None,
         )
         self._quotes[quote.id] = quote
-        decision = self._decision(order)
+        decision = self._decision(order, engine=engine, payer=payer)
         decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
         return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
 
@@ -665,7 +717,7 @@ class Orchestrator:
             if quote is None:
                 raise UnknownQuote(quote_id)
             if not quote.executable:
-                raise ActionNotAllowed("this quote prices another amount: the PoC only executes the recorded orders")
+                raise ActionNotAllowed("this quote is for pricing only: the PoC executes the two recorded FR → GH orders")
             if self.now() > quote.valid_until:
                 raise ActionNotAllowed(f"quote {quote_id} expired at {iso_ms(quote.valid_until)}: ask for a new one")
             order_name = quote.order_name

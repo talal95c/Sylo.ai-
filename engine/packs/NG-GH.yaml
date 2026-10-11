@@ -1,0 +1,144 @@
+# Corridor pack Nigeria -> Ghana (Lagos -> Accra, PRD Appendix A, P1-8).
+# A second corridor is this file and one profile (NG.yaml); the Ghana profile is reused and the engine is
+# unchanged. All parameters are synthetic, read from Appendix A, and labelled "simulated" in the UI.
+# Route score: S(r) = fees + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk (fraud risk is never an input).
+id: NG-GH
+version: "2026-10-11"
+profiles: [NG, GH]
+currency: USD
+symbol: "$"
+
+fx:
+  USD_GHS: 11.0            # fixed demo rate (simulated)
+
+# Institutions that only this corridor uses (fictional). The Ghanaian ones come from spec/geo/institutions.json.
+institutions:
+  - { id: payer_lagos, name: Lekki Foods Ltd, city: Lagos, country: NG }
+  - { id: bank_ng, name: Lagoon Merchant Bank, city: Lagos, country: NG }
+  - { id: corr_us, name: Hudson Correspondent Bank, city: New York, country: US }
+  - { id: papss_hub, name: PAPSS settlement hub (simulated), city: Cairo, country: EG }
+  - { id: vasp_ng, name: Niger Delta Digital (registered provider), city: Lagos, country: NG }
+  - { id: momo_ng, name: NairaLink Wallets, city: Ibadan, country: NG }
+
+routeModel:
+  lambda: 0.0007
+  mu: 0.02
+  nu: 0.05
+  sigma: 1.0
+
+routes:
+  - id: R1
+    name: SWIFT correspondent (USD)
+    settlement: FIAT_HOLD
+    feesFixed: 25            # $25, plus 1% and a 3.5% detour through a USD correspondent
+    feesPct: 0.045
+    minutes: 2880            # more than half of the payments take over 24 h
+    pFail: 0.01
+    pUnusable: 0
+    etaLabel: "1–5 days"
+    hops:
+      - [payer_lagos, bank_ng, bank]
+      - [bank_ng, corr_us, bank]
+      - [corr_us, "{CRED}", bank]
+  - id: R2
+    name: PAPSS
+    settlement: NONE
+    feesPct: 0.03            # 3%, between $5 and $50
+    feesMin: 5
+    feesMax: 50
+    minutes: 60              # 120 s announced, sometimes the next day
+    pFail: 0.02
+    pUnusable: 0
+    etaLabel: "minutes to 1 day"
+    hops:
+      - [payer_lagos, bank_ng, bank]
+      - [bank_ng, papss_hub, bank]
+      - [papss_hub, "{CRED}", bank]
+  - id: R3
+    name: USD stablecoin through licensed partners
+    settlement: ONCHAIN_ESCROW
+    token: USDC
+    feesPct: 0.0299          # median spread, January 2026
+    minutes: 180
+    pFail: 0.0025
+    pUnusable: 0
+    etaLabel: "minutes to hours"
+    hops:
+      - [payer_lagos, bank_ng, bank]
+      - [bank_ng, vasp_ng, bank]
+      - [vasp_ng, vasp_gh, chain]
+      - [vasp_gh, "{CRED}", bank]
+  - id: R4
+    name: Mobile money hub
+    settlement: NONE
+    feesPct: 0.04
+    minutes: 5
+    pFail: 0.03
+    pUnusable: 0.05
+    etaLabel: "minutes"
+    creditsWallet: true
+    hops:
+      - [payer_lagos, momo_ng, wallet]
+      - [momo_ng, momo_gh, wallet]
+
+# Every rule uses a check the engine already has. Evaluated in this order.
+rules:
+  - id: GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK
+    jurisdiction: GH
+    check: export_proceeds_route
+    when: { purpose: GOODS, creditorCountry: GH }
+    signal: { code: R1, check: nominated_account }
+    legalRef: "Foreign Exchange Act 2006 (Act 723); Bank of Ghana Notice BG/GOV/SEC/2025/34 (export proceeds and LOCs)"
+  - id: GH_WALLET_DAILY_CAP
+    jurisdiction: GH
+    check: wallet_daily_cap
+    routes: [R4]
+    params: { capGhs: 25000 }
+    legalRef: "Bank of Ghana mobile money wallet limits (enhanced-KYC wallets)"
+  - id: GH_VASP_LICENSED
+    jurisdiction: GH
+    check: vasp_licensed
+    routes: [R3]
+    params: { licensed: [vasp_gh] }
+    legalRef: "Virtual Asset Service Providers Act 2025 (Act 1154), Bank of Ghana"
+  - id: NG_VASP_REGISTERED
+    jurisdiction: NG
+    check: casp_authorised
+    routes: [R3]
+    params: { casps: [vasp_ng], tokens: [USDC] }
+    legalRef: "Nigerian virtual-asset provider registration (to verify; PRD Appendix A: licensed partners only)"
+  - id: NG_BVN_WATCHLIST
+    jurisdiction: NG
+    check: sanctions_screen
+    params: { list: ["HARMATTAN RELAY VENTURES", "DELTA CASHPOINT NOMINEES"] }
+    legalRef: "BVN fraud watchlist (synthetic entries; PRD Appendix A)"
+
+taxNotices:
+  - reference: NFIU-STR
+    text: "A suspicious transaction on this corridor is reported to the NFIU in Nigeria and to the FIC in Ghana (drafts only in the PoC)."
+
+# The demo payer and order of this corridor. Read by POST /v1/quotes {"order": "lagos-accra"}.
+demo:
+  name: lagos-accra
+  payer:
+    id: payer_lagos
+    name: Lekki Foods Ltd
+    country: NG
+    institutionId: payer_lagos
+    bankInstitutionId: bank_ng
+    approvers:
+      - { id: adaeze, name: Adaeze Okafor, role: Finance director }
+      - { id: tunde, name: Tunde Bello, role: Second approver }
+  order:
+    id: PAY-2026-0201
+    uetr: 3c5e8b17-9d24-4f6a-b0c1-7e2a4d9f6b01
+    corridor: NG-GH
+    debtor: { id: payer_lagos, name: Lekki Foods Ltd, country: NG, institutionId: bank_ng }
+    creditor: { id: payee-ssx, name: Savanna Shea Exports Ltd, country: GH, institutionId: bank_gh }
+    payeeId: payee-ssx
+    creditorAccountId: acc-ssx-nominated
+    amount: { value: "25000.00", currency: USD }
+    purpose: GOODS
+    documents: { invoiceRef: SSE-2026-131, locRef: LOC-GH-2026-0502 }
+    provenance: { creditorAccount: verified_registry }
+    channel: { deviceId: dev-adaeze-laptop, msisdn: "+234 80 •• •• 4417", sessionCountry: NG }

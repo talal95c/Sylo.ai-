@@ -46,11 +46,18 @@ class RouteDef:
     eta_label: str
     credits_wallet: bool
     hops: tuple[tuple[str, str, str], ...]
+    token: str = "EURC"
+    fees_min: float | None = None
+    fees_max: float | None = None
 
     def fees(self, amount: float) -> float:
-        if self.fees_eur is not None:
-            return self.fees_eur
-        return (self.fees_pct or 0.0) * amount
+        """Fixed part plus percentage, within the rail's minimum and maximum, in the pack's currency."""
+        total = (self.fees_eur or 0.0) + (self.fees_pct or 0.0) * amount
+        if self.fees_min is not None:
+            total = max(total, self.fees_min)
+        if self.fees_max is not None:
+            total = min(total, self.fees_max)
+        return total
 
     @property
     def days(self) -> float:
@@ -73,12 +80,33 @@ class Rule:
 class Pack:
     id: str
     version: str
-    fx_eur_ghs: float
+    fx: dict[str, float]
     route_model: RouteModel
     routes: tuple[RouteDef, ...]
     rules: tuple[Rule, ...]
     tax_notices: tuple[dict[str, Any], ...]
     profiles: dict[str, dict[str, Any]]
+    currency: str = "EUR"
+    symbol: str = "€"
+    demo: dict[str, Any] | None = None
+    """Optional demo payer and order of the corridor, so that a new corridor needs no code (PRD P1-8)."""
+    institutions: tuple[dict[str, str], ...] = ()
+    """Institutions that only this corridor uses (id, name, city, country), beside the shared registry."""
+
+    def countries(self) -> dict[str, str]:
+        """Institution id -> ISO country: the shared registry, completed by the pack's own institutions."""
+        return {**institution_countries(), **{item["id"]: item["country"] for item in self.institutions}}
+
+    @property
+    def fx_eur_ghs(self) -> float:
+        return self.fx["EUR_GHS"]
+
+    def authorities(self) -> dict[str, dict[str, str]]:
+        """Supervisor and financial intelligence unit of each country of the corridor, from its profile."""
+        return {
+            pid: {"country": profile.get("name", pid), "supervisor": profile.get("supervisor", ""), "fiu": profile.get("fiu", "")}
+            for pid, profile in self.profiles.items()
+        }
 
     @property
     def pack_version(self) -> str:
@@ -101,7 +129,11 @@ def load_pack(corridor: str = "FR-GH", base: Path = ENGINE_DIR) -> Pack:
     return Pack(
         id=raw["id"],
         version=str(raw["version"]),
-        fx_eur_ghs=float(raw["fx"]["EUR_GHS"]),
+        fx={pair: float(rate) for pair, rate in raw["fx"].items()},
+        currency=str(raw.get("currency", "EUR")),
+        symbol=str(raw.get("symbol", "€")),
+        demo=raw.get("demo"),
+        institutions=tuple(dict(item) for item in raw.get("institutions", [])),
         route_model=RouteModel(
             lam=float(model["lambda"]), mu=float(model["mu"]), nu=float(model["nu"]), sigma=float(model["sigma"])
         ),
@@ -110,7 +142,10 @@ def load_pack(corridor: str = "FR-GH", base: Path = ENGINE_DIR) -> Pack:
                 id=r["id"],
                 name=r["name"],
                 settlement=r["settlement"],
-                fees_eur=float(r["feesEur"]) if "feesEur" in r else None,
+                fees_eur=float(r["feesEur"]) if "feesEur" in r else (float(r["feesFixed"]) if "feesFixed" in r else None),
+                token=str(r.get("token", "EURC")),
+                fees_min=float(r["feesMin"]) if "feesMin" in r else None,
+                fees_max=float(r["feesMax"]) if "feesMax" in r else None,
                 fees_pct=float(r["feesPct"]) if "feesPct" in r else None,
                 minutes=float(r["minutes"]),
                 p_fail=float(r["pFail"]),
@@ -155,8 +190,10 @@ def _export_proceeds_route(route: RouteDef, hops: list[Hop], order: PaymentOrder
 
 
 def _wallet_daily_cap(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
-    amount_ghs = order.amount.as_float * pack.fx_eur_ghs
-    return PASS if amount_ghs <= float(params["capGhs"]) else FAIL
+    rate = pack.fx.get(f"{order.amount.currency}_GHS")
+    if rate is None:
+        return FAIL  # no rate for this currency: the cap cannot be checked
+    return PASS if order.amount.as_float * rate <= float(params["capGhs"]) else FAIL
 
 
 def _vasp_licensed(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
@@ -166,7 +203,7 @@ def _vasp_licensed(route: RouteDef, hops: list[Hop], order: PaymentOrder, params
 
 def _casp_authorised(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
     casps = [h["from"] for h in hops if h["kind"] == "chain"]
-    token_ok = "EURC" in params.get("tokens", [])
+    token_ok = route.token in params.get("tokens", [])
     return PASS if casps and token_ok and all(c in params.get("casps", []) for c in casps) else FAIL
 
 
@@ -192,7 +229,7 @@ def institution_countries() -> dict[str, str]:
 def _high_risk_country(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
     """A route through a listed country needs an enhanced due diligence file; an unknown institution fails."""
     listed = set(params.get("listed", []))
-    countries = institution_countries()
+    countries = pack.countries()
     on_route = {institution for hop in hops for institution in (hop["from"], hop["to"])}
     if any(institution not in countries for institution in on_route):
         return FAIL
@@ -344,7 +381,7 @@ class NormsEngine:
                     )
                 if rule.signal.get("check") == "account_country":
                     account = ACCOUNTS.get(order.creditor_account_id)
-                    held_in = institution_countries().get(account.institution_id) if account else None
+                    held_in = self.pack.countries().get(account.institution_id) if account else None
                     if held_in in rule.params.get("listed", []) and held_in != order.creditor.country:
                         signals.append(
                             {
