@@ -34,8 +34,7 @@ describe("resolveLabelOverlap", () => {
       bounds,
       "above",
     );
-    expect(result).toMatchObject({ side: "above", shiftX: 0, hidden: false });
-    expect(result.shiftX).not.toBe(0);
+    expect(result).toMatchObject({ side: "above", shiftX: 58, hidden: false });
   });
 
   it("hides only when both sides and horizontal offsets collide", () => {

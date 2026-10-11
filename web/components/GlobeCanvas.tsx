@@ -697,6 +697,7 @@ export default function GlobeCanvas({
   useEffect(() => {
     if (!visible) return;
     let frame = 0;
+    const gap = 18;
     let last = -Infinity;
     let lastSignature = "";
 
@@ -898,8 +899,7 @@ export default function GlobeCanvas({
     controls.autoRotate = false;
     const ms = (value: number) => (reducedMotion ? 0 : value);
     const schedule = (delay: number, callback: () => void) => {
-      let timer: ReturnType<typeof setTimeout>;
-      timer = setTimeout(() => {
+      const timer = setTimeout(() => {
         cameraTimersRef.current.delete(timer);
         callback();
       }, ms(delay));

@@ -14,19 +14,6 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-function angularDistanceDegrees(a: GeoPoint, b: GeoPoint) {
-  const radians = Math.PI / 180;
-  const latitudeDelta = (b.lat - a.lat) * radians;
-  const longitudeDelta = (b.lng - a.lng) * radians;
-  const latitudeA = a.lat * radians;
-  const latitudeB = b.lat * radians;
-  const haversine =
-    Math.sin(latitudeDelta / 2) ** 2 +
-    Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(longitudeDelta / 2) ** 2;
-  const bounded = clamp(haversine, 0, 1);
-  return (2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded))) / radians;
-}
-
 export function angularDistanceDegrees(a: GeoPoint, b: GeoPoint) {
   const radians = Math.PI / 180;
   const latitudeDelta = (b.lat - a.lat) * radians;
