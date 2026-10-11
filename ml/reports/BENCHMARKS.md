@@ -100,3 +100,38 @@ The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per ca
 - Engine window detector (`WindowClusterDetector`, main 5971aaa): ≥3 payments into young/thin accounts at a border bank; offline benchmark unchanged.
 
 The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. The engine's `WindowClusterDetector` is covered by the scene 3 engine test, not by this offline benchmark.
+
+## Pass 6 — T1 evasion
+
+- Command: `cd engine && uv run --extra model python -m sylo_risk.evasion --seed B`; the frozen `gbm-20261011` model and thresholds were used. Each level bootstraps 2,000 rows with replacement from seed B's 450 T1 rows. The prior-payment levels are set on observed aggregate fields, not simulated events.
+
+| Level | Definition | Recall MEDIUM+ | Recall HIGH+ | HIGH + OOB escrow | Action ≥HIGH | Model-only MEDIUM+ |
+|---|---|---:|---:|---:|---:|---:|
+| E0 | Current T1 | 100.00% | 76.45% | 19.85% | 56.60% | 92.95% |
+| E1 | Trusted `verified_registry` provenance | 92.95% | 76.45% | 19.85% | 56.60% | 92.95% |
+| E2 | E1; age ≥90 days, ≥3 successful payments (aggregate), not payee-owned, previous nominated account remains in history (`history_count` ≥1) | 92.65% | 75.30% | 19.85% | 55.45% | 92.65% |
+| E3 | E2; payee owns account and `last_account_id` is that account, with `history_count` ≥1 | 75.50% | 51.50% | 13.75% | 37.75% | 67.35% |
+
+E0–E3 fired rule counts (top five per level; counts can overlap):
+
+| Level | Fired rules |
+|---|---|
+| E0 | R-PV-01: 2,000; R-FL-01: 1,522; R-NM-01: 1,286; R-FL-03: 982; R-FL-02: 14 |
+| E1 | R-NM-01: 1,286; R-FL-03: 982; R-FL-02: 14 |
+| E2 | R-NM-01: 1,286; R-FL-03: 982 |
+| E3 | R-NM-01: 1,286 |
+
+The five most common E3 positive SHAP reason features (top three per payment, not gated by the user-facing score threshold) were `log1p_successful_payments` (2,000), `norm_R1` (915), `name_match` (901), `log1p_account_age_days` (807), and `domain_lookalike` (784).
+
+Seed B prevalence estimates:
+
+| Threshold | Fraud TPR | Legitimate FPR | Prevalence | Precision | Legitimate holds / fraud caught |
+|---|---:|---:|---:|---:|---:|
+| MEDIUM+ | 98.13% | 6.72% | 1% | 12.85% | 6.78 |
+| MEDIUM+ | 98.13% | 6.72% | 0.1% | 1.44% | 68.44 |
+| MEDIUM+ | 98.13% | 6.72% | 0.01% | 0.15% | 684.97 |
+| HIGH+ | 73.87% | 0.0842% | 1% | 89.86% | 0.11 |
+| HIGH+ | 73.87% | 0.0842% | 0.1% | 46.76% | 1.14 |
+| HIGH+ | 73.87% | 0.0842% | 0.01% | 8.07% | 11.39 |
+
+MEDIUM+ TPR/FPR cite `metrics.json#/metrics/recallAll` and `#/metrics/fprMediumPlus`. `metrics.json` has no legitimate HIGH+ FPR, so HIGH+ TPR/FPR were counted from seed B's existing labels and frozen full-engine tiers using `evaluate._score_engine` (1,108/1,500 frauds and 125/148,500 legitimate payments at HIGH+; no retraining). All figures are synthetic-evaluation measurements, not production efficacy. Full per-level metrics, rules, SHAP examples, formulas, and source paths are in `evasion.json`.
