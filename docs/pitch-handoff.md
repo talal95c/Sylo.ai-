@@ -532,6 +532,17 @@ Notes for the slide:
 - Corridor pause: <https://testnet.snowtrace.io/tx/0x878350758d51d38fccdac2ccb0522a7007dd932589e77be3e4d245e68e5de71c>
 - **Failed release:** <https://testnet.snowtrace.io/tx/0xd5e1b2d5ffc99cbf08a9c778e93298ee47b8a941dd7c599527a5550407544442>
 
+**Scene 4 rehearsal on the latest `main` (11 Oct, 06:47), with screenshots for the deck in [`docs/assets/`](assets/)**
+
+| Block | What | Snowtrace | Screenshot |
+|---|---|---|---|
+| 59293181 | Attacker records a forged CONFIRMED with the stolen key | [0x701b…827b](https://testnet.snowtrace.io/tx/0x701bd587026d4ad3a46e7f784b584429d32f7feb53811089eb67f1aed6d1827b) | `scene4-forged-confirmation.png` |
+| 59293183 | Guardian freezes the hold (2 blocks later) | [0xb602…98de](https://testnet.snowtrace.io/tx/0xb602ade34fb369255ebf18c52ffae0f46a75201c1289c23637dda236154d98de) | `scene4-guardian-freeze.png` |
+| 59293185 | Guardian pauses the France–Ghana corridor | [0xb58e…b8d3](https://testnet.snowtrace.io/tx/0xb58e970b97a7d4f2ffd8dc1a74a2c7a1f2f980e9cb3912115bb48b97acbab8d3) | `scene4-guardian-pause.png` |
+| 59293187 | Attacker's `release()` is mined and **fails** | [0x26ec…46dd](https://testnet.snowtrace.io/tx/0x26ec26f301a62dd79326aafc56806db59816b6a3601cab93e30c679e34d246dd) | `scene4-failed-release.png` (the proof shot) |
+
+eERC screenshot: `eerc-confidential-transfer.png` (the EUR 85,000 transfer; Snowtrace shows no amount).
+
 **eERC confidential payments (float + netted settlement)**
 - Float deposit (EUR 1,000,000): <https://testnet.snowtrace.io/tx/0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b>
 - Confidential transfer, EUR 85,000 (amount hidden): <https://testnet.snowtrace.io/tx/0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c>
