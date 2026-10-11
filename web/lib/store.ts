@@ -42,6 +42,7 @@ export interface FeedItem {
   simulated: boolean;
   txHash?: string;
   explorerUrl?: string | null;
+  outcome?: string;
 }
 
 export interface ViewState {

@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { outcomeBadge } from "@/lib/feed";
 import type { FeedItem } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { ease, shortHash, Tag } from "./ui";
@@ -109,13 +110,9 @@ const INFO_EVENTS = new Set([
   "leg.sent",
 ]);
 
-function isConfirmed(item: FeedItem) {
-  return item.text.toLowerCase().includes("yes, this is our new account");
-}
-
 function toneFor(item: FeedItem): EventTone {
-  if (item.type === "verification.recorded") return isConfirmed(item) ? "success" : "danger";
-  if (item.type === "risk.scored") return item.text.toUpperCase().includes("LOW") ? "success" : "warning";
+  const badge = outcomeBadge(item);
+  if (badge) return badge.tone;
   if (item.family === "attack" || DANGER_EVENTS.has(item.type)) return "danger";
   if (item.family === "alert" || WARNING_EVENTS.has(item.type)) return "warning";
   if (SUCCESS_EVENTS.has(item.type)) return "success";
@@ -124,6 +121,8 @@ function toneFor(item: FeedItem): EventTone {
 }
 
 function statusFor(item: FeedItem) {
+  const badge = outcomeBadge(item);
+  if (badge) return badge.label;
   switch (item.type) {
     case "session.reset":
       return "Reset";
@@ -135,8 +134,6 @@ function statusFor(item: FeedItem) {
       return "Received";
     case "norms.checked":
       return "Compliant";
-    case "risk.scored":
-      return item.text.toUpperCase().includes("LOW") ? "Low risk" : "Review";
     case "route.selected":
       return "Route selected";
     case "approval.granted":
@@ -153,8 +150,6 @@ function statusFor(item: FeedItem) {
       return "Held";
     case "verification.requested":
       return "Review";
-    case "verification.recorded":
-      return isConfirmed(item) ? "Confirmed" : "Fraud";
     case "intent.revoked":
       return "Revoked";
     case "escrow.refunded":
@@ -312,7 +307,7 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
                         {EVENT_TITLES[item.type] ?? item.type}
                       </div>
                       <span
-                        className="max-w-[76px] shrink-0 truncate rounded-full border px-2 py-1 text-[8.5px] font-semibold leading-none"
+                        className="max-w-[96px] shrink-0 truncate rounded-full border px-2 py-1 text-[8.5px] font-semibold leading-none"
                         style={{
                           color: meta.color,
                           borderColor: `color-mix(in srgb, ${meta.color} 11%, white)`,
@@ -326,7 +321,22 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
                     <p className="mt-1 line-clamp-2 text-[10px] leading-[1.35] text-[rgba(0,0,0,0.46)]">
                       {description}
                       {item.txHash ? (
-                        <span className="font-mono" title={item.txHash}>{" \u00b7 tx "}{shortHash(item.txHash)}</span>
+                        <span className="font-mono" title={item.txHash}>
+                          {" \u00b7 tx "}
+                          {typeof item.explorerUrl === "string" && /^https?:\/\//.test(item.explorerUrl) ? (
+                            <a
+                              href={item.explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline-offset-2 hover:underline"
+                              style={{ color: item.type === "tx.reverted" || item.family === "attack" ? "var(--danger)" : "var(--accent)" }}
+                            >
+                              {shortHash(item.txHash)}
+                            </a>
+                          ) : (
+                            shortHash(item.txHash)
+                          )}
+                        </span>
                       ) : null}
                       {item.simulated ? <span className="font-mono uppercase">{" \u00b7 simulated"}</span> : null}
                     </p>

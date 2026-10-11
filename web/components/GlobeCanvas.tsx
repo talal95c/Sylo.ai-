@@ -303,7 +303,23 @@ export default function GlobeCanvas({
     };
     const solid = { dashLength: 1, dashGap: 0, dashInitialGap: 0, animateTime: 0 };
 
-    if (!state.selectedRouteId) return list;
+    if (!state.selectedRouteId) {
+      for (const route of state.routes) {
+        const excluded = route.status === "EXCLUDED";
+        route.hops.forEach((hop, index) => {
+          const altitude = hop.kind === "chain" ? chainAltitude : null;
+          push(`${route.routeId}-${index}`, hop.from, hop.to, excluded ? "x" : "eval", {
+            color: excluded ? rgba(DANGER_COLOR, 0.85) : rgba(HOP_COLORS[hop.kind], 0.28),
+            altitude,
+            stroke: excluded ? 0.45 : 0.3,
+            ...(excluded
+              ? { dashLength: 0.05, dashGap: 0.035, dashInitialGap: 0, animateTime: 0 }
+              : solid),
+          });
+        });
+      }
+      return list;
+    }
 
     for (const hop of state.hops) {
       const altitude = hop.kind === "chain" ? chainAltitude : null;
@@ -312,6 +328,12 @@ export default function GlobeCanvas({
       const duration = reducedMotion ? 0 : hop.durationMs ?? 1400;
 
       if (hop.state === "pending") {
+        push(base, hop.from, hop.to, "pending", {
+          color: "rgba(10, 10, 10, 0.16)",
+          altitude,
+          stroke: 0.22,
+          ...solid,
+        });
         continue;
       }
 
@@ -377,7 +399,7 @@ export default function GlobeCanvas({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
+  }, [institutions, state.routes, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
 
   const involved = useMemo(() => {
     const ids = new Set<string>();
@@ -541,10 +563,7 @@ export default function GlobeCanvas({
 
     const layoutLabels = () => {
       const globe = globeRef.current;
-      if (!globe) {
-        frame = requestAnimationFrame(layoutLabels);
-        return;
-      }
+      if (!globe) return;
 
       const panelRects = [...document.querySelectorAll<HTMLElement>("aside")]
         .map((panel) => panel.getBoundingClientRect())
@@ -555,7 +574,13 @@ export default function GlobeCanvas({
       const viewportRight = rightPanel ? rightPanel.left - 8 : width - 12;
       const viewportTop = 76;
       const viewportBottom = height - 72;
-      const placed: DOMRect[] = [];
+      const placed: DOMRect[] = [...document.querySelectorAll<HTMLElement>(".globe-marker, .globe-chain-label")]
+        .filter((marker) => marker.style.opacity !== "0")
+        .map((marker) => {
+          const rect = marker.getBoundingClientRect();
+          return rect.width > 0 ? rect : (marker.firstElementChild?.getBoundingClientRect() ?? rect);
+        })
+        .filter((rect) => rect.width > 0 && rect.height > 0);
 
       for (const label of htmlData) {
         if (!label.className.startsWith("globe-label")) continue;
@@ -637,11 +662,19 @@ export default function GlobeCanvas({
         );
         placed.push(rect);
       }
-
-      frame = requestAnimationFrame(layoutLabels);
     };
 
-    frame = requestAnimationFrame(layoutLabels);
+    // Layout reads DOM rects for every label; ~10 Hz keeps the demo laptop smooth.
+    let last = -Infinity;
+    const tick = (now: number) => {
+      if (now - last >= 100) {
+        last = now;
+        layoutLabels();
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [height, htmlData, width]);
 
