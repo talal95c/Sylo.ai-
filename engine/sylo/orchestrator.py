@@ -2231,7 +2231,7 @@ class Orchestrator:
                 "answerText": texts.ANSWER_CONFIRM if result == VerificationResult.CONFIRMED else texts.ANSWER_DENY,
                 **self._tx_fields(tx),
             },
-            simulated=True,
+            simulated=tx.simulated,
         )
 
         if result == VerificationResult.DENIED:
