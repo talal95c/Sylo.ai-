@@ -38,7 +38,7 @@ interface HtmlDatum {
   altitude: number;
   html: string;
   className: string;
-  keepVisible?: boolean;
+  preferredSide?: "above" | "below";
 }
 
 interface RingDatum {
@@ -111,20 +111,6 @@ function hopView(
   };
 }
 
-const LABEL_X_OFFSET: Record<string, string> = {
-  payer_rhone: "east-rhone",
-  bank_fr: "west-europe",
-  casp_eu: "east-europe",
-  vasp_gh: "west-ghana",
-  mule_bank: "east-ghana",
-};
-const GHANA_LABEL_IDS = new Set([
-  "vasp_gh",
-  "bank_gh",
-  "momo_gh",
-  "supplier_ssx",
-  "mule_bank",
-]);
 const SHORT_NAME: Record<string, string> = {
   payer_rhone: "Rhône Cosmétiques",
   bank_fr: "Banque Hexagone",
@@ -319,7 +305,8 @@ export default function GlobeCanvas({
 
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
-        const excluded = route.status === "EXCLUDED";
+        const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
+        const excluded = route.status === "EXCLUDED" || unavailable;
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
           push(`${route.routeId}-${index}`, hop.from, hop.to, excluded ? "x" : "eval", {
@@ -411,9 +398,25 @@ export default function GlobeCanvas({
         animateTime: duration,
       });
     }
+
+    for (const route of state.routes) {
+      const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
+      if (!unavailable || route.routeId === state.selectedRouteId) continue;
+      route.hops.forEach((hop, index) => {
+        push(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, "unavailable", {
+          color: rgba(DANGER_COLOR, 0.82),
+          altitude: hop.kind === "chain" ? chainAltitude : null,
+          stroke: 0.45,
+          dashLength: 0.05,
+          dashGap: 0.035,
+          dashInitialGap: 0,
+          animateTime: 0,
+        });
+      });
+    }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.routes, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
+  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
 
   const involved = useMemo(() => {
     const ids = new Set<string>();
@@ -459,7 +462,6 @@ export default function GlobeCanvas({
       state.hops.find((hop) => hop.state === "active") ??
       [...state.hops].reverse().find((hop) => hop.state !== "pending") ??
       state.hops[0];
-    const protectedHop = state.hops.find((hop) => hop.state === "active") ?? focusedHop;
     const fallbackLabelIds = state.payment
       ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
       : state.routes.length
@@ -483,29 +485,23 @@ export default function GlobeCanvas({
       state.payment?.status === "in_transit"
         ? state.hops.find((hop) => hop.state === "active")?.to
         : undefined;
+    const closePair = focusedHop
+      ? angularDistanceDegrees(institutions[focusedHop.from], institutions[focusedHop.to]) < 10
+      : false;
     for (const id of labelIds) {
       const institution = institutions[id];
       if (!institution) continue;
-      const hasGhanaPair =
-        focusedHop &&
-        GHANA_LABEL_IDS.has(focusedHop.from) &&
-        GHANA_LABEL_IDS.has(focusedHop.to);
-      const offset = hasGhanaPair
-        ? id === focusedHop.from
-          ? "west-ghana"
-          : "east-ghana"
-        : LABEL_X_OFFSET[id] ?? "center";
       const isLive = liveTarget === id;
-      const keepVisible = protectedHop?.from === id || protectedHop?.to === id;
+      const preferredSide = closePair && focusedHop?.to === id ? "below" : "above";
       list.push(
-        stable(`lbl-${id}`, `${offset}:${isLive}:${keepVisible}`, () => ({
+        stable(`lbl-${id}`, `${preferredSide}:${isLive}`, () => ({
           id: `lbl-${id}`,
           lat: institution.lat,
           lng: institution.lng,
           altitude: 0.01,
-          className: `globe-label ${offset}`,
-          keepVisible,
-          html: `<span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
+          className: `globe-label${preferredSide === "below" ? " below" : ""}`,
+          preferredSide,
+          html: `<span class="globe-label-connector"></span><span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
         })),
       );
     }
@@ -524,7 +520,9 @@ export default function GlobeCanvas({
     }
 
     if (lockPoint && state.held) {
-      const variant = state.attack.reverted
+      const variant = state.incident
+        ? "guardian"
+        : state.attack.reverted
         ? "reverted"
         : state.revoked
           ? "revoked"
@@ -534,7 +532,11 @@ export default function GlobeCanvas({
       const color =
         variant === "released" ? TIER_COLORS.LOW : variant === "held" ? TIER_COLORS.MEDIUM : DANGER_COLOR;
       const caption =
-        variant === "reverted"
+        variant === "guardian"
+          ? state.incident?.action.includes("PAUSE")
+            ? "Corridor FR to GH paused"
+            : "Frozen by the guardian"
+          : variant === "reverted"
           ? "Rejected by the smart contract"
           : variant === "revoked"
             ? state.refunded
@@ -544,11 +546,13 @@ export default function GlobeCanvas({
               ? "Released"
               : "Held in escrow";
       const icon =
-        variant === "reverted"
+        variant === "guardian"
+          ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.4-5 6.5-2.9-1.1-5-3.4-5-6.5v-4L8 1.8Z" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11.5v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
+          : variant === "reverted"
           ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
           : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="${variant === "released" ? "M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" : "M5.5 7V5a2.5 2.5 0 0 1 5 0v2"}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
       list.push(
-        stable("lock", variant + state.refunded, () => ({
+        stable("lock", variant + state.refunded + (state.incident?.incidentId ?? ""), () => ({
           id: "lock",
           lat: lockPoint.lat,
           lng: lockPoint.lng,
@@ -560,7 +564,7 @@ export default function GlobeCanvas({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.incident, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
 
   const handleGlobeZoom = useCallback(
     (pov: { lat: number; lng: number; altitude: number }) => {
@@ -569,35 +573,135 @@ export default function GlobeCanvas({
       lastZoomUpdateRef.current = now;
       const nextSize = BASE_PARTICLE_SIZE * clamp(1.9 / pov.altitude, 1, 1.7);
       setParticleSize((current) => (Math.abs(current - nextSize) < 0.01 ? current : nextSize));
-
-      const globe = globeRef.current;
-      if (!globe) return;
-      for (const label of htmlData) {
-        if (!label.className.startsWith("globe-label ")) continue;
-        const element = document.querySelector<HTMLElement>(
-          `.globe-label[data-globe-label-id="${label.id}"]`,
-        );
-        if (!element) continue;
-        const screen = globe.getScreenCoords(label.lat, label.lng, label.altitude);
-        const pill = element.querySelector<HTMLElement>(".globe-label-pill");
-        const aboveTopBar = screen.y - 26 - (pill?.offsetHeight ?? 24) < 100;
-        const underSidePanel =
-          width >= 1280 && (screen.x < 372 || screen.x > width - 352);
-        const keepVisible = label.keepVisible ?? false;
-        const hidden = underSidePanel && !keepVisible;
-        element.classList.toggle("flip", aboveTopBar || (underSidePanel && keepVisible));
-        element.classList.toggle("panel-hidden", hidden);
-        element.style.opacity =
-          (element.dataset.globeVisible === "false" && !keepVisible) || hidden ? "0" : "1";
-      }
     },
-    [htmlData, width],
+    [],
   );
 
   useEffect(() => {
     const globe = globeRef.current;
     if (globe) handleGlobeZoom(globe.pointOfView());
   }, [handleGlobeZoom]);
+
+  useEffect(() => {
+    let frame = 0;
+    const gap = 18;
+
+    const layoutLabels = () => {
+      const globe = globeRef.current;
+      if (!globe) return;
+
+      const panelRects = [...document.querySelectorAll<HTMLElement>("aside")]
+        .map((panel) => panel.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0);
+      const leftPanel = panelRects.find((rect) => rect.left < width / 2);
+      const rightPanel = panelRects.find((rect) => rect.left > width / 2);
+      const viewportLeft = leftPanel ? leftPanel.right + 8 : 12;
+      const viewportRight = rightPanel ? rightPanel.left - 8 : width - 12;
+      const viewportTop = 76;
+      const viewportBottom = height - 72;
+      const placed: DOMRect[] = [...document.querySelectorAll<HTMLElement>(".globe-marker, .globe-chain-label")]
+        .filter((marker) => marker.style.opacity !== "0")
+        .map((marker) => {
+          const rect = marker.getBoundingClientRect();
+          return rect.width > 0 ? rect : (marker.firstElementChild?.getBoundingClientRect() ?? rect);
+        })
+        .filter((rect) => rect.width > 0 && rect.height > 0);
+
+      for (const label of htmlData) {
+        if (!label.className.startsWith("globe-label")) continue;
+        const element = document.querySelector<HTMLElement>(
+          `.globe-label[data-globe-label-id="${label.id}"]`,
+        );
+        const pill = element?.querySelector<HTMLElement>(".globe-label-pill");
+        if (!element || !pill) continue;
+
+        const screen = globe.getScreenCoords(label.lat, label.lng, label.altitude);
+        const behindGlobe = element.dataset.globeVisible === "false";
+        const anchorOutside =
+          screen.x < viewportLeft ||
+          screen.x > viewportRight ||
+          screen.y < viewportTop ||
+          screen.y > viewportBottom;
+        const hidden = behindGlobe || anchorOutside;
+        element.classList.toggle("panel-hidden", hidden);
+        element.style.opacity = hidden ? "0" : "1";
+        if (hidden) continue;
+
+        let below = label.preferredSide === "below";
+        element.classList.toggle("below", below);
+        element.style.setProperty("--globe-label-shift-x", "0px");
+        let rect = pill.getBoundingClientRect();
+        if (!below && rect.top < viewportTop) below = true;
+        if (below && rect.bottom > viewportBottom) below = false;
+        element.classList.toggle("below", below);
+        rect = pill.getBoundingClientRect();
+
+        let shiftX = clamp(0, viewportLeft - rect.left, viewportRight - rect.right);
+        element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
+        rect = pill.getBoundingClientRect();
+
+        const collision = placed.find(
+          (other) =>
+            rect.left < other.right + 8 &&
+            rect.right > other.left - 8 &&
+            rect.top < other.bottom + 6 &&
+            rect.bottom > other.top - 6,
+        );
+        if (collision) {
+          element.classList.toggle("below", !below);
+          const alternateRect = pill.getBoundingClientRect();
+          const alternateFits =
+            alternateRect.top >= viewportTop &&
+            alternateRect.bottom <= viewportBottom &&
+            !placed.some(
+              (other) =>
+                alternateRect.left < other.right + 8 &&
+                alternateRect.right > other.left - 8 &&
+                alternateRect.top < other.bottom + 6 &&
+                alternateRect.bottom > other.top - 6,
+            );
+          if (alternateFits) {
+            below = !below;
+            rect = alternateRect;
+          } else {
+            element.classList.toggle("below", below);
+            const shiftRight = collision.right + 8 - rect.left;
+            const shiftLeft = collision.left - 8 - rect.right;
+            shiftX += rect.right + shiftRight <= viewportRight ? shiftRight : shiftLeft;
+            shiftX = clamp(
+              shiftX,
+              viewportLeft - rect.left + shiftX,
+              viewportRight - rect.right + shiftX,
+            );
+            element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
+            rect = pill.getBoundingClientRect();
+          }
+        }
+
+        const connectorLength = Math.hypot(shiftX, gap);
+        const connectorAngle = (Math.atan2(shiftX, gap) * 180) / Math.PI;
+        element.style.setProperty("--globe-label-connector-length", `${connectorLength}px`);
+        element.style.setProperty(
+          "--globe-label-connector-angle",
+          `${below ? -connectorAngle : connectorAngle}deg`,
+        );
+        placed.push(rect);
+      }
+    };
+
+    // Layout reads DOM rects for every label; ~10 Hz keeps the demo laptop smooth.
+    let last = -Infinity;
+    const tick = (now: number) => {
+      if (now - last >= 100) {
+        last = now;
+        layoutLabels();
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [height, htmlData, width]);
 
   const rings = useMemo<RingDatum[]>(() => {
     if (!institutions) return [];
@@ -827,9 +931,9 @@ export default function GlobeCanvas({
         const item = datum as HtmlDatum;
         const element = document.createElement("div");
         element.className = item.className;
-        if (item.className.startsWith("globe-label ")) {
+        if (item.className.startsWith("globe-label")) {
           element.dataset.globeLabelId = item.id;
-          element.dataset.keepVisible = String(item.keepVisible ?? false);
+          element.dataset.preferredSide = item.preferredSide ?? "above";
         }
         element.innerHTML = item.html;
         return element;
@@ -837,8 +941,7 @@ export default function GlobeCanvas({
       htmlElementVisibilityModifier={(element, visible) => {
         element.dataset.globeVisible = String(visible);
         element.style.opacity =
-          (visible || element.dataset.keepVisible === "true") &&
-          element.classList.contains("panel-hidden") === false
+          visible && element.classList.contains("panel-hidden") === false
             ? "1"
             : "0";
       }}

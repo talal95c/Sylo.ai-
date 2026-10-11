@@ -13,6 +13,7 @@ import {
 import {
   createLiveSource,
   createReplaySource,
+  type AttackName,
   type ScenarioName,
   type Source,
   type SourceKind,
@@ -114,9 +115,9 @@ export function useSylo() {
     },
     [activePaymentId],
   );
-  const attack = useCallback(() => {
+  const attack = useCallback((name: AttackName) => {
     return activePaymentId && sourceRef.current
-      ? sourceRef.current.attack(activePaymentId)
+      ? sourceRef.current.attack(activePaymentId, name)
       : Promise.resolve();
   }, [activePaymentId]);
   const reset = useCallback(
@@ -137,9 +138,14 @@ export function useSylo() {
     actions: {
       runLegit: () => runScenario("legit"),
       runDiverted: () => runScenario("diverted"),
+      runMuleWave: () => runScenario("muleWave"),
+      runGuardian: () => runScenario("guardian"),
+      runOutage: () => runScenario("outage"),
       confirm: () => supplierResponse("confirm"),
       deny: () => supplierResponse("deny"),
-      attack,
+      attack: () => attack("release_revoked"),
+      swapAttack: () => attack("swap_beneficiary"),
+      replayAttack: () => attack("replay"),
       reset,
       closeAlert: dismissAlert,
     },

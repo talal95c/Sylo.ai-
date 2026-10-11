@@ -28,6 +28,33 @@ function nameFor(id: unknown): string {
   return institutionNames[key] ?? key.replaceAll("_", " ");
 }
 
+export type OutcomeTone = "success" | "warning" | "danger" | "neutral";
+
+const VERIFICATION_BADGES: Record<string, { label: string; tone: OutcomeTone }> = {
+  CONFIRMED: { label: "Confirmed", tone: "success" },
+  DENIED: { label: "Denied", tone: "danger" },
+};
+
+const TIER_BADGES: Record<string, { label: string; tone: OutcomeTone }> = {
+  LOW: { label: "Low risk", tone: "success" },
+  MEDIUM: { label: "Medium risk", tone: "warning" },
+  HIGH: { label: "High risk", tone: "warning" },
+  CRITICAL: { label: "Critical", tone: "danger" },
+};
+
+/** Badge for events whose status comes from a structured outcome field; null for other event types. */
+export function outcomeBadge(
+  item: Pick<FeedItem, "type" | "outcome">,
+): { label: string; tone: OutcomeTone } | null {
+  if (item.type === "verification.recorded") {
+    return (item.outcome && VERIFICATION_BADGES[item.outcome]) || { label: "Recorded", tone: "neutral" };
+  }
+  if (item.type === "risk.scored") {
+    return (item.outcome && TIER_BADGES[item.outcome]) || { label: "Scored", tone: "neutral" };
+  }
+  return null;
+}
+
 export function describe(
   event: SyloEvent,
 ): Omit<FeedItem, "seq" | "ts" | "simulated"> {
@@ -39,6 +66,7 @@ export function describe(
       : undefined;
   let family: FeedItem["family"] = "system";
   let label = `Event received: ${event.type}`;
+  let outcome: string | undefined;
 
   switch (event.type) {
     case "session.reset":
@@ -65,15 +93,15 @@ export function describe(
         const candidate = route as Record<string, unknown>;
         return candidate.status === "EXCLUDED";
       }) as Record<string, unknown> | undefined;
-      label =
-        excluded?.routeId === "R4"
-          ? "Norms checked: R4 excluded (Ghana export-proceeds rule)"
-          : `Norms checked: ${routes.length} routes evaluated`;
+      label = excluded
+        ? `Norms checked: ${text(excluded.routeId)} excluded by ${text(excluded.excludedBy, "policy")}`
+        : `Norms checked: ${routes.length} routes evaluated`;
       break;
     }
     case "risk.scored":
       family = "decision";
       label = `Risk ${number(data.score)} · ${text(data.tier)}`;
+      outcome = text(data.tier) || undefined;
       break;
     case "route.selected":
       family = "decision";
@@ -121,6 +149,7 @@ export function describe(
     case "verification.recorded":
       family = "alert";
       label = text(data.answerText, `Supplier response: ${text(data.result)}`);
+      outcome = text(data.result) || undefined;
       break;
     case "intent.revoked":
       family = "chain";
@@ -150,9 +179,49 @@ export function describe(
       family = "attack";
       label = text(data.description, "Attack attempt started");
       break;
+    case "leg.rejected":
+      family = "attack";
+      label = `Leg ${number(data.hop) + 1} rejected on ${text(data.rail)}: ${text(data.reason)}`;
+      break;
     case "tx.reverted":
       family = "attack";
-      label = `Rejected by the smart contract: ${text(data.reason)}.`;
+      label = `${text(data.function, "Transaction")}() reverted: ${text(data.reason)}`;
+      break;
+    case "rail.down":
+      family = "alert";
+      label = `${text(data.name, text(data.routeId))} unavailable: ${text(data.reason)}`;
+      break;
+    case "rail.up":
+      family = "system";
+      label = `${text(data.name, text(data.routeId))} restored`;
+      break;
+    case "killswitch.on":
+      family = "attack";
+      label = `Kill switch on ${text(data.name, text(data.adapter))}: ${text(data.reason)}`;
+      break;
+    case "guardian.incident":
+      family = "attack";
+      label = `${text(data.headline, "Guardian incident")} · ${text(data.incidentId)}`;
+      break;
+    case "traffic.sample":
+      family = "system";
+      label = text(data.text, "Network traffic sample received");
+      break;
+    case "cluster.detected":
+      family = "alert";
+      label = `Sample cluster ${text(data.clusterId)} · ${number(data.accounts)} accounts · ${number(data.agents)} agents`;
+      break;
+    case "breaker.on":
+      family = "alert";
+      label = text(data.text, `Circuit breaker ${text(data.breakerId)} enabled`);
+      break;
+    case "breaker.off":
+      family = "system";
+      label = `Circuit breaker ${text(data.breakerId)} ${text(data.reason).toLowerCase()}`;
+      break;
+    case "alert.raised":
+      family = "alert";
+      label = `${text(data.channel)} alert to ${text(data.to)}: ${text(data.text)}`;
       break;
   }
 
@@ -162,5 +231,9 @@ export function describe(
     text: label,
     ...(txHash ? { txHash } : {}),
     ...(explorerUrl !== undefined ? { explorerUrl } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(typeof data.function === "string" ? { functionName: data.function } : {}),
+    ...(typeof data.reason === "string" ? { reasonCode: data.reason } : {}),
+    ...(typeof data.incidentId === "string" ? { incidentId: data.incidentId } : {}),
   };
 }
