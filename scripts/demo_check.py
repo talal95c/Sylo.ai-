@@ -39,7 +39,7 @@ DENIED = HELD + ["verification.recorded"] + REVOKED
 CONFIRMED = HELD + ["verification.recorded", "escrow.released", "intent.executed", "leg.settled", "leg.sent", "leg.settled", "payment.credited"]
 SIM_SWAPPED = HELD + REVOKED
 # Not part of the story line: asked more than once, told to people, or written by a (possibly slow) case writer.
-SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up", "clock.advanced"}
+SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up", "clock.advanced", "confidential.transfer"}
 
 
 class CheckFailed(Exception):
@@ -124,10 +124,15 @@ def no_email(events: list[dict[str, Any]]) -> None:
             expect(event["data"]["channel"] in ("IN_APP", "SMS", "NETWORK"), f"an alert used {event['data']['channel']}")
 
 
-def check_legit(engine: Engine, speed: float) -> str:
+def check_legit(engine: Engine, speed: float, mode: dict[str, Any]) -> str:
     events = run_scenario(engine, "legit", speed, "payment.credited")
     expect_story(events, LEGIT)
     expect(first(events, "risk.scored")["tier"] == "LOW", "the legitimate payment is not LOW")
+    confidential = [e["data"] for e in events if e["type"] == "confidential.transfer"]
+    if mode.get("confidential", "off") != "off" and "confidential" not in mode["degraded"]:
+        expect(len(confidential) == 1 and confidential[0]["auditorMatches"], "the chain leg was not a matching confidential transfer")
+    else:
+        expect(not confidential, "a confidential transfer was made although the mode is off")
     routes = {r["routeId"]: r for r in first(events, "norms.checked")["routes"]}
     expect(routes["R4"]["excludedBy"] == "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK", "R4 is not excluded by Ghana's rule")
     selected = first(events, "route.selected")
@@ -368,12 +373,15 @@ def main(argv: list[str] | None = None) -> int:
             process, url = spawn_engine()
         engine = Engine(url, args.timeout)
         mode = engine.get("/health")["mode"]
-        flags = f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']} clusters={mode.get('clusters', '?')}"
+        flags = (
+            f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']} clusters={mode.get('clusters', '?')} "
+            f"confidential={mode.get('confidential', 'off')}"
+        )
         print(f"engine {url}: {flags} degraded={mode['degraded'] or 'nothing'}")
 
         diverted = "PAY-2026-0002"
         steps = [
-            ("Scene 1  legitimate payment", lambda: check_legit(engine, args.speed)),
+            ("Scene 1  legitimate payment", lambda: check_legit(engine, args.speed, mode)),
             ("Scene 2  diverted, supplier denies", lambda: check_denied(engine, args.speed)),
             ("Scene 2b three attacks", lambda: check_attacks(engine, diverted)),
             ("Proof    typed data, signatures, log", lambda: check_proof(engine, diverted)),
