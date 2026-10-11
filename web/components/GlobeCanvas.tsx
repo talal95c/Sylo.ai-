@@ -223,11 +223,21 @@ export default function GlobeCanvas({
   const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
   const [cache] = useState(() => new Map<string, object>());
   const speedRef = useRef(speed);
+  const cameraTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const processedCameraSeqRef = useRef<number | null>(null);
   const lastZoomUpdateRef = useRef(0);
 
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
+
+  useEffect(
+    () => () => {
+      cameraTimersRef.current.forEach(clearTimeout);
+      cameraTimersRef.current.clear();
+    },
+    [],
+  );
 
   const material = useMemo(
     () =>
@@ -847,9 +857,15 @@ export default function GlobeCanvas({
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
+    if (lastEvent?.type === "scenario.started" || lastEvent?.type === "session.reset") {
+      cameraTimersRef.current.forEach(clearTimeout);
+      cameraTimersRef.current.clear();
+    }
+    if (lastEvent && processedCameraSeqRef.current === lastEvent.seq) return;
     const controls = globe.controls() as unknown as { autoRotate: boolean; autoRotateSpeed: number };
     if (!lastEvent || lastEvent.type === "session.reset") {
       controls.autoRotate = false;
+      if (lastEvent) processedCameraSeqRef.current = lastEvent.seq;
       const fit = altitudeFactor(freeRectRef.current, width, height);
       globe.pointOfView(
         { ...CAMERA_VIEWS.corridor, altitude: CAMERA_VIEWS.corridor.altitude * fit },
@@ -857,12 +873,18 @@ export default function GlobeCanvas({
       );
       return;
     }
+    if (!institutions) return;
+    processedCameraSeqRef.current = lastEvent.seq;
     if (!state.scenario) return;
     controls.autoRotate = false;
-    const timers: ReturnType<typeof setTimeout>[] = [];
     const ms = (value: number) => (reducedMotion ? 0 : value);
     const schedule = (delay: number, callback: () => void) => {
-      timers.push(setTimeout(callback, ms(delay)));
+      let timer: ReturnType<typeof setTimeout>;
+      timer = setTimeout(() => {
+        cameraTimersRef.current.delete(timer);
+        callback();
+      }, ms(delay));
+      cameraTimersRef.current.add(timer);
     };
     const pov = (target: { lat: number; lng: number; altitude: number }, duration: number) => {
       const fit = altitudeFactor(freeRectRef.current, width, height);
@@ -989,9 +1011,6 @@ export default function GlobeCanvas({
         pullBack(4000);
         break;
     }
-    return () => {
-      timers.forEach(clearTimeout);
-    };
   }, [lastEvent, state.scenario, state.wave, state.rails, state.routes, state.selectedRouteId, state.hops, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
 
   // Panel-aware framing: measure the occluders, then tween a camera view
