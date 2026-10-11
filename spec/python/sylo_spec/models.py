@@ -184,6 +184,7 @@ class PairHistory(SpecModel):
     successful_count: int = 0
     median_amount_eur: float | None = None
     payments_24h: int = 0
+    last_account_id: str | None = None
 
 
 class RiskContext(SpecModel):

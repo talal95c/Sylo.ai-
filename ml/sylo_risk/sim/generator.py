@@ -608,6 +608,7 @@ def row_to_order_ctx(row: Any) -> tuple[PaymentOrder, RiskContext]:
     history_count = get("history_count", 0)
     history_median = get("history_median_amount")
     payments_24h = get("pair_payments_24h", 0)
+    last_account_id = get("last_account_id")
     norm_signals = text("norm_signals")
     context = RiskContext(
         payee=payee,
@@ -627,6 +628,11 @@ def row_to_order_ctx(row: Any) -> tuple[PaymentOrder, RiskContext]:
                 None if pd.isna(history_median) else float(history_median)
             ),
             payments_24h=0 if pd.isna(payments_24h) else int(payments_24h),
+            last_account_id=(
+                None
+                if last_account_id is None or pd.isna(last_account_id)
+                else str(last_account_id)
+            ),
         ),
     )
     return order, context
