@@ -117,6 +117,22 @@ export class EngineError extends Error {
   }
 }
 
+async function submitWithTakeover<T>(submit: () => Promise<T>): Promise<T> {
+  try {
+    return await submit();
+  } catch (error) {
+    if (
+      !(error instanceof EngineError) ||
+      error.status !== 409 ||
+      !error.message.includes("a scenario is running")
+    ) {
+      throw error;
+    }
+    await call("/v1/reset", undefined);
+    return submit();
+  }
+}
+
 /** The engine's decision for one payment; recorded quotes remain available offline. */
 export async function fetchQuote(
   order: OrderName,
@@ -149,7 +165,10 @@ export async function fetchQuote(
 }
 
 export function submitPayment(quoteId: string) {
-  return call<{ paymentId: string }>("/v1/payments", { quoteId }, { "Idempotency-Key": `web-${quoteId}` });
+  const headers = { "Idempotency-Key": `web-${quoteId}` };
+  return submitWithTakeover(() =>
+    call<{ paymentId: string }>("/v1/payments", { quoteId }, headers),
+  );
 }
 
 export interface Bank {

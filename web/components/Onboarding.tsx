@@ -4,8 +4,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { cx, ease } from "./ui";
 
-export const ONBOARDING_KEY = "sylo.onboarding.v1";
-
 interface Step {
   target: string | null;
   eyebrow: string;
@@ -94,9 +92,6 @@ export function Onboarding({
   const last = index === STEPS.length - 1;
 
   const finish = useCallback(() => {
-    try {
-      window.localStorage.setItem(ONBOARDING_KEY, "done");
-    } catch {}
     setIndex(0);
     onClose();
   }, [onClose]);
@@ -150,7 +145,7 @@ export function Onboarding({
           aria-modal="true"
           aria-labelledby="onboarding-title"
         >
-          <svg className="absolute inset-0 h-full w-full" aria-hidden onClick={finish}>
+          <svg className="absolute inset-0 h-full w-full" aria-hidden>
             <defs>
               <mask id="onboarding-mask">
                 <rect width="100%" height="100%" fill="white" />
@@ -200,6 +195,14 @@ export function Onboarding({
                     {step.title}
                   </h2>
                   <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-2">{step.body}</p>
+                  {index === 0 ? (
+                    <div className="mt-3 flex items-start gap-2 rounded-[12px] bg-[var(--surface-2)] px-3 py-2 text-[11.5px] leading-snug text-ink-2">
+                      <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+                      <span>
+                        <span className="font-medium text-ink">Mentors, please don&apos;t skip.</span> Five short steps, about 30 seconds.
+                      </span>
+                    </div>
+                  ) : null}
                   {last ? (
                     <div className="mt-3.5 grid grid-cols-2 gap-2">
                       <button
@@ -277,12 +280,4 @@ export function Onboarding({
       ) : null}
     </AnimatePresence>
   );
-}
-
-export function onboardingSeen() {
-  try {
-    return window.localStorage.getItem(ONBOARDING_KEY) === "done";
-  } catch {
-    return true;
-  }
 }

@@ -13,7 +13,7 @@ import { EventFeed } from "./EventFeed";
 import { FlowGraph } from "./FlowGraph";
 import GlobeStage from "./GlobeStage";
 import { IncidentDrawer } from "./IncidentDrawer";
-import { Onboarding, onboardingSeen } from "./Onboarding";
+import { Onboarding } from "./Onboarding";
 import { PaymentCard } from "./PaymentCard";
 import { StatusBanner } from "./StatusBanner";
 import { TopBar, type DemoView } from "./TopBar";
@@ -69,7 +69,7 @@ export default function SyloApp() {
 
   useEffect(() => {
     const fromTest = new URLSearchParams(window.location.search).has("scene");
-    if (fromTest || onboardingSeen()) return;
+    if (fromTest) return;
     const timer = window.setTimeout(() => setTourOpen(true), 900);
     return () => window.clearTimeout(timer);
   }, []);

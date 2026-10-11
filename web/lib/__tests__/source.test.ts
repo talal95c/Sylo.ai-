@@ -55,17 +55,85 @@ describe("replay scenes", () => {
 });
 describe("live engine errors", () => {
   it("uses a FastAPI detail string", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({ detail: "a payment is already running" }, { status: 409 }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ detail: "a payment is already running" }, { status: 409 }),
     );
+    vi.stubGlobal("fetch", fetchMock);
     const source = createLiveSource("http://engine.test");
 
     await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
       "Engine refused: a payment is already running",
     );
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://engine.test/v1/scenarios/legit/run",
+    ]);
+  });
+
+  it("resets and retries once when a scenario is already running", async () => {
+    const busy = Response.json(
+      { detail: "a scenario is running; wait for it to finish or POST /v1/reset" },
+      { status: 409 },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy)
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("diverted", { speed: 1 })).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://engine.test/v1/scenarios/diverted/run",
+      "http://engine.test/v1/reset",
+      "http://engine.test/v1/scenarios/diverted/run",
+    ]);
+  });
+
+  it("uses the takeover flow for a mule-wave start", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ detail: "a scenario is running" }, { status: 409 }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const source = createLiveSource("http://engine.test");
+
+    await source.runScenario("muleWave", { speed: 1 });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://engine.test/v1/sim/mule-wave",
+      "http://engine.test/v1/reset",
+      "http://engine.test/v1/sim/mule-wave",
+    ]);
+  });
+
+  it("preserves the busy error when the retry is also refused", async () => {
+    const busy = Response.json(
+      { detail: "a scenario is running; wait for it to finish or POST /v1/reset" },
+      { status: 409 },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy)
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        Response.json(
+          { detail: "a scenario is running; wait for it to finish or POST /v1/reset" },
+          { status: 409 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused: a scenario is running; wait for it to finish or POST /v1/reset",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("uses the first FastAPI validation message", async () => {
