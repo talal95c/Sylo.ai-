@@ -7,6 +7,8 @@ import { cx, ease, euros } from "./ui";
 
 export function RouteQuote({ state }: { state: ViewState }) {
   const quote = buildQuote(state);
+  const status = state.payment?.status;
+  const notPaid = status === "stopped" ? "Stopped · not paid" : status === "held" || status === "frozen" || status === "awaiting_supplier" ? "On hold · not paid yet" : null;
   return (
     <AnimatePresence initial={false}>
       {quote ? (
@@ -21,13 +23,13 @@ export function RouteQuote({ state }: { state: ViewState }) {
           <div className="mt-2 rounded-[14px] border border-[var(--line)] bg-[var(--surface-2)] p-3" aria-label="Route quote">
             <div className="flex items-center justify-between">
               <span className="text-[10.5px] font-medium text-ink-2">Quote · {quote.routeId}</span>
-              <span className="rounded-full border border-[var(--line)] bg-white px-2 py-0.5 text-[9px] text-ink-3">Simulated rates</span>
+              <span className={cx("rounded-full border px-2 py-0.5 text-[9px]", notPaid ? "border-[var(--danger)] text-[var(--danger)]" : "border-[var(--line)] bg-white text-ink-3")}>{notPaid ?? "Simulated rates"}</span>
             </div>
 
             <dl className="mt-2 space-y-1 text-[11.5px]">
               <QuoteLine label="You send" value={euros(quote.amountEur)} />
               {quote.recipientGetsGhs !== undefined ? (
-                <QuoteLine label="Supplier gets" value={cedis(quote.recipientGetsGhs)} detail={quote.midRateEurGhs ? `mid rate ${quote.midRateEurGhs}` : undefined} strong />
+                <QuoteLine label={notPaid ? "Supplier would get" : "Supplier gets"} value={cedis(quote.recipientGetsGhs)} detail={quote.midRateEurGhs ? `mid rate ${quote.midRateEurGhs}` : undefined} strong />
               ) : null}
               <QuoteLine
                 label={quote.basis === "cash" ? "Fees + FX margin" : "All-in cost"}
@@ -37,7 +39,7 @@ export function RouteQuote({ state }: { state: ViewState }) {
               <QuoteLine label="Arrives" value={quote.etaLabel} detail="estimate" />
             </dl>
 
-            {quote.swift && quote.savedEur !== undefined ? <Savings quote={quote} /> : null}
+            {!notPaid && quote.swift && quote.savedEur !== undefined ? <Savings quote={quote} /> : null}
 
             <RouteRows quote={quote} />
 
@@ -119,12 +121,12 @@ function RouteRows({ quote }: { quote: QuoteView }) {
             "grid grid-cols-[22px_minmax(0,1fr)_56px_64px] items-baseline gap-1.5 rounded-md px-1 py-1 text-[10.5px]",
             row.chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2",
           )}
-          title={row.excluded ? `Excluded: ${row.excludedBy ?? "not allowed"}` : undefined}
+          title={row.excluded ? `Excluded by ${row.excludedBy ?? "policy"}` : undefined}
         >
           <span className={cx("font-mono text-[9.5px]", row.chosen ? "text-accent" : "text-ink-3")}>{row.routeId}</span>
           <span className="min-w-0">
             <span className={cx("block truncate", row.excluded ? "text-ink-3 line-through decoration-[rgba(0,0,0,.25)]" : row.chosen && "font-medium")}>{row.name}</span>
-            {row.excluded ? <span className="block truncate text-[9px] text-[var(--danger)]">{row.excludedBy ?? "Excluded"}</span> : null}
+            {row.excluded ? <span className="block text-[9px] leading-snug text-[var(--danger)]">{exclusionLabel(row.excludedBy)}</span> : null}
           </span>
           <span className="text-right tabular-nums">{row.etaLabel ?? "—"}</span>
           <span className={cx("text-right tabular-nums", row.excluded && "text-ink-3")}>{row.cost !== undefined ? euros(Math.round(row.cost)) : "—"}</span>
@@ -132,4 +134,12 @@ function RouteRows({ quote }: { quote: QuoteView }) {
       ))}
     </div>
   );
+}
+
+export function exclusionLabel(ruleId?: string | null) {
+  if (!ruleId) return "Excluded";
+  const words = ruleId.split("_").filter(Boolean);
+  const [country, ...rest] = words;
+  const text = rest.join(" ").toLowerCase();
+  return country && country.length === 2 ? `${country} rule: ${text}` : words.join(" ").toLowerCase();
 }
