@@ -23,7 +23,7 @@ Flags in `.env` (the banner shows what is really running):
 | `LLM_MODE` | `cached` (rehearsed 11 Oct: the scene 2 case file shows `llm: cached`, the reviewed Mistral text) | `off`: the case file is built from the rules |
 | `HUMAN_STEPS` | `manual` once the payer panel and the analyst drawer call the API | `auto`: the engine plays the approvals and the analyst |
 | `CONFIDENTIAL_MODE` | `eerc` with Lane C's service running (`cd chain/eerc && node src/server.mjs`): the chain leg of Scene 1 is a real eERC confidential transfer from the float, about 10 s | `simulated`: same event, labelled simulated. `off`: public leg, eERC stays on its slide |
-| `CLUSTER_MODE` | `auto`: Lane B's detector finds the cluster of Scene 3 | `sample`, or the package is missing: the sample cluster near Aflao is shown; say "sample cluster" |
+| `CLUSTER_MODE` | `auto`: Lane B's detector finds the cluster of Scene 3 | `auto` with missing detector: the sample near Aflao is shown with an amber `clusters` banner; `sample`: force the sample without degraded status |
 | `DEMO_SPEED` | `1` | `2` if the slot is short |
 
 On macOS the model needs the OpenMP library (`brew install libomp`). Without it the engine starts with the rules, made stricter, and the banner says `risk` is degraded.
