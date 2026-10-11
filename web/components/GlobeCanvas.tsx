@@ -614,7 +614,7 @@ export default function GlobeCanvas({
           altitude: 0.015,
           className: "globe-label globe-label-breaker",
           preferredSide: "below",
-          html: `<span class="globe-label-connector"></span><span class="globe-label-pill globe-label-breaker-pill"><span class="globe-label-name globe-label-breaker-name">${escapeHtml(label)}</span></span>`,
+          html: `<span class="globe-label-connector"></span><span class="globe-label-pill globe-label-breaker-pill" style="max-width:none"><span class="globe-label-name globe-label-breaker-name" style="max-width:none;overflow:visible;text-overflow:clip;white-space:nowrap">${escapeHtml(label)}</span></span>`,
         })),
       );
     }
