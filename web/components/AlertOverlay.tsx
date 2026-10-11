@@ -71,7 +71,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-[92px] z-20 flex justify-center px-4">
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         {showHeld && held ? (
           <motion.section
             key="held"
@@ -150,11 +150,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
               </AnimatePresence>
             </div>
           </motion.section>
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence mode="wait">
-        {showOutcome ? (
+        ) : showOutcome ? (
           <motion.section
             key={`outcome-${status}`}
             role="status"
@@ -198,6 +194,13 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
 
 function creditedHeadline(state: ViewState) {
   const quote = buildQuote(state);
+  const reroutedFromAvalanche = quote?.rows.some(
+    (row) => row.routeId === "R3" && row.excludedBy === "RAIL_DOWN",
+  );
+  if (quote?.routeId === "R1" && reroutedFromAvalanche) {
+    const cost = state.credited?.routeCostEur ?? quote.cost;
+    return `Rerouted to SWIFT: Avalanche rail was down${cost !== undefined ? ` · ${euros(cost)} all-in` : ""}`;
+  }
   if (quote?.savedEur !== undefined && quote.savedEur > 0) {
     return `Credited · saved ${euros(quote.savedEur)} vs SWIFT${quote.savedPct !== undefined ? ` (${pct(quote.savedPct)})` : ""}`;
   }
