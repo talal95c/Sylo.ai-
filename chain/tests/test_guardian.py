@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from conftest import AnvilDeployment, commit, confirm, make_intent
+from sylo_chain import guardian as guardian_module
 from sylo_chain.envfile import load_env_file
 from sylo_chain.guardian import EngineRecords, EngineUnavailable, Guardian
 from sylo_chain.stolen_verifier_key import forge_confirmation, try_release
@@ -102,6 +103,113 @@ def test_leaves_a_confirmation_the_engine_signed_alone(anvil: AnvilDeployment) -
     assert guardian.poll_once() == []
     engine.release(intent.payment_id)
     assert guardian.poll_once() == [] and records.posted == []
+
+
+def test_custom_payment_confirmation_is_resolved_from_engine_records(
+    anvil: AnvilDeployment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    intent = held_payment(anvil)
+    engine = anvil.chain()
+    custom_payment_id = "PAY-2026-1001"
+    attestation = VerificationAttestation(
+        payment_id=intent.payment_id,
+        intent_hash=to_hex(digest(intent, engine.domain())),
+        method=int(VerificationMethod.OOB_KNOWN_CONTACT),
+        result=int(VerificationResult.CONFIRMED),
+        sim_swap_checked=True,
+        evidence_hash=hash_record({"paymentId": custom_payment_id, "answer": "confirm"}),
+        verified_at=int(time.time()),
+        nonce=int.from_bytes(os.urandom(7), "big"),
+    )
+    signed_digest = to_hex(digest(attestation, engine.domain())).lower()
+    records = EngineRecords("http://engine", order_ids=[])
+    guardian = guardian_for(anvil, records)
+
+    class StubResponse:
+        def __init__(self, body: dict[str, Any], status_code: int = 200) -> None:
+            self.body = body
+            self.status_code = status_code
+            self.ok = status_code < 400
+
+        def json(self) -> dict[str, Any]:
+            return self.body
+
+    calls: list[str] = []
+
+    def get(url: str, *, timeout: float) -> StubResponse:
+        calls.append(url)
+        if url.endswith("/v1/payments"):
+            return StubResponse(
+                {"payments": [{"paymentId": custom_payment_id, "chainPaymentId": intent.payment_id}]}
+            )
+        if url.endswith(f"/v1/payments/{custom_payment_id}/proof"):
+            return StubResponse(
+                {
+                    "chainPaymentId": intent.payment_id,
+                    "signed": [{"type": "VerificationAttestation", "digest": signed_digest}],
+                }
+            )
+        return StubResponse({"detail": "not found"}, 404)
+
+    monkeypatch.setattr(guardian_module.requests, "get", get)
+    engine.record_verification(attestation, sign(attestation, engine.domain(), dev_key("verifier_signer")))
+
+    assert guardian.poll_once() == []
+    assert records.order_id(intent.payment_id) == custom_payment_id
+    assert not engine.hold(intent.payment_id)["frozen"]
+    assert [url.rsplit("/", 1)[-1] for url in calls] == [
+        "payments",
+        "proof",
+    ]
+
+
+def test_custom_payment_id_refresh_is_throttled_to_once_per_five_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [10.0]
+    requests_seen: list[str] = []
+
+    class Response:
+        ok = True
+
+        def json(self) -> dict[str, Any]:
+            return {"payments": []}
+
+    monkeypatch.setattr(guardian_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        guardian_module.requests,
+        "get",
+        lambda url, *, timeout: requests_seen.append(url) or Response(),
+    )
+    records = EngineRecords("http://engine", order_ids=[])
+
+    assert records.order_id("0x" + "11" * 32) is None
+    assert records.order_id("0x" + "22" * 32) is None
+    clock[0] = 14.9
+    assert records.order_id("0x" + "33" * 32) is None
+    clock[0] = 15.0
+    assert records.order_id("0x" + "44" * 32) is None
+    assert len(requests_seen) == 2
+
+
+def test_post_incident_uses_the_operator_token_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, Any] = {}
+    monkeypatch.setenv("OPERATOR_TOKEN", "example-token")
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    def post(url: str, **kwargs: Any) -> Response:
+        received.update(url=url, **kwargs)
+        return Response()
+
+    monkeypatch.setattr(guardian_module.requests, "post", post)
+    EngineRecords("http://engine").post_incident({"rule": "test"})
+
+    assert received["headers"] == {"X-Sylo-Operator": "example-token"}
 
 
 def test_freezes_when_the_engine_cannot_be_asked(anvil: AnvilDeployment) -> None:
