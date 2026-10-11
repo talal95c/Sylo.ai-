@@ -79,7 +79,12 @@
     { "if": { "properties": { "type": { "const": "payment.credited" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentCredited" } } } },
     { "if": { "properties": { "type": { "const": "payment.stopped" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentStopped" } } } },
     { "if": { "properties": { "type": { "const": "attack.attempted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AttackAttempted" } } } },
-    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } }
+    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } },
+    { "if": { "properties": { "type": { "const": "approval.required" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ApprovalRequired" } } } },
+    { "if": { "properties": { "type": { "const": "leg.rejected" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/LegRejected" } } } },
+    { "if": { "properties": { "type": { "const": "case.ready" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/CaseReady" } } } },
+    { "if": { "properties": { "type": { "const": "case.action" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/CaseAction" } } } },
+    { "if": { "properties": { "type": { "const": "alert.raised" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AlertRaised" } } } }
   ],
   "$defs": {
     "InstitutionId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
@@ -134,7 +139,7 @@
       "required": ["scenario", "speed", "auto"],
       "additionalProperties": true,
       "properties": {
-        "scenario": { "enum": ["legit", "diverted"] },
+        "scenario": { "enum": ["legit", "diverted", "diverted_simswap"] },
         "speed": { "type": "number", "exclusiveMinimum": 0 },
         "auto": { "type": "boolean" }
       }
@@ -343,7 +348,7 @@
         "contactName": { "type": "string" },
         "contactMasked": { "type": "string" },
         "contactSince": { "type": "string" },
-        "channel": { "enum": ["SMS"] },
+        "channel": { "enum": ["SMS", "ANALYST"] },
         "simSwapChecked": { "const": true },
         "simSwapRecent": { "type": "boolean" }
       }
@@ -404,7 +409,7 @@
       "required": ["attack", "description", "by"],
       "additionalProperties": true,
       "properties": {
-        "attack": { "enum": ["release_revoked"] },
+        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay"] },
         "description": { "type": "string" },
         "by": { "const": "attacker" }
       }
@@ -418,6 +423,107 @@
         "reason": { "type": "string" },
         "txHash": { "oneOf": [{ "$ref": "#/$defs/Hash32" }, { "type": "null" }] },
         "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "ApprovalRequired": {
+      "description": "v1. Emitted when the payer must approve, and again after each approval while one is still missing.",
+      "type": "object",
+      "required": ["required", "conditional", "note"],
+      "additionalProperties": true,
+      "properties": {
+        "required": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "additionalProperties": true,
+            "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "role": { "type": "string" } }
+          }
+        },
+        "received": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "role": { "type": "string" },
+              "at": { "$ref": "#/$defs/Timestamp" }
+            }
+          }
+        },
+        "pending": { "type": "array", "items": { "type": "string" } },
+        "method": { "enum": ["SCA", "DUAL_CONTROL"] },
+        "conditional": { "type": "boolean" },
+        "note": { "type": "string" },
+        "warning": { "type": "string" }
+      }
+    },
+    "LegRejected": {
+      "description": "v1. A rail adapter refused a leg before sending it.",
+      "type": "object",
+      "required": ["hop", "rail", "reason"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "rail": { "type": "string" },
+        "reason": {
+          "enum": ["INTENT_HASH_MISMATCH", "NONCE_USED", "REVOKED", "EXPIRED", "NOT_CONFIRMED", "RAIL_DOWN", "KILL_SWITCH"]
+        },
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "text": { "type": "string" }
+      }
+    },
+    "CaseReady": {
+      "description": "v1. The analyst's case file. Every citation points to a rule, a signal or an event of the payment.",
+      "type": "object",
+      "required": ["summary", "citations", "llm"],
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "source"],
+            "additionalProperties": true,
+            "properties": { "ref": { "type": "string" }, "source": { "type": "string" } }
+          }
+        },
+        "explanation": { "type": ["string", "null"] },
+        "reportDraft": { "type": ["string", "null"] },
+        "llm": { "enum": ["off", "cached", "live"] }
+      }
+    },
+    "CaseAction": {
+      "description": "v1. A decision of the analyst on a held payment.",
+      "type": "object",
+      "required": ["action", "by"],
+      "additionalProperties": true,
+      "properties": {
+        "action": { "enum": ["CONFIRM_REVOCATION", "RELEASE", "FREEZE"] },
+        "by": { "type": "string" },
+        "detail": { "type": "string" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "AlertRaised": {
+      "description": "v1. A person or an institution is told something. There is no e-mail channel: payers and suppliers are reached in the app or by SMS.",
+      "type": "object",
+      "required": ["audience", "to", "channel", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "audience": { "enum": ["payer", "supplier", "analyst", "beneficiary_bank"] },
+        "to": { "type": "string" },
+        "channel": { "enum": ["IN_APP", "SMS", "NETWORK"] },
+        "headline": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 },
+        "uetr": { "type": "string" }
       }
     }
   }
