@@ -3,13 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 from sylo_spec import SPEC_DIR
 from sylo_spec.models import CaseFile
 from sylo_spec.ports import CasePort
 
-from sylo_risk.case import CaseWriter, TemplateCaseWriter, TextScreen, validate_case
-from sylo_risk.case.writer import SYSTEM_PROMPT
+from sylo_risk.case import (
+    CaseWriter,
+    TemplateCaseWriter,
+    TextScreen,
+    explain_invalid_case,
+    validate_case,
+)
+from sylo_risk.case.writer import SYSTEM_PROMPT, _allowed_refs
 
 REPO = SPEC_DIR.parent
 
@@ -131,6 +138,265 @@ def test_stricter_action_is_accepted_and_prompt_is_spotlighted(monkeypatch):
     assert "ˆ" in request["messages"][1]["content"]
     assert "<untrusted_document>" in request["messages"][1]["content"]
     assert "Account holder" not in request["messages"][1]["content"]
+    assert request["response_format"]["type"] == "json_schema"
+    assert request["temperature"] == 0
+    assert request["max_tokens"] == 900
+
+
+def _install_responses(monkeypatch, responses):
+    requests = []
+
+    def post(url, **kwargs):
+        requests.append(kwargs)
+        response = responses[len(requests) - 1]
+        if isinstance(response, BaseException):
+            raise response
+        if isinstance(response, dict):
+            return _Response(response)
+        return response
+
+    monkeypatch.setattr("sylo_risk.case.writer.httpx.post", post)
+    return requests
+
+
+class _ContentResponse(_Response):
+    def __init__(self, content):
+        self.content = content
+
+    def json(self):
+        return {"choices": [{"message": {"content": self.content}}]}
+
+
+def test_strict_schema_contains_only_generated_fields_and_request_ref_enums(monkeypatch):
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+    body = template.model_dump(by_alias=True, mode="json")
+    body["recommendedAction"] = "ESCALATE_AML"
+    requests = _install_responses(monkeypatch, [body])
+
+    case = CaseWriter(mode="live", api_key="test-key").write("PAY-2026-0002", events)
+
+    assert case.llm == "live"
+    assert set(requests[0]["json"]["response_format"]) == {"type", "json_schema"}
+    structured = requests[0]["json"]["response_format"]["json_schema"]
+    assert structured["name"] == "sylo_case_file"
+    assert structured["strict"] is True
+    schema = structured["schema"]
+    assert set(schema["properties"]) == {
+        "summary",
+        "sentences",
+        "typology",
+        "recommendedAction",
+        "explanation",
+        "citations",
+    }
+    assert schema["required"] == list(schema["properties"])
+    assert schema["additionalProperties"] is False
+    allowed_refs = _allowed_refs(events, template)
+    sentence_refs = schema["properties"]["sentences"]["items"]["properties"]["refs"]["items"]
+    citation_ref = schema["properties"]["citations"]["items"]["properties"]["ref"]
+    assert sentence_refs["enum"] == allowed_refs
+    assert citation_ref["enum"] == allowed_refs
+    assert schema["properties"]["recommendedAction"]["enum"] == [
+        "NO_ACTION",
+        "RELEASE_AFTER_CONFIRMATION",
+        "CONFIRM_REVOCATION",
+        "ESCALATE_AML",
+    ]
+
+
+def test_invalid_first_response_is_repaired_once_without_repeating_document(monkeypatch):
+    events = scene2_events()
+    screen = TextScreen(mode="off")
+    template = TemplateCaseWriter(
+        documents={"PAY-2026-0002": "PRIVATE-INVOICE-TEXT"},
+        text_screen=screen,
+    ).write("PAY-2026-0002", events)
+    rejected = template.model_dump(by_alias=True, mode="json")
+    rejected["recommendedAction"] = "NO_ACTION"
+    repaired = template.model_dump(by_alias=True, mode="json")
+    repaired["recommendedAction"] = "ESCALATE_AML"
+    requests = _install_responses(monkeypatch, [rejected, repaired])
+    writer = CaseWriter(
+        mode="live",
+        api_key="test-key",
+        documents={"PAY-2026-0002": "PRIVATE-INVOICE-TEXT"},
+        text_screen=screen,
+    )
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "live"
+    assert writer.last_fallback_reason is None
+    assert writer.last_repair is True
+    assert len(requests) == 2
+    retry_messages = requests[1]["json"]["messages"]
+    assert retry_messages[-2] == {
+        "role": "assistant",
+        "content": json.dumps(rejected),
+    }
+    assert retry_messages[-1] == {
+        "role": "user",
+        "content": (
+            "Your previous JSON was rejected: invalid:less_strict_action. "
+            "Return corrected JSON only."
+        ),
+    }
+    assert "PRIVATE-INVOICE-TEXT" not in retry_messages[-1]["content"]
+    assert "untrusted_document" not in retry_messages[-1]["content"]
+    assert all(request["timeout"] <= writer.timeout for request in requests)
+
+
+def test_invalid_twice_falls_back_with_final_reason(monkeypatch):
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+    rejected = template.model_dump(by_alias=True, mode="json")
+    rejected["recommendedAction"] = "NO_ACTION"
+    requests = _install_responses(monkeypatch, [rejected, rejected])
+    writer = CaseWriter(mode="live", api_key="test-key")
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "off"
+    assert writer.last_fallback_reason == "invalid:less_strict_action"
+    assert writer.last_repair is False
+    assert len(requests) == 2
+
+
+def test_parse_error_is_retried_once(monkeypatch):
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+    valid = template.model_dump(by_alias=True, mode="json")
+    valid["recommendedAction"] = "ESCALATE_AML"
+    requests = _install_responses(
+        monkeypatch,
+        [_ContentResponse("not-json"), valid],
+    )
+    writer = CaseWriter(mode="live", api_key="test-key")
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "live"
+    assert writer.last_repair is True
+    assert len(requests) == 2
+    assert requests[1]["json"]["messages"][-1]["content"] == (
+        "Your previous JSON was rejected: parse_error. Return corrected JSON only."
+    )
+
+
+def test_repaired_answer_less_strict_than_template_is_rejected(monkeypatch):
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+    unknown = template.model_dump(by_alias=True, mode="json")
+    unknown["sentences"][0]["refs"] = ["evt-unknown"]
+    unknown["citations"][0].update({"ref": "evt-unknown", "source": "event:evt-unknown"})
+    less_strict = template.model_dump(by_alias=True, mode="json")
+    less_strict["recommendedAction"] = "NO_ACTION"
+    requests = _install_responses(monkeypatch, [unknown, less_strict])
+    writer = CaseWriter(mode="live", api_key="test-key")
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "off"
+    assert writer.last_fallback_reason == "invalid:less_strict_action"
+    assert writer.last_repair is False
+    assert len(requests) == 2
+
+
+def test_timeout_falls_back_without_retry(monkeypatch):
+    events = scene2_events()
+    requests = _install_responses(monkeypatch, [httpx.TimeoutException("timed out")])
+    writer = CaseWriter(mode="live", api_key="test-key")
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "off"
+    assert writer.last_fallback_reason == "timeout"
+    assert writer.last_repair is False
+    assert len(requests) == 1
+
+
+def test_http_error_falls_back_without_retry_and_records_status(monkeypatch):
+    events = scene2_events()
+    response = httpx.Response(
+        400,
+        text="schema rejected",
+        request=httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions"),
+    )
+    error = httpx.HTTPStatusError(
+        "bad request",
+        request=response.request,
+        response=response,
+    )
+    requests = _install_responses(monkeypatch, [error])
+    writer = CaseWriter(mode="live", api_key="test-key")
+
+    case = writer.write("PAY-2026-0002", events)
+
+    assert case.llm == "off"
+    assert writer.last_fallback_reason == "http_400"
+    assert writer.last_http_error_body == "schema rejected"
+    assert len(requests) == 1
+
+
+def test_live_missing_api_key_records_template_fallback(monkeypatch, tmp_path):
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    writer = CaseWriter(mode="live", cache_dir=tmp_path)
+
+    case = writer.write("PAY-2026-0002", scene2_events())
+
+    assert case.llm == "off"
+    assert writer.last_fallback_reason == "no_api_key"
+    assert writer.last_repair is False
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        (lambda value: value.pop("summary"), "missing_field:summary"),
+        (lambda value: value.update({"summary": []}), "invalid_case"),
+        (lambda value: value["sentences"][0].update({"refs": []}), "missing_refs"),
+        (
+            lambda value: value["sentences"][0].update({"refs": ["evt-unknown"]}),
+            "unknown_ref",
+        ),
+        (
+            lambda value: value["citations"].append(value["citations"][0]),
+            "duplicate_citation",
+        ),
+        (lambda value: value["citations"].pop(), "citation_mismatch"),
+        (
+            lambda value: value["citations"][0].update({"source": "unknown"}),
+            "invalid_citation_source",
+        ),
+        (
+            lambda value: value.update({"summary": "Payment amount 987654321."}),
+            "unsupported_claim",
+        ),
+        (
+            lambda value: value.update({"recommendedAction": "NO_ACTION"}),
+            "less_strict_action",
+        ),
+        (
+            lambda value: value.update({"explanation": "word " * 121}),
+            "explanation_too_long",
+        ),
+    ],
+)
+def test_explain_invalid_case_returns_a_reason_code(mutation, reason):
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+    value = template.model_dump(by_alias=True, mode="json")
+    mutation(value)
+
+    assert explain_invalid_case(value, events, template) == reason
+
+
+def test_explain_invalid_case_returns_none_for_valid_output():
+    events = scene2_events()
+    template = TemplateCaseWriter().write("PAY-2026-0002", events)
+
+    assert explain_invalid_case(template, events, template) is None
 
 
 def test_cache_hit_is_revalidated_and_invalid_cache_falls_back(tmp_path):

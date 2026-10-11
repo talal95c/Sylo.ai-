@@ -1,0 +1,211 @@
+{
+  "definition": "levels set on observed aggregate fields; prior-payment history is implied, not simulated as events",
+  "frozen_thresholds": {
+    "precision_target_met": true,
+    "t_high": 0.4510718837561716,
+    "t_med": 0.04457334309526271
+  },
+  "level_definitions": {
+    "E0": "Current seed-B T1 rows, unchanged.",
+    "E1": "E0 plus provenance=verified_registry.",
+    "E2": "E1 plus account_age_days>=90, successful_payments>=3 (aggregate), account not owned by payee, and last_account_id set to the supplier's previous nominated account; history_count is at least 1.",
+    "E3": "E2 plus account owned by payee, last_account_id=account_id, and history_count>=1."
+  },
+  "levels": [
+    {
+      "blocked_share": 0.566,
+      "escrow_share": 0.1985,
+      "level": "E0",
+      "model_only_recall_medium_plus": 0.9295,
+      "n": 2000,
+      "recall_high_plus": 0.7645,
+      "recall_medium_plus": 1.0,
+      "top_fired_rules": [
+        {
+          "count": 2000,
+          "rule_id": "R-PV-01"
+        },
+        {
+          "count": 1522,
+          "rule_id": "R-FL-01"
+        },
+        {
+          "count": 1286,
+          "rule_id": "R-NM-01"
+        },
+        {
+          "count": 982,
+          "rule_id": "R-FL-03"
+        },
+        {
+          "count": 14,
+          "rule_id": "R-FL-02"
+        }
+      ]
+    },
+    {
+      "blocked_share": 0.566,
+      "escrow_share": 0.1985,
+      "level": "E1",
+      "model_only_recall_medium_plus": 0.9295,
+      "n": 2000,
+      "recall_high_plus": 0.7645,
+      "recall_medium_plus": 0.9295,
+      "top_fired_rules": [
+        {
+          "count": 1286,
+          "rule_id": "R-NM-01"
+        },
+        {
+          "count": 982,
+          "rule_id": "R-FL-03"
+        },
+        {
+          "count": 14,
+          "rule_id": "R-FL-02"
+        }
+      ]
+    },
+    {
+      "blocked_share": 0.5545,
+      "escrow_share": 0.1985,
+      "level": "E2",
+      "model_only_recall_medium_plus": 0.9265,
+      "n": 2000,
+      "recall_high_plus": 0.753,
+      "recall_medium_plus": 0.9265,
+      "top_fired_rules": [
+        {
+          "count": 1286,
+          "rule_id": "R-NM-01"
+        },
+        {
+          "count": 982,
+          "rule_id": "R-FL-03"
+        }
+      ]
+    },
+    {
+      "blocked_share": 0.3775,
+      "escrow_share": 0.1375,
+      "level": "E3",
+      "model_only_recall_medium_plus": 0.6735,
+      "n": 2000,
+      "recall_high_plus": 0.515,
+      "recall_medium_plus": 0.755,
+      "shap_reason_method": "counts among each payment's top three positive SHAP feature reasons; not gated by the user-facing score threshold",
+      "top_fired_rules": [
+        {
+          "count": 1286,
+          "rule_id": "R-NM-01"
+        }
+      ],
+      "top_shap_reasons": [
+        {
+          "count": 2000,
+          "example": "Only 3 successful payments on this account",
+          "feature": "log1p_successful_payments",
+          "mean_shap_contribution": 3.3092942733109227,
+          "ref": "B"
+        },
+        {
+          "count": 915,
+          "example": "Payment triggered norm signal R1",
+          "feature": "norm_R1",
+          "mean_shap_contribution": 3.0840714454966673,
+          "ref": "R"
+        },
+        {
+          "count": 901,
+          "example": "Beneficiary account name match score is 60%",
+          "feature": "name_match",
+          "mean_shap_contribution": 4.399037857999207,
+          "ref": "B"
+        },
+        {
+          "count": 807,
+          "example": "Bank account opened 90 days ago",
+          "feature": "log1p_account_age_days",
+          "mean_shap_contribution": 1.2192117316722346,
+          "ref": "B"
+        },
+        {
+          "count": 784,
+          "example": "Invoice sender domain exporter0772-invoice.com resembles registered domain exporter0772.gh",
+          "feature": "domain_lookalike",
+          "mean_shap_contribution": 4.0213970022293015,
+          "ref": "V"
+        }
+      ]
+    }
+  ],
+  "model_version": "gbm-20261011",
+  "n_per_level": 2000,
+  "prevalence_table": {
+    "high_plus": {
+      "false_positives": 125,
+      "fpr": 0.0008417508417508417,
+      "fraud_count": 1500,
+      "legitimate_count": 148500,
+      "method": "metrics.json has no legitimate HIGH+ FPR; replay the existing seed-B synthetic dataset through evaluate._score_engine using the committed model artifacts, then count HIGH+ among fraud and legitimate rows. No retraining.",
+      "rows": [
+        {
+          "legitimate_holds_per_fraud_caught": 0.11281588447653428,
+          "precision": 0.8986212489862125,
+          "prevalence": 0.01
+        },
+        {
+          "legitimate_holds_per_fraud_caught": 1.1384148342632097,
+          "precision": 0.4676361124966428,
+          "prevalence": 0.001
+        },
+        {
+          "legitimate_holds_per_fraud_caught": 11.394404332129964,
+          "precision": 0.080681569941018,
+          "prevalence": 0.0001
+        }
+      ],
+      "source_paths": {
+        "fpr": "ml/sylo_risk/evasion.py::_high_plus_rates: seed-B legitimate labels and frozen `_score_engine` tier output",
+        "population": "ml/reports/metrics.json#/evaluationRows/B",
+        "tpr": "ml/sylo_risk/evasion.py::_high_plus_rates: seed-B labels and frozen `_score_engine` tier output"
+      },
+      "tpr": 0.7386666666666667,
+      "true_positives": 1108
+    },
+    "medium_plus": {
+      "fpr": 0.06722558922558923,
+      "rows": [
+        {
+          "legitimate_holds_per_fraud_caught": 6.781929347826088,
+          "precision": 0.12850283718900044,
+          "prevalence": 0.01
+        },
+        {
+          "legitimate_holds_per_fraud_caught": 68.43583250988142,
+          "precision": 0.014401785992235202,
+          "prevalence": 0.001
+        },
+        {
+          "legitimate_holds_per_fraud_caught": 684.9748641304348,
+          "precision": 0.0014577793623205629,
+          "prevalence": 0.0001
+        }
+      ],
+      "source_paths": {
+        "fpr": "ml/reports/metrics.json#/metrics/fprMediumPlus",
+        "tpr": "ml/reports/metrics.json#/metrics/recallAll"
+      },
+      "tpr": 0.9813333333333333
+    },
+    "method": "precision = TPR*pi / (TPR*pi + FPR*(1-pi)); legitimate holds per fraud caught = FPR*(1-pi) / (TPR*pi)"
+  },
+  "sampling": {
+    "method": "deterministic bootstrap with replacement",
+    "sampler_seed": 21261005,
+    "source": "seed-B simulator T1 rows",
+    "source_t1_count": 450
+  },
+  "seed": "B",
+  "seed_value": 20261002
+}

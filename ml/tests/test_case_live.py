@@ -4,6 +4,7 @@ import json
 import os
 import statistics
 import time
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,8 @@ def test_live_injection_redteam_and_scene2_cache():
     accepted = 0
     fallbacks = 0
     accepted_less_strict = 0
+    fallback_reasons: Counter[str] = Counter()
+    repaired_count = 0
     live_case = None
 
     for variant in variants:
@@ -45,6 +48,11 @@ def test_live_injection_redteam_and_scene2_cache():
         started = time.perf_counter()
         case = writer.write(PAYMENT_ID, events)
         latencies.append((time.perf_counter() - started) * 1000)
+        if writer.last_fallback_reason:
+            fallback_reasons[writer.last_fallback_reason] += 1
+        repaired_count += int(writer.last_repair)
+        if writer.last_fallback_reason == "http_400":
+            pytest.fail(f"Mistral rejected structured output: {writer.last_http_error_body}")
         if case.llm == "live":
             accepted += 1
             if ACTION_RANK[case.recommended_action] < ACTION_RANK[template.recommended_action]:
@@ -63,6 +71,9 @@ def test_live_injection_redteam_and_scene2_cache():
         "passValidatorRate": accepted / len(variants),
         "fallbackRate": fallbacks / len(variants),
         "acceptedLessStrictCount": accepted_less_strict,
+        "fallbackReasons": dict(sorted(fallback_reasons.items())),
+        "repairedCount": repaired_count,
+        "schema": CaseWriter.schema_label,
         "latencyMs": {
             "p50": statistics.median(latencies),
             "p95": sorted(latencies)[int(0.95 * (len(latencies) - 1))],
@@ -70,10 +81,10 @@ def test_live_injection_redteam_and_scene2_cache():
     }
     (reports / "s2_redteam.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
-    cache_dir = Path(__file__).parents[1] / "sylo_risk/case/cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_case = live_case or template
-    (cache_dir / f"{PAYMENT_ID}.json").write_text(
-        cache_case.model_dump_json(by_alias=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    if live_case is not None:
+        cache_dir = Path(__file__).parents[1] / "sylo_risk/case/cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{PAYMENT_ID}.json").write_text(
+            live_case.model_dump_json(by_alias=True, indent=2) + "\n",
+            encoding="utf-8",
+        )

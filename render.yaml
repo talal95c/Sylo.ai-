@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: sylo-engine
+    name: sylo
     runtime: docker
-    dockerfilePath: ./engine/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
     region: frankfurt
@@ -14,6 +14,10 @@ services:
         - ml/**
         - spec/**
         - chain/**
+        - web/**
+        - contracts/deployments/**
+        - Dockerfile
+        - scripts/start-render.sh
         - render.yaml
     envVars:
       - key: RISK_MODE
@@ -24,7 +28,5 @@ services:
         value: cached
       - key: CHAIN_MODE
         value: mock
-      - key: CORS_ORIGINS
-        sync: false
       - key: MISTRAL_API_KEY
         sync: false

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -19,15 +19,19 @@ from .metrics import load_metrics
 from .orchestrator import (
     ATTACKS,
     SCENARIOS,
+    SIM_EVENTS,
     ActionNotAllowed,
     AttackNotApplicable,
     ChainUnavailable,
     NotWaiting,
     Orchestrator,
     ScenarioBusy,
+    UnknownAction,
     UnknownAttack,
     UnknownBreaker,
+    UnknownPayee,
     UnknownPayment,
+    UnknownQuote,
     UnknownRoute,
     UnknownScenario,
     build_orchestrator,
@@ -65,6 +69,52 @@ class WaveBody(BaseModel):
 
 class RailBody(BaseModel):
     reason: str | None = Field(default=None, max_length=200)
+
+
+class QuoteBody(BaseModel):
+    order: Literal["legit", "diverted", "lagos-accra"]
+    amount: str | None = Field(default=None, pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
+
+
+class PaymentBody(BaseModel):
+    """One of ``quoteId`` or ``order``."""
+
+    quoteId: str | None = Field(default=None, max_length=20)
+    order: Literal["legit", "diverted"] | None = None
+    speed: float | None = Field(default=None, gt=0, le=100)
+    auto: bool = False
+    autoAnswer: Literal["confirm", "deny"] = "deny"
+
+
+class VerifyBody(BaseModel):
+    accountId: str = Field(min_length=1, max_length=60)
+    action: Literal["start", "record"] = "start"
+    result: Literal["confirmed", "denied"] | None = None
+
+
+class SimEventBody(BaseModel):
+    type: str = Field(min_length=1, max_length=40)
+    routeId: str | None = Field(default=None, max_length=10)
+    reason: str | None = Field(default=None, max_length=200)
+    paymentId: str | None = Field(default=None, max_length=60)
+    hoursAgo: float | None = Field(default=None, ge=0, le=8760)
+    advanceHours: float | None = Field(default=None, gt=0, le=744)
+    speed: float | None = Field(default=None, gt=0, le=100)
+    auto: bool = False
+
+
+class IntakeBody(BaseModel):
+    text: str = Field(min_length=1, max_length=40_000)
+    senderDomain: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
+
+
+class WebhookBody(BaseModel):
+    idempotencyKey: str = Field(min_length=1, max_length=120)
+    status: str = Field(min_length=1, max_length=20)
+
+
+class ClockBody(BaseModel):
+    advanceHours: float = Field(gt=0, le=744)
 
 
 class IncidentBody(BaseModel):
@@ -220,6 +270,88 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
             return orch(request).rail_up(route_id)
         except UnknownRoute:
             raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
+
+    @app.post("/v1/quotes")
+    async def quote(body: QuoteBody, request: Request) -> dict[str, Any]:
+        return orch(request).quote(body.order, body.amount)
+
+    @app.post("/v1/payments")
+    async def submit_payment(
+        body: PaymentBody, request: Request, idempotency_key: str | None = Header(default=None, max_length=120)
+    ) -> dict[str, Any]:
+        if (body.quoteId is None) == (body.order is None):
+            raise HTTPException(422, "give exactly one of quoteId and order")
+        try:
+            return orch(request).submit(
+                quote_id=body.quoteId,
+                order_name=body.order,
+                speed=body.speed or settings.demo_speed,
+                auto=body.auto,
+                auto_answer=body.autoAnswer,
+                idempotency_key=idempotency_key,
+            )
+        except UnknownQuote:
+            raise HTTPException(404, f"unknown quote {body.quoteId!r}") from None
+        except ActionNotAllowed as err:
+            raise HTTPException(409, str(err)) from None
+        except ScenarioBusy:
+            raise HTTPException(409, "a payment is running; wait for it to finish or POST /v1/reset") from None
+
+    @app.post("/v1/intake")
+    async def intake(body: IntakeBody, request: Request) -> dict[str, Any]:
+        return orch(request).intake(body.text, body.senderDomain)
+
+    @app.get("/v1/cases")
+    async def cases(request: Request) -> dict[str, Any]:
+        return {"cases": orch(request).cases()}
+
+    @app.post("/v1/payees/{payee_id}/verify")
+    async def verify_payee(payee_id: str, body: VerifyBody, request: Request) -> dict[str, Any]:
+        try:
+            if body.action == "start":
+                return orch(request).start_payee_verification(payee_id, body.accountId)
+            if body.result is None:
+                raise HTTPException(422, "action 'record' needs result: 'confirmed' or 'denied'")
+            return orch(request).record_payee_verification(payee_id, body.accountId, body.result.upper())
+        except UnknownPayee as err:
+            raise HTTPException(404, f"unknown payee or account {str(err)!r}") from None
+        except ActionNotAllowed as err:
+            raise HTTPException(409, str(err)) from None
+
+    @app.post("/v1/sim/events")
+    async def sim_event(body: SimEventBody, request: Request) -> dict[str, Any]:
+        try:
+            return await orch(request).sim_event(body.type, body.model_dump(exclude_none=True))
+        except UnknownAction:
+            raise HTTPException(404, f"unknown simulated event {body.type!r}; expected one of {_names(SIM_EVENTS)}") from None
+        except UnknownRoute:
+            raise HTTPException(404, f"unknown route {body.routeId!r}; expected R1, R2, R3 or R4") from None
+        except UnknownPayment:
+            raise HTTPException(404, f"unknown payment {body.paymentId!r}") from None
+        except (AttackNotApplicable, ActionNotAllowed) as err:
+            raise HTTPException(409, str(err)) from None
+        except ScenarioBusy:
+            raise HTTPException(409, "a scenario is running; wait for it to finish or POST /v1/reset") from None
+        except ChainUnavailable as err:
+            raise HTTPException(503, f"the chain did not answer during {err.step}") from None
+
+    @app.post("/v1/rails/{route_id}/webhook")
+    async def rail_webhook(route_id: str, body: WebhookBody, request: Request) -> dict[str, Any]:
+        try:
+            return orch(request).rail_webhook(route_id, body.model_dump())
+        except UnknownRoute:
+            raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
+
+    @app.get("/v1/rails/{route_id}/reconcile")
+    async def rail_reconcile(route_id: str, request: Request) -> dict[str, Any]:
+        try:
+            return orch(request).rail_reconcile(route_id)
+        except UnknownRoute:
+            raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
+
+    @app.post("/v1/sim/clock")
+    async def clock(body: ClockBody, request: Request) -> dict[str, Any]:
+        return orch(request).advance_clock(body.advanceHours)
 
     @app.post("/v1/breakers/{breaker_id}/{decision}")
     async def breaker(breaker_id: str, decision: Literal["confirm", "lift"], request: Request) -> dict[str, Any]:
