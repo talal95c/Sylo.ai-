@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
-import { Check, cx, ease, euros, shortHash, Spinner, Tag } from "./ui";
+import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";
 
 type StepState = "pending" | "running" | "done" | "warn" | "fail";
 
@@ -113,23 +113,24 @@ function buildSteps(state: ViewState): Step[] {
 }
 
 function RouteTable({ state }: { state: ViewState }) {
-  const rows: { routeId: string; s: number | null | undefined }[] = state.routeScores.length
+  const rows: { routeId: string; s: number | null | undefined; excludedBy?: string | null }[] = state.routeScores.length
     ? state.routeScores
-    : state.routes.map((route) => ({ routeId: route.routeId, s: route.status === "EXCLUDED" ? null : undefined }));
-  const rank = (s: number | null | undefined) => (typeof s === "number" ? s : s === undefined ? 1e9 : 2e9);
+    : state.routes.map((route) => ({ routeId: route.routeId, s: route.status === "EXCLUDED" ? null : undefined, excludedBy: route.excludedBy }));
+  const rank = (row: (typeof rows)[number]) => row.excludedBy || row.s === null ? 2e9 : typeof row.s === "number" ? row.s : 1e9;
   return (
     <div className="mt-2 space-y-0.5">
       {[...rows]
-        .sort((a, b) => rank(a.s) - rank(b.s))
+        .sort((a, b) => rank(a) - rank(b))
         .map((score) => {
           const route = state.routes.find((candidate) => candidate.routeId === score.routeId);
           const chosen = score.routeId === state.selectedRouteId;
-          const excluded = score.s === null;
+          const excluded = score.s === null || Boolean(score.excludedBy);
+          const exclusion = score.excludedBy ?? route?.excludedBy ?? "Excluded";
           return (
             <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[10.5px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
               <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
               <span className={excluded ? "text-ink-3 line-through decoration-[rgba(0,0,0,.25)]" : chosen ? "font-medium" : ""}>{route?.name ?? score.routeId}</span>
-              <span className={cx("tabular-nums", excluded && "text-[var(--danger)]")}>{excluded ? "excluded" : typeof score.s === "number" ? euros(score.s) : "—"}</span>
+              <span className={cx("max-w-24 truncate tabular-nums", excluded && "text-[var(--danger)]")} title={excluded ? exclusion : undefined}>{excluded ? exclusion : typeof score.s === "number" ? euros(score.s) : "—"}</span>
             </div>
           );
         })}
@@ -159,29 +160,48 @@ function decisionSummary(state: ViewState) {
   if (status === "deciding") return { title: "Decision in progress", detail: "The engine is evaluating legal routes and fraud controls.", color: "var(--accent)" };
   if (status === "in_transit") return { title: "Payment released", detail: "The approved payment is following its signed route.", color: "var(--accent)" };
   if (status === "held" || status === "awaiting_supplier") return { title: "Conditional hold active", detail: "Funds remain protected while the known-contact check is completed.", color: "var(--medium)" };
+  if (status === "frozen") return { title: "Guardian freeze active", detail: state.incident?.headline ?? "The payment is frozen and the corridor is paused.", color: "var(--danger)" };
   if (status === "stopped") return { title: "Payment stopped", detail: "The intent was revoked and the funds were returned to the payer.", color: "var(--danger)" };
   if (status === "credited") return { title: "Payment cleared", detail: "The supplier was credited through the approved route.", color: "var(--low)" };
   return { title: "Awaiting events", detail: "The panel updates as the engine reports each step.", color: "var(--ink-3)" };
 }
 
-export function DecisionSteps({ state }: { state: ViewState }) {
+export function DecisionSteps({ state, expanded, onExpandedChange }: { state: ViewState; expanded: boolean; onExpandedChange: (expanded: boolean) => void }) {
   const steps = buildSteps(state);
   const completed = steps.filter((step) => step.state === "done" || step.state === "warn" || step.state === "fail").length;
   const summary = decisionSummary(state);
   return (
-    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="shrink-0" panelClassName="overflow-hidden" aria-label="Engine decisions">
-      <div className="flex items-center justify-between px-4 pb-2 pt-4">
-        <Tag index="02">Engine decisions</Tag>
-        <span className="font-mono text-[10px] text-ink-3">{completed}/{steps.length} complete</span>
-      </div>
+    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="shrink-0" panelClassName="overflow-clip" aria-label="Engine decisions">
+      <PanelHeaderButton
+        index="02"
+        title="Engine decisions"
+        meta={`${completed} / ${steps.length} steps`}
+        expanded={expanded}
+        controls="engine-decisions-content"
+        onToggle={() => onExpandedChange(!expanded)}
+        sticky
+      />
 
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            id="engine-decisions-content"
+            key="engine-decisions-content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease }}
+            className="overflow-hidden"
+          >
       <ol className="px-4 py-1">
         {steps.map((step, index) => (
           <motion.li key={step.key} layout="position" className="relative grid grid-cols-[54px_22px_minmax(0,1fr)_auto] items-start gap-2 py-2">
-            {index < steps.length - 1 ? <span className="absolute bottom-[-8px] left-[64px] top-[27px] w-px bg-[var(--line-strong)]" aria-hidden /> : null}
             <time className="pt-0.5 font-mono text-[9.5px] text-ink-3">{step.time}</time>
-            <span className="relative z-[1] grid size-[18px] place-items-center rounded-full border bg-white" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 42%, white)` }}>
-              <AnimatePresence mode="wait" initial={false}><motion.span key={step.state} initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ duration: 0.18 }} className="grid place-items-center"><StepIcon state={step.state} index={index} /></motion.span></AnimatePresence>
+            <span data-timeline-column className="grid w-[22px] self-stretch grid-rows-[18px_minmax(0,1fr)] justify-items-center">
+              <span data-timeline-marker className="relative z-[1] col-start-1 row-start-1 grid size-[18px] place-items-center rounded-full border bg-white" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 42%, white)` }}>
+                <AnimatePresence mode="wait" initial={false}><motion.span key={step.state} initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ duration: 0.18 }} className="grid place-items-center"><StepIcon state={step.state} index={index} /></motion.span></AnimatePresence>
+              </span>
+              {index < steps.length - 1 ? <span data-timeline-line className="col-start-1 row-start-2 h-[calc(100%+16px)] w-px justify-self-center bg-[var(--line-strong)]" aria-hidden /> : null}
             </span>
             <div className="min-w-0">
               <div className={cx("text-[12.5px] font-medium", step.state === "pending" && "text-ink-3")} style={step.state === "running" ? { color: "var(--accent)" } : undefined}>{step.label}</div>
@@ -197,6 +217,9 @@ export function DecisionSteps({ state }: { state: ViewState }) {
         <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {summary.title.toLowerCase()}</div>
         <p className="mt-1 text-[10.5px] leading-relaxed text-ink-2">{summary.detail}</p>
       </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </GlowingShadow>
   );
 }

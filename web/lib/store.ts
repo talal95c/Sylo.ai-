@@ -5,7 +5,11 @@ import type {
   PaymentCreditedData,
   PaymentHeldData,
   CaseReadyData,
+  GuardianIncidentData,
+  KillSwitchData,
+  LegRejectedData,
   PaymentStoppedData,
+  RailDownData,
   SyloEvent,
   Tier,
   VerificationRecordedData,
@@ -20,6 +24,7 @@ export type PaymentStatus =
   | "in_transit"
   | "held"
   | "awaiting_supplier"
+  | "frozen"
   | "stopped"
   | "credited";
 export type HopState = "pending" | "active" | "settled" | "refunded";
@@ -43,6 +48,21 @@ export interface FeedItem {
   txHash?: string;
   explorerUrl?: string | null;
   outcome?: string;
+  functionName?: string;
+  reasonCode?: string;
+  incidentId?: string;
+}
+
+export interface RailView extends RailDownData {
+  simulated: boolean;
+}
+
+export interface IncidentView extends GuardianIncidentData {
+  simulated: boolean;
+}
+
+export interface KillSwitchView extends KillSwitchData {
+  simulated: boolean;
 }
 
 export interface ViewState {
@@ -84,6 +104,10 @@ export interface ViewState {
   hops: HopView[];
   held: PaymentHeldData | null;
   caseFile: CaseReadyData | null;
+  incident: IncidentView | null;
+  rails: Record<string, RailView>;
+  killSwitch: KillSwitchView | null;
+  rejectedLeg: (LegRejectedData & { simulated: boolean }) | null;
   alertOpen: boolean;
   verification: {
     requested?: VerificationRequestedData;
@@ -112,6 +136,10 @@ export const initialState: ViewState = {
   hops: [],
   held: null,
   caseFile: null,
+  incident: null,
+  rails: {},
+  killSwitch: null,
+  rejectedLeg: null,
   alertOpen: false,
   verification: {},
   revoked: false,
@@ -161,8 +189,18 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     return state;
   }
 
-  const isReset = event.type === "session.reset" || event.type === "scenario.started";
-  const base = isReset ? { ...initialState, mode: state.mode } : state;
+  const isSessionReset = event.type === "session.reset";
+  const isScenarioStart = event.type === "scenario.started";
+  const base = isSessionReset
+    ? { ...initialState, mode: state.mode }
+    : isScenarioStart
+      ? {
+          ...initialState,
+          mode: state.mode,
+          rails: state.rails,
+          killSwitch: state.killSwitch,
+        }
+      : state;
   const next: ViewState = {
     ...base,
     lastSeq: event.type === "system.mode" ? state.lastSeq : event.seq,
@@ -296,6 +334,17 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
       };
     case "case.ready":
       return { ...next, caseFile: data as unknown as CaseReadyData };
+    case "guardian.incident": {
+      const incident = data as unknown as GuardianIncidentData;
+      return {
+        ...next,
+        incident: { ...incident, simulated: event.simulated },
+        payment: incident.action.includes("FREEZE")
+          ? paymentWithStatus(next.payment, "frozen")
+          : next.payment,
+        alertOpen: true,
+      };
+    }
     case "verification.requested":
       return {
         ...next,
@@ -350,6 +399,14 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         ...next,
         attack: { ...next.attack, attempted: true },
       };
+    case "leg.rejected":
+      return {
+        ...next,
+        rejectedLeg: {
+          ...(data as unknown as LegRejectedData),
+          simulated: event.simulated,
+        },
+      };
     case "tx.reverted":
       return {
         ...next,
@@ -357,6 +414,34 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
           ...next.attack,
           reverted: true,
           reason: String(data.reason ?? ""),
+        },
+      };
+    case "rail.down": {
+      const rail = data as unknown as RailDownData;
+      return {
+        ...next,
+        rails: {
+          ...next.rails,
+          [rail.routeId]: { ...rail, simulated: event.simulated },
+        },
+      };
+    }
+    case "rail.up": {
+      const routeId = String(data.routeId ?? "");
+      const rails = { ...next.rails };
+      delete rails[routeId];
+      return {
+        ...next,
+        rails,
+        killSwitch: next.killSwitch?.adapter === routeId ? null : next.killSwitch,
+      };
+    }
+    case "killswitch.on":
+      return {
+        ...next,
+        killSwitch: {
+          ...(data as unknown as KillSwitchData),
+          simulated: event.simulated,
         },
       };
     default:
@@ -371,9 +456,14 @@ export function closeAlert(state: ViewState): ViewState {
 export function availableActions(state: ViewState): {
   runLegit: boolean;
   runDiverted: boolean;
+  runMuleWave: boolean;
+  runGuardian: boolean;
+  runOutage: boolean;
   confirm: boolean;
   deny: boolean;
   attack: boolean;
+  swapAttack: boolean;
+  replayAttack: boolean;
   reset: boolean;
 } {
   const canRun =
@@ -385,9 +475,14 @@ export function availableActions(state: ViewState): {
   return {
     runLegit: canRun,
     runDiverted: canRun,
+    runMuleWave: canRun,
+    runGuardian: canRun,
+    runOutage: canRun,
     confirm: awaitingSupplier,
     deny: awaitingSupplier,
     attack: state.revoked && !state.attack.attempted,
+    swapAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
+    replayAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
     reset: true,
   };
 }

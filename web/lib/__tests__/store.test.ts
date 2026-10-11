@@ -18,6 +18,19 @@ function replay(...events: SyloEvent[]) {
   return events.reduce(reduce, initialState);
 }
 
+function synthetic(type: string, data: Record<string, unknown>, seq = 1): SyloEvent {
+  return {
+    v: 1,
+    seq,
+    id: `evt-${String(seq).padStart(6, "0")}`,
+    ts: "2026-10-11T09:00:00.000Z",
+    type,
+    paymentId: null,
+    simulated: true,
+    data,
+  } as SyloEvent;
+}
+
 describe("store reducer", () => {
   it("replays the legitimate payment to credit across five settled hops", () => {
     const state = replay(...fixture("scene1-legit"));
@@ -174,5 +187,61 @@ describe("store reducer", () => {
     expect(available.deny).toBe(true);
     expect(available.runLegit).toBe(false);
     expect(available.runDiverted).toBe(false);
+  });
+
+  it("stores the guardian DORA draft and clears it on reset", () => {
+    const events = fixture("samples-scene4-guardian");
+    const incidentIndex = events.findIndex((event) => event.type === "guardian.incident");
+    const state = replay(...events.slice(0, incidentIndex + 1));
+
+    expect(state.incident?.dora.amountEur).toBe(85000);
+    expect(state.incident?.simulated).toBe(true);
+    expect(state.payment?.status).toBe("frozen");
+
+    const reset = synthetic("session.reset", {}, state.lastSeq + 1);
+    expect(reduce(state, reset).incident).toBeNull();
+  });
+
+  it("tracks a rail outage until the matching rail.up event", () => {
+    const events = fixture("samples-scene5-outage");
+    const downIndex = events.findIndex((event) => event.type === "rail.down");
+    const upIndex = events.findIndex((event) => event.type === "rail.up");
+    const down = replay(...events.slice(0, downIndex + 1));
+
+    expect(down.rails.R3).toMatchObject({ routeId: "R3", simulated: true });
+    expect(replay(...events.slice(0, upIndex + 1)).rails.R3).toBeUndefined();
+  });
+
+  it("keeps a kill switch across scenarios and clears it on session reset", () => {
+    const killed = reduce(initialState, synthetic("killswitch.on", {
+      adapter: "R3",
+      name: "Euro stablecoin on Avalanche",
+      reason: "2 refused legs",
+      refusals: 2,
+      revoked: [],
+    }));
+    const nextScenario = reduce(killed, synthetic("scenario.started", { scenario: "legit", speed: 1, auto: true }, 2));
+
+    expect(nextScenario.killSwitch?.adapter).toBe("R3");
+    expect(reduce(nextScenario, synthetic("session.reset", {}, 3)).killSwitch).toBeNull();
+  });
+
+  it.each([
+    "samples-scene3-mule-wave",
+    "samples-scene4-guardian",
+    "samples-scene5-outage",
+    "scene2b-swap-beneficiary",
+    "scene2b-replay",
+  ])("replays the %s demo fixture without dropping events", (name) => {
+    const events = fixture(name);
+    const state = replay(...events);
+    const lastScenarioIndex = events.findLastIndex(
+      (event) => event.type === "scenario.started",
+    );
+    const visibleEvents = events.slice(Math.max(0, lastScenarioIndex));
+
+    expect(events.length).toBeGreaterThan(0);
+    expect(state.feed).toHaveLength(visibleEvents.length);
+    expect(state.lastSeq).toBe(Math.max(...events.map((event) => event.seq)));
   });
 });

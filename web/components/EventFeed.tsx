@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { outcomeBadge } from "@/lib/feed";
 import type { FeedItem } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
-import { ease, shortHash, Tag } from "./ui";
+import { cx, ease, PanelHeaderButton, shortHash } from "./ui";
 
 type EventTone = "info" | "success" | "warning" | "danger" | "neutral";
 type EventIconName =
@@ -55,6 +55,16 @@ const EVENT_TITLES: Record<string, string> = {
   "payment.stopped": "Payment stopped",
   "attack.attempted": "Unauthorized release attempted",
   "tx.reverted": "Unauthorized transaction rejected",
+  "leg.rejected": "Payment leg rejected",
+  "rail.down": "Payment rail unavailable",
+  "rail.up": "Payment rail restored",
+  "killswitch.on": "Rail kill switch activated",
+  "guardian.incident": "Guardian incident",
+  "traffic.sample": "Network payment observed",
+  "cluster.detected": "Sample mule cluster detected",
+  "breaker.on": "Circuit breaker activated",
+  "breaker.off": "Circuit breaker removed",
+  "alert.raised": "Security alert sent",
 };
 
 const EVENT_ICONS: Record<string, EventIconName> = {
@@ -81,6 +91,16 @@ const EVENT_ICONS: Record<string, EventIconName> = {
   "payment.stopped": "alert",
   "attack.attempted": "alert",
   "tx.reverted": "shield",
+  "leg.rejected": "alert",
+  "rail.down": "alert",
+  "rail.up": "check",
+  "killswitch.on": "lock",
+  "guardian.incident": "shield",
+  "traffic.sample": "route",
+  "cluster.detected": "users",
+  "breaker.on": "shield",
+  "breaker.off": "unlock",
+  "alert.raised": "send",
 };
 
 const SUCCESS_EVENTS = new Set([
@@ -90,6 +110,8 @@ const SUCCESS_EVENTS = new Set([
   "escrow.released",
   "intent.executed",
   "payment.credited",
+  "rail.up",
+  "breaker.off",
 ]);
 const DANGER_EVENTS = new Set([
   "intent.revoked",
@@ -97,17 +119,23 @@ const DANGER_EVENTS = new Set([
   "payment.stopped",
   "attack.attempted",
   "tx.reverted",
+  "leg.rejected",
+  "killswitch.on",
+  "guardian.incident",
 ]);
 const WARNING_EVENTS = new Set([
   "escrow.deposited",
   "payment.held",
   "verification.requested",
+  "rail.down",
+  "breaker.on",
 ]);
 const INFO_EVENTS = new Set([
   "payment.created",
   "route.selected",
   "intent.committed",
   "leg.sent",
+  "traffic.sample",
 ]);
 
 function toneFor(item: FeedItem): EventTone {
@@ -166,6 +194,26 @@ function statusFor(item: FeedItem) {
       return "Fraud";
     case "tx.reverted":
       return "Rejected";
+    case "leg.rejected":
+      return "Blocked";
+    case "rail.down":
+      return "Unavailable";
+    case "rail.up":
+      return "Restored";
+    case "killswitch.on":
+      return "Cut off";
+    case "guardian.incident":
+      return "Frozen";
+    case "traffic.sample":
+      return "Simulated";
+    case "cluster.detected":
+      return "Sample";
+    case "breaker.on":
+      return "Active";
+    case "breaker.off":
+      return "Removed";
+    case "alert.raised":
+      return "Sent";
     default:
       return "Event";
   }
@@ -223,7 +271,7 @@ function EventIcon({ name }: { name: EventIconName }) {
   );
 }
 
-export function EventFeed({ feed }: { feed: FeedItem[] }) {
+export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: { feed: FeedItem[]; expanded: boolean; onExpandedChange: (expanded: boolean) => void; onOpenIncident?: () => void }) {
   const items = [...feed].reverse();
 
   return (
@@ -231,19 +279,30 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
       initial={{ opacity: 0, x: 16 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.7, ease, delay: 0.25 }}
-      className="flex min-h-0 flex-1"
+      layout
+      className={cx("flex min-h-0 w-full", expanded ? "flex-1" : "shrink-0")}
       panelClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
       aria-label="Event feed"
     >
-      <div className="flex shrink-0 items-center justify-between px-4 pb-2.5 pt-4">
-        <Tag index="03">Event feed</Tag>
-        <span className="font-mono text-[10px] tabular-nums text-ink-3">
-          {feed.length} {feed.length === 1 ? "event" : "events"}
-        </span>
-      </div>
+      <PanelHeaderButton
+        index="03"
+        title="Event feed"
+        meta={`${feed.length} ${feed.length === 1 ? "event" : "events"}`}
+        expanded={expanded}
+        controls="event-feed-content"
+        onToggle={() => onExpandedChange(!expanded)}
+      />
 
-      <div
-        className="no-scrollbar min-h-0 flex-1 scroll-smooth overflow-y-auto overscroll-contain px-3.5 pb-4"
+      <AnimatePresence initial={false}>
+        {expanded ? (
+      <motion.div
+        id="event-feed-content"
+        key="event-feed-content"
+        initial={{ height: 0, opacity: 0 }}
+        animate={{ height: "auto", opacity: 1 }}
+        exit={{ height: 0, opacity: 0 }}
+        transition={{ duration: 0.22, ease }}
+        className="thin-scrollbar min-h-0 flex-1 scroll-smooth overflow-x-hidden overflow-y-auto px-3.5 pb-4"
         aria-live="polite"
         aria-relevant="additions"
       >
@@ -303,7 +362,7 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
                   </span>
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-start justify-between gap-2">
-                      <div className="min-w-0 line-clamp-2 text-[11.5px] font-semibold leading-[1.25] text-ink">
+                      <div className="min-w-0 line-clamp-2 text-[11.5px] font-semibold leading-[1.25]" style={{ color: tone === "danger" ? "var(--danger)" : "var(--ink)" }}>
                         {EVENT_TITLES[item.type] ?? item.type}
                       </div>
                       <span
@@ -323,7 +382,7 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
                       {item.txHash ? (
                         <span className="font-mono" title={item.txHash}>
                           {" \u00b7 tx "}
-                          {typeof item.explorerUrl === "string" && /^https?:\/\//.test(item.explorerUrl) ? (
+                          {typeof item.explorerUrl === "string" && /^https:\/\//.test(item.explorerUrl) ? (
                             <a
                               href={item.explorerUrl}
                               target="_blank"
@@ -340,13 +399,20 @@ export function EventFeed({ feed }: { feed: FeedItem[] }) {
                       ) : null}
                       {item.simulated ? <span className="font-mono uppercase">{" \u00b7 simulated"}</span> : null}
                     </p>
+                    {item.type === "guardian.incident" && onOpenIncident ? (
+                      <button type="button" onClick={onOpenIncident} className="mt-1.5 text-[10px] font-medium text-[var(--danger)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--danger)]">
+                        Open DORA draft
+                      </button>
+                    ) : null}
                   </div>
                 </motion.li>
               );
             })}
           </AnimatePresence>
         </ul>
-      </div>
+      </motion.div>
+        ) : null}
+      </AnimatePresence>
     </GlowingShadow>
   );
 }

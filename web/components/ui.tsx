@@ -32,6 +32,50 @@ export function Tag({
   );
 }
 
+export function PanelHeaderButton({
+  index,
+  title,
+  meta,
+  expanded,
+  controls,
+  onToggle,
+  sticky,
+}: {
+  index: string;
+  title: string;
+  meta: string;
+  expanded: boolean;
+  controls: string;
+  onToggle: () => void;
+  sticky?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onToggle}
+      className={cx(
+        "z-10 flex w-full shrink-0 items-center justify-between gap-3 rounded-t-[18px] bg-white px-4 pb-2.5 pt-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+        sticky && "sticky top-0",
+      )}
+    >
+      <Tag index={index}>{title}</Tag>
+      <span className="ml-auto font-mono text-[10px] tabular-nums text-ink-3">{meta}</span>
+      <svg
+        className={cx("shrink-0 text-ink-3 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")}
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        aria-hidden
+      >
+        <path d="m3.5 5.25 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 export function Metric({
   label,
   value,

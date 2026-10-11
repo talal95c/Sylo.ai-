@@ -93,10 +93,9 @@ export function describe(
         const candidate = route as Record<string, unknown>;
         return candidate.status === "EXCLUDED";
       }) as Record<string, unknown> | undefined;
-      label =
-        excluded?.routeId === "R4"
-          ? "Norms checked: R4 excluded (Ghana export-proceeds rule)"
-          : `Norms checked: ${routes.length} routes evaluated`;
+      label = excluded
+        ? `Norms checked: ${text(excluded.routeId)} excluded by ${text(excluded.excludedBy, "policy")}`
+        : `Norms checked: ${routes.length} routes evaluated`;
       break;
     }
     case "risk.scored":
@@ -180,9 +179,49 @@ export function describe(
       family = "attack";
       label = text(data.description, "Attack attempt started");
       break;
+    case "leg.rejected":
+      family = "attack";
+      label = `Leg ${number(data.hop) + 1} rejected on ${text(data.rail)}: ${text(data.reason)}`;
+      break;
     case "tx.reverted":
       family = "attack";
-      label = `Rejected by the smart contract: ${text(data.reason)}.`;
+      label = `${text(data.function, "Transaction")}() reverted: ${text(data.reason)}`;
+      break;
+    case "rail.down":
+      family = "alert";
+      label = `${text(data.name, text(data.routeId))} unavailable: ${text(data.reason)}`;
+      break;
+    case "rail.up":
+      family = "system";
+      label = `${text(data.name, text(data.routeId))} restored`;
+      break;
+    case "killswitch.on":
+      family = "attack";
+      label = `Kill switch on ${text(data.name, text(data.adapter))}: ${text(data.reason)}`;
+      break;
+    case "guardian.incident":
+      family = "attack";
+      label = `${text(data.headline, "Guardian incident")} · ${text(data.incidentId)}`;
+      break;
+    case "traffic.sample":
+      family = "system";
+      label = text(data.text, "Network traffic sample received");
+      break;
+    case "cluster.detected":
+      family = "alert";
+      label = `Sample cluster ${text(data.clusterId)} · ${number(data.accounts)} accounts · ${number(data.agents)} agents`;
+      break;
+    case "breaker.on":
+      family = "alert";
+      label = text(data.text, `Circuit breaker ${text(data.breakerId)} enabled`);
+      break;
+    case "breaker.off":
+      family = "system";
+      label = `Circuit breaker ${text(data.breakerId)} ${text(data.reason).toLowerCase()}`;
+      break;
+    case "alert.raised":
+      family = "alert";
+      label = `${text(data.channel)} alert to ${text(data.to)}: ${text(data.text)}`;
       break;
   }
 
@@ -193,5 +232,8 @@ export function describe(
     ...(txHash ? { txHash } : {}),
     ...(explorerUrl !== undefined ? { explorerUrl } : {}),
     ...(outcome ? { outcome } : {}),
+    ...(typeof data.function === "string" ? { functionName: data.function } : {}),
+    ...(typeof data.reason === "string" ? { reasonCode: data.reason } : {}),
+    ...(typeof data.incidentId === "string" ? { incidentId: data.incidentId } : {}),
   };
 }

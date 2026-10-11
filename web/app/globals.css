@@ -94,11 +94,35 @@ body {
   mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 24px), transparent 100%);
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+.thin-scrollbar {
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
 }
-.no-scrollbar {
-  scrollbar-width: none;
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  background-clip: padding-box;
+}
+.thin-scrollbar:hover::-webkit-scrollbar-thumb,
+.thin-scrollbar::-webkit-scrollbar-thumb:hover,
+.thin-scrollbar::-webkit-scrollbar-thumb:active {
+  background: rgba(0, 0, 0, 0.34);
+  background-clip: padding-box;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .thin-scrollbar {
+    scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 .globe-label {

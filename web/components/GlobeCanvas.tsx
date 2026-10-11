@@ -305,7 +305,8 @@ export default function GlobeCanvas({
 
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
-        const excluded = route.status === "EXCLUDED";
+        const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
+        const excluded = route.status === "EXCLUDED" || unavailable;
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
           push(`${route.routeId}-${index}`, hop.from, hop.to, excluded ? "x" : "eval", {
@@ -397,9 +398,25 @@ export default function GlobeCanvas({
         animateTime: duration,
       });
     }
+
+    for (const route of state.routes) {
+      const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
+      if (!unavailable || route.routeId === state.selectedRouteId) continue;
+      route.hops.forEach((hop, index) => {
+        push(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, "unavailable", {
+          color: rgba(DANGER_COLOR, 0.82),
+          altitude: hop.kind === "chain" ? chainAltitude : null,
+          stroke: 0.45,
+          dashLength: 0.05,
+          dashGap: 0.035,
+          dashInitialGap: 0,
+          animateTime: 0,
+        });
+      });
+    }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.routes, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
+  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
 
   const involved = useMemo(() => {
     const ids = new Set<string>();
@@ -503,7 +520,9 @@ export default function GlobeCanvas({
     }
 
     if (lockPoint && state.held) {
-      const variant = state.attack.reverted
+      const variant = state.incident
+        ? "guardian"
+        : state.attack.reverted
         ? "reverted"
         : state.revoked
           ? "revoked"
@@ -513,7 +532,11 @@ export default function GlobeCanvas({
       const color =
         variant === "released" ? TIER_COLORS.LOW : variant === "held" ? TIER_COLORS.MEDIUM : DANGER_COLOR;
       const caption =
-        variant === "reverted"
+        variant === "guardian"
+          ? state.incident?.action.includes("PAUSE")
+            ? "Corridor FR to GH paused"
+            : "Frozen by the guardian"
+          : variant === "reverted"
           ? "Rejected by the smart contract"
           : variant === "revoked"
             ? state.refunded
@@ -523,11 +546,13 @@ export default function GlobeCanvas({
               ? "Released"
               : "Held in escrow";
       const icon =
-        variant === "reverted"
+        variant === "guardian"
+          ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.4-5 6.5-2.9-1.1-5-3.4-5-6.5v-4L8 1.8Z" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11.5v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
+          : variant === "reverted"
           ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
           : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="${variant === "released" ? "M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" : "M5.5 7V5a2.5 2.5 0 0 1 5 0v2"}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
       list.push(
-        stable("lock", variant + state.refunded, () => ({
+        stable("lock", variant + state.refunded + (state.incident?.incidentId ?? ""), () => ({
           id: "lock",
           lat: lockPoint.lat,
           lng: lockPoint.lng,
@@ -539,7 +564,7 @@ export default function GlobeCanvas({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.incident, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
 
   const handleGlobeZoom = useCallback(
     (pov: { lat: number; lng: number; altitude: number }) => {
