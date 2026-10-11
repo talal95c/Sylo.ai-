@@ -48,6 +48,7 @@ interface DotTrack {
   color: string;
   opacity: number;
   radius: number;
+  taper?: boolean;
 }
 
 interface HtmlDatum {
@@ -161,8 +162,12 @@ function dotTrackObject(datum: object) {
   });
   const mesh = new THREE.InstancedMesh(DOT_GEOMETRY, material, track.points.length);
   const matrix = new THREE.Matrix4();
+  const last = Math.max(1, track.points.length - 1);
   track.points.forEach((point, index) => {
-    matrix.makeScale(track.radius, track.radius, track.radius).setPosition(point);
+    const radius = track.taper
+      ? track.radius * (0.6 + (0.65 * index) / last)
+      : track.radius;
+    matrix.makeScale(radius, radius, radius).setPosition(point);
     mesh.setMatrixAt(index, matrix);
   });
   mesh.instanceMatrix.needsUpdate = true;
@@ -360,18 +365,20 @@ export default function GlobeCanvas({
       fromId: string,
       toId: string,
       altitude: number | null,
-      style: { color: string; opacity: number; radius?: number },
+      style: { color: string; opacity: number; radius?: number; taper?: boolean },
     ) => {
       const from = institutions[fromId];
       const to = institutions[toId];
       if (!from || !to) return;
       const radius = style.radius ?? DOT_RADIUS;
+      const taper = style.taper ?? false;
       tracks.push(
-        stable(`dots-${id}`, `${fromId}>${toId}|${altitude}|${style.color}|${style.opacity}|${radius}`, () => ({
+        stable(`dots-${id}`, `${fromId}>${toId}|${altitude}|${style.color}|${style.opacity}|${radius}|${taper}`, () => ({
           id,
           color: style.color,
           opacity: style.opacity,
           radius,
+          taper,
           points: arcDotPositions(from, to, altitude, DOT_SPACING),
         })),
       );
@@ -380,7 +387,7 @@ export default function GlobeCanvas({
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
         const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
-        const excluded = route.status === "EXCLUDED" || unavailable;
+        const excludedByNorms = route.status === "EXCLUDED";
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
           dots(
@@ -388,7 +395,11 @@ export default function GlobeCanvas({
             hop.from,
             hop.to,
             altitude,
-            excluded ? { color: DANGER_COLOR, opacity: 0.9 } : { color: HOP_COLORS[hop.kind], opacity: 0.5 },
+            unavailable
+              ? { color: DANGER_COLOR, opacity: 0.55 }
+              : excludedByNorms
+                ? { color: "#0a0a0a", opacity: 0.12, radius: DOT_RADIUS * 0.8 }
+                : { color: HOP_COLORS[hop.kind], opacity: 0.35, taper: true },
           );
         });
       }
@@ -402,7 +413,7 @@ export default function GlobeCanvas({
       const duration = reducedMotion ? 0 : hop.durationMs ?? 1400;
 
       if (hop.state === "pending") {
-        dots(base, hop.from, hop.to, altitude, { color: "#0a0a0a", opacity: 0.28, radius: DOT_RADIUS * 0.85 });
+        dots(base, hop.from, hop.to, altitude, { color: "#0a0a0a", opacity: 0.28, radius: DOT_RADIUS * 0.85, taper: true });
         continue;
       }
 
@@ -432,7 +443,7 @@ export default function GlobeCanvas({
         continue;
       }
 
-      dots(base, hop.from, hop.to, altitude, { color: kindColor, opacity: 0.45 });
+      dots(base, hop.from, hop.to, altitude, { color: kindColor, opacity: 0.45, taper: true });
       push(`${base}-comet`, hop.from, hop.to, `comet-${duration}-${state.released}`, {
         color: [rgba(hop.kind === "chain" ? kindColor : ACCENT, 0), hop.kind === "chain" ? kindColor : ACCENT],
         altitude,
@@ -450,7 +461,7 @@ export default function GlobeCanvas({
       route.hops.forEach((hop, index) => {
         dots(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, hop.kind === "chain" ? chainAltitude : null, {
           color: DANGER_COLOR,
-          opacity: 0.9,
+          opacity: 0.55,
         });
       });
     }
@@ -505,7 +516,7 @@ export default function GlobeCanvas({
     const fallbackLabelIds = state.payment
       ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
       : state.routes.length
-        ? ["payer_rhone", "bank_fr", "corr_uk", "casp_eu", "vasp_gh", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
+        ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
         : ["payer_rhone", "supplier_ssx"];
     const payerFocused = ["scenario.started", "route.selected", "payment.stopped"].includes(
       state.lastEvent?.type ?? "",
@@ -514,8 +525,8 @@ export default function GlobeCanvas({
     const labelIds = focusedHop
       ? [
           ...new Set([
-            focusedHop.from,
             focusedHop.to,
+            focusedHop.from,
             ...(payerFocused ? ["payer_rhone"] : []),
             ...(supplierFocused ? ["supplier_ssx"] : []),
           ]),
@@ -712,6 +723,19 @@ export default function GlobeCanvas({
             element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
             rect = pill.getBoundingClientRect();
           }
+        }
+
+        const stillCollides = placed.some(
+          (other) =>
+            rect.left < other.right + 8 &&
+            rect.right > other.left - 8 &&
+            rect.top < other.bottom + 6 &&
+            rect.bottom > other.top - 6,
+        );
+        if (stillCollides) {
+          element.classList.add("panel-hidden");
+          element.style.opacity = "0";
+          continue;
         }
 
         const connectorLength = Math.hypot(shiftX, gap);
