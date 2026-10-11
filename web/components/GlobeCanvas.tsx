@@ -17,6 +17,7 @@ import {
   type OccluderSide,
   type Rect,
 } from "@/lib/globeFrame";
+import { isOnVisibleHemisphere } from "@/lib/globeVisibility";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -705,6 +706,7 @@ export default function GlobeCanvas({
     const layoutLabels = () => {
       const globe = globeRef.current;
       if (!globe) return;
+      const cameraPov = globe.pointOfView();
 
       const free = freeRectRef.current;
       const viewportLeft = free ? free.left : 12;
@@ -728,7 +730,9 @@ export default function GlobeCanvas({
         if (!element || !pill) continue;
 
         const screen = globe.getScreenCoords(label.lat, label.lng, label.altitude);
-        const behindGlobe = element.dataset.globeVisible === "false";
+        const behindGlobe =
+          element.dataset.globeVisible === "false" ||
+          !isOnVisibleHemisphere(label, cameraPov);
         const anchorOutside =
           screen.x < viewportLeft ||
           screen.x > viewportRight ||
