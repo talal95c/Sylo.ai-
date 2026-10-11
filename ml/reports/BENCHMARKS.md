@@ -92,8 +92,8 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 
 | Seed | T3 campaigns detected | Payments-to-detect p50 / p90 | False clusters: original legit / old suppliers / young popular | Isolated-institution detection | Isolated payments-to-detect p50 / p90 | T3 payer fan-in p50 | Runtime |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| B | 30/30 (100.0%) | 7 / 10.1 | 0 / 0 / 30 | 30/30 (100.0%) | 11.5 / 16.1 | 14 | 4.17 s |
-| C | 30/30 (100.0%) | 7.5 / 10.2 | 0 / 0 / 30 | 29/30 (96.7%) | 10 / 15.2 | 15 | 4.43 s |
+| B | 30/30 (100.0%) | 7 / 10.1 | 0 / 0 / 30 | 30/30 (100.0%) | 11.5 / 16.1 | 14 | 4.51 s |
+| C | 30/30 (100.0%) | 7.5 / 10.2 | 0 / 0 / 30 | 29/30 (96.7%) | 10 / 15.2 | 15 | 4.49 s |
 
 The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; the old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
