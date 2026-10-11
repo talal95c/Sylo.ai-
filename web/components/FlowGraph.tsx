@@ -1,8 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { TIER_COLORS } from "@/lib/colors";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { CSS_TIER_COLORS } from "@/lib/colors";
+import { flowGraphScale } from "@/lib/flowGraphScale";
 import {
   edgeStatus,
   FLOW_EDGES,
@@ -124,14 +125,14 @@ function StatusBadge({ status }: { status: FlowStatus }) {
         >
           {status === "running" ? <Spinner size={14} /> : null}
           {status === "waiting" ? (
-            <span className="flex items-center gap-1 text-[10.5px] font-medium text-[var(--medium)]">
+            <span className="flex items-center gap-1 text-[11px] font-medium text-[var(--medium)]">
               <span className="pulse-dot inline-block size-1.5 rounded-full bg-[var(--medium)] text-[var(--medium)]" />
               waiting
             </span>
           ) : null}
           {status === "done" ? <Check size={15} /> : null}
           {status === "warn" ? (
-            <span className="grid size-4 place-items-center rounded-full text-[10px] font-semibold text-white" style={{ background: TIER_COLORS.MEDIUM }}>
+            <span className="grid size-4 place-items-center rounded-full text-[11px] font-semibold text-white" style={{ background: CSS_TIER_COLORS.MEDIUM }}>
               !
             </span>
           ) : null}
@@ -299,17 +300,16 @@ export function FlowGraph({
     setPoints((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
   }, []);
 
-  useLayoutEffect(remeasure);
-
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      setScale(Math.min(1.15, width / CANVAS_W, height / CANVAS_H));
+      setScale(flowGraphScale(width, height, CANVAS_W, CANVAS_H));
+      remeasure();
     });
     observer.observe(frame);
-    document.fonts?.ready.then(remeasure).catch(() => undefined);
+    canvasRef.current?.querySelectorAll("[data-node]").forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [remeasure]);
 
@@ -373,10 +373,10 @@ export function FlowGraph({
         ) : null}
       </div>
 
-      <div ref={frameRef} className="absolute inset-x-6 bottom-[92px] top-[128px] flex items-center justify-center">
+      <div ref={frameRef} className="absolute inset-x-6 bottom-[92px] top-[128px] flex items-start justify-start overflow-auto">
         <div
           ref={canvasRef}
-          className="relative shrink-0"
+          className="relative mx-auto shrink-0"
           style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, transformOrigin: "center" }}
         >
           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={CANVAS_W} height={CANVAS_H} aria-hidden>
@@ -485,7 +485,7 @@ export function FlowGraph({
             handles={<Handle id="risk:top" side="top" tone={handleTone("risk", "top")} />}
           >
             <Group>
-              <Row label="Score" value={state.risk ? `${state.risk.score} · ${state.risk.tier}` : null} tone={state.risk ? TIER_COLORS[state.risk.tier] : undefined} />
+              <Row label="Score" value={state.risk ? `${state.risk.score} · ${state.risk.tier}` : null} tone={state.risk ? CSS_TIER_COLORS[state.risk.tier] : undefined} />
               <Row label="Rules fired" value={state.risk ? String(state.risk.rulesFired.length) : null} />
             </Group>
             <Group>
