@@ -1,0 +1,385 @@
+{
+  "ablations": [
+    {
+      "auc": 0.9768396924803591,
+      "fprMediumPlus": 0.17645791245791245,
+      "recallAll": 0.9086666666666666,
+      "recallAtFpr": 0.9086666666666666,
+      "recallT1Evasive": 1.0,
+      "step": "drop_B"
+    },
+    {
+      "auc": 0.9980778563411897,
+      "fprMediumPlus": 0.17433670033670035,
+      "recallAll": 0.9833333333333333,
+      "recallAtFpr": 0.9833333333333333,
+      "recallT1Evasive": 1.0,
+      "step": "drop_V"
+    },
+    {
+      "auc": 0.9980610909090909,
+      "fprMediumPlus": 0.17414814814814814,
+      "recallAll": 0.9806666666666667,
+      "recallAtFpr": 0.9806666666666667,
+      "recallT1Evasive": 1.0,
+      "step": "drop_P"
+    },
+    {
+      "auc": 0.998025746352413,
+      "fprMediumPlus": 0.17433670033670035,
+      "recallAll": 0.9866666666666667,
+      "recallAtFpr": 0.9866666666666667,
+      "recallT1Evasive": 1.0,
+      "step": "drop_G"
+    },
+    {
+      "auc": 0.9964794567901234,
+      "fprMediumPlus": 0.1742020202020202,
+      "recallAll": 0.9413333333333334,
+      "recallAtFpr": 0.9413333333333334,
+      "recallT1Evasive": 1.0,
+      "step": "drop_H"
+    },
+    {
+      "auc": 0.9971891470258136,
+      "fprMediumPlus": 0.17489562289562288,
+      "recallAll": 0.932,
+      "recallAtFpr": 0.932,
+      "recallT1Evasive": 1.0,
+      "step": "drop_S"
+    },
+    {
+      "auc": 0.9980053782267115,
+      "fprMediumPlus": 0.1739124579124579,
+      "recallAll": 0.9733333333333334,
+      "recallAtFpr": 0.9733333333333334,
+      "recallT1Evasive": 1.0,
+      "step": "drop_R"
+    }
+  ],
+  "baselines": [
+    {
+      "alertBudget": 750,
+      "auc": 0.99497121661055,
+      "diversionRate": 0.00045389985975319264,
+      "fprHardNegatives": 0.6477777777777778,
+      "fprMediumPlus": 0.1753939393939394,
+      "name": "logistic_regression",
+      "precisionAtAlertBudget": 0.708,
+      "precisionHigh": 0.9532710280373832,
+      "recallAll": 0.9433333333333334,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.8246060606060606,
+      "valueStoppedPct": 0.9557912477202408
+    },
+    {
+      "alertBudget": 750,
+      "auc": 0.9662993333333334,
+      "diversionRate": 0.0017497763398646518,
+      "fprHardNegatives": 0.6551111111111111,
+      "fprMediumPlus": 0.177010101010101,
+      "name": "lightgbm_without_B_G",
+      "precisionAtAlertBudget": 0.8066666666666666,
+      "precisionHigh": 0.9547619047619048,
+      "recallAll": 0.86,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.8229898989898989,
+      "valueStoppedPct": 0.8295760020808954
+    },
+    {
+      "alertBudget": 750,
+      "auc": 0.722073490460157,
+      "diversionRate": 0.0036715387614619285,
+      "fprHardNegatives": 0.6475555555555556,
+      "fprMediumPlus": 0.16996632996632996,
+      "name": "rules_only",
+      "precisionAtAlertBudget": 0.04133333333333333,
+      "precisionHigh": 1.0,
+      "recallAll": 0.614,
+      "recallT1": 1.0,
+      "recallT1Evasive": 1.0,
+      "stpRate": 0.83003367003367,
+      "valueStoppedPct": 0.6424009743486989
+    }
+  ],
+  "byTypology": [
+    {
+      "confidenceInterval95": [
+        1.0,
+        1.0
+      ],
+      "count": 450,
+      "recall": 1.0,
+      "typology": "T1"
+    },
+    {
+      "confidenceInterval95": [
+        0.9520260331469294,
+        0.9896211607748011
+      ],
+      "count": 300,
+      "recall": 0.9733333333333334,
+      "typology": "T2"
+    },
+    {
+      "confidenceInterval95": [
+        0.9707975525976814,
+        0.9954444501967281
+      ],
+      "count": 450,
+      "recall": 0.9844444444444445,
+      "typology": "T3"
+    },
+    {
+      "confidenceInterval95": [
+        0.7306367243867244,
+        0.8250930294371719
+      ],
+      "count": 300,
+      "recall": 0.78,
+      "typology": "T4"
+    }
+  ],
+  "dataset": {
+    "days": 30,
+    "payments": 150000,
+    "seedEval": "B",
+    "seedTrain": "A",
+    "synthetic": true
+  },
+  "degraded": [
+    {
+      "fprMediumPlus": 0.16996632996632996,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.722073490460157,
+        "diversionRate": 0.0036715387614619285,
+        "fprHardNegatives": 0.6475555555555556,
+        "fprMediumPlus": 0.16996632996632996,
+        "precisionAtAlertBudget": 0.04133333333333333,
+        "precisionHigh": 1.0,
+        "recallAll": 0.614,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.83003367003367,
+        "valueStoppedPct": 0.6424009743486989
+      },
+      "mode": "model_missing_rules_only",
+      "neverLooser": false,
+      "permissivePct": 0.011746666666666667,
+      "recallAll": 0.614
+    },
+    {
+      "fprMediumPlus": 0.18072053872053873,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.9847206195286194,
+        "diversionRate": 0.0003909830565218032,
+        "fprHardNegatives": 0.6475555555555556,
+        "fprMediumPlus": 0.18072053872053873,
+        "precisionAtAlertBudget": 0.912,
+        "precisionHigh": 0.5954433497536946,
+        "recallAll": 0.8213333333333334,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.8192794612794613,
+        "valueStoppedPct": 0.9619191927030909
+      },
+      "mode": "history_missing",
+      "neverLooser": false,
+      "permissivePct": 0.0041333333333333335,
+      "recallAll": 0.8213333333333334
+    }
+  ],
+  "evaluationRows": {
+    "B": 150000,
+    "C": 150000
+  },
+  "frozenThresholds": {
+    "precision_target_met": true,
+    "t_high": 0.4682277966097679,
+    "t_med": 0.0406830161495367
+  },
+  "generatedAt": "2026-10-11T00:31:09.717054+00:00",
+  "integrity": [
+    {
+      "case": "I1",
+      "count": 100,
+      "refusedPct": 100.0
+    },
+    {
+      "case": "I2",
+      "count": 100,
+      "refusedPct": 100.0
+    },
+    {
+      "case": "I3",
+      "count": 100,
+      "refusedPct": 100.0
+    }
+  ],
+  "limits": [
+    "Data are synthetic and generated by this project.",
+    "Value stopped assumes flagged identity-risk transfers are held until the real supplier denies them out of band.",
+    "Seed C is shifted but uses the same-family generator.",
+    "Latency is measured on this VM, single thread."
+  ],
+  "metrics": {
+    "alertBudget": 750,
+    "auc": 0.9979604130190796,
+    "confidenceIntervals95": {
+      "fprHardNegatives": [
+        0.6344052617072433,
+        0.6617780376227062
+      ],
+      "fprMediumPlus": [
+        0.1710594242380666,
+        0.17491658517251257
+      ],
+      "precisionAtAlertBudget": [
+        0.9853333333333333,
+        0.9986666666666667
+      ],
+      "precisionHigh": [
+        0.9216808628347452,
+        0.9520632897426936
+      ],
+      "recallAll": [
+        0.933331130204891,
+        0.9574330389745278
+      ],
+      "recallT1": [
+        1.0,
+        1.0
+      ],
+      "recallT1Evasive": [
+        1.0,
+        1.0
+      ],
+      "recallT2": [
+        0.9520260331469294,
+        0.9896211607748011
+      ],
+      "recallT3": [
+        0.9707975525976814,
+        0.9954444501967281
+      ],
+      "recallT4": [
+        0.7306367243867244,
+        0.8250930294371719
+      ]
+    },
+    "diversionRate": 0.0001273597864905633,
+    "fprHardNegatives": 0.6475555555555556,
+    "fprMediumPlus": 0.17304377104377106,
+    "precisionAtAlertBudget": 0.9933333333333333,
+    "precisionHigh": 0.9373219373219374,
+    "recallAll": 0.946,
+    "recallT1": 1.0,
+    "recallT1Evasive": 1.0,
+    "stpRate": 0.826956228956229,
+    "ttdP95Ms": 0.7261129499966045,
+    "valueStoppedPct": 0.9875954637782312
+  },
+  "modelVersion": "gbm-20261010",
+  "outOfDistribution": {
+    "alertBudget": 750,
+    "auc": 0.9977145499438833,
+    "byTypology": [
+      {
+        "confidenceInterval95": [
+          1.0,
+          1.0
+        ],
+        "count": 450,
+        "recall": 1.0,
+        "typology": "T1"
+      },
+      {
+        "confidenceInterval95": [
+          0.9785714285714285,
+          1.0
+        ],
+        "count": 300,
+        "recall": 0.99,
+        "typology": "T2"
+      },
+      {
+        "confidenceInterval95": [
+          0.9727005979183583,
+          0.9950983388465411
+        ],
+        "count": 450,
+        "recall": 0.9844444444444445,
+        "typology": "T3"
+      },
+      {
+        "confidenceInterval95": [
+          0.7573723354108836,
+          0.8469780817743533
+        ],
+        "count": 300,
+        "recall": 0.8033333333333333,
+        "typology": "T4"
+      }
+    ],
+    "confidenceIntervals95": {
+      "fprHardNegatives": [
+        0.6317834673738063,
+        0.6580983850423323
+      ],
+      "fprMediumPlus": [
+        0.18813299167888248,
+        0.19216661968350474
+      ],
+      "precisionAtAlertBudget": [
+        0.9306666666666666,
+        0.968
+      ],
+      "precisionHigh": [
+        0.8481042600635552,
+        0.8886235829639875
+      ],
+      "recallAll": [
+        0.9441068025266138,
+        0.9639598556459468
+      ],
+      "recallT1": [
+        1.0,
+        1.0
+      ],
+      "recallT1Evasive": [
+        1.0,
+        1.0
+      ],
+      "recallT2": [
+        0.9785714285714285,
+        1.0
+      ],
+      "recallT3": [
+        0.9727005979183583,
+        0.9950983388465411
+      ],
+      "recallT4": [
+        0.7573723354108836,
+        0.8469780817743533
+      ]
+    },
+    "diversionRate": 9.970944767425643e-05,
+    "fprHardNegatives": 0.6446666666666667,
+    "fprMediumPlus": 0.19005387205387206,
+    "precisionAtAlertBudget": 0.9506666666666667,
+    "precisionHigh": 0.8691756272401434,
+    "recallAll": 0.954,
+    "recallT1": 1.0,
+    "recallT1Evasive": 1.0,
+    "seed": "C",
+    "stpRate": 0.809946127946128,
+    "ttdP95Ms": 0.7161762002169779,
+    "valueStoppedPct": 0.9905152353172647
+  },
+  "runtimeSeconds": 351.671704333,
+  "sample": false
+}
