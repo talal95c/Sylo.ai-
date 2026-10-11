@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { SystemModeData } from "@/lib/events";
 import type { SourceKind } from "@/lib/source";
+import { CORRIDOR_LABEL } from "@/lib/corridor";
 import { cx, Dot, ease } from "./ui";
 
 export type DemoView = "globe" | "nodes";
@@ -229,7 +230,7 @@ export function TopBar({
           <span className="text-[15px] font-semibold tracking-[-0.04em]">Sylo.ai</span>
         </Link>
         <span className="hidden h-4 w-px shrink-0 bg-[var(--line-strong)] sm:block" />
-        <span className="hidden whitespace-nowrap text-[12px] text-ink-2 sm:block">Lyon → Ghana</span>
+        <span className="hidden whitespace-nowrap text-[12px] text-ink-2 sm:block">{CORRIDOR_LABEL}</span>
         <div className="flex h-8 items-center rounded-full bg-[var(--surface-2)] p-1" role="tablist" aria-label="Demo view">
           {(["globe", "nodes"] as const).map((tab) => (
             <button
