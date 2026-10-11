@@ -326,9 +326,13 @@ class ChainPort(Protocol):
     def mark_executed(self, payment_id: bytes, execution_ref: bytes) -> TxRef: ...
     def status(self, payment_id: bytes) -> Status: ...
     def intent_hash(self, payment_id: bytes) -> bytes: ...
+    def freeze(self, payment_id: bytes) -> TxRef: ...         # v1 (C1.0): analyst or guardian
+    def pause_corridor(self, corridor_id: bytes) -> TxRef: ...  # v1 (C1.0): guardian
 ```
 
 - `TxRef = { txHash: str, explorerUrl: str | None, simulated: bool, blockNumber: int | None }`.
+- Explorer links: `explorerUrl = f"{EXPLORER_BASE_URL}/tx/{txHash}"` on Fuji (default `https://testnet.snowtrace.io`); `None` on Anvil and in mock mode.
+- `freeze` and `pause_corridor` make a later `release` revert with `PaymentNotReleasable`; `freeze` without a hold reverts `NoHold`. Tests pause throwaway corridors only: unpausing needs the deployer key.
 - `Eip712Domain = { name, version, chainId, verifyingContract }`.
 - Models use Pydantic v2 with camelCase JSON aliases (`alias_generator=to_camel`, `populate_by_name=True`).
 - `RiskContext = { payee, account, normSignals: list[str], payerSession: { simSwap72h, newDevice24h, country }, nameMatch: float, accountAgeHours: float, amountEur: float }`.
@@ -345,6 +349,8 @@ class ChainPort(Protocol):
 5. MEDIUM intent committed and deposited; DENIED attestation → DENIED; revoke → REVOKED; `release` → `PaymentNotReleasable`; `refund` → succeeds; second `refund` → `AlreadySettled`.
 6. MEDIUM intent committed and deposited; CONFIRMED attestation → `release` succeeds → status EXECUTED.
 7. LOW intent: commit → `mark_executed` → EXECUTED.
+8. (v1) `freeze` without a hold → `NoHold`. MEDIUM intent committed, deposited and CONFIRMED; `freeze` → `release` → `PaymentNotReleasable`, status stays CONFIRMED.
+9. (v1) Same on a throwaway corridor; `pause_corridor` → `release` → `PaymentNotReleasable`, status stays CONFIRMED.
 
 Keys for the tests come from `sylo_spec.devkeys`: the public Anvil accounts of mnemonic `test test test test test test test test test test test junk` (index 0 deployer, 1 relayer, 2 router signer, 3 verifier signer, 4 analyst signer, 5 guardian, 6 EU CASP payer treasury, 7 GH VASP beneficiary, 8 attacker). **These keys are public: use them only in mock and local mode, never fund them on Fuji.**
 
@@ -585,7 +591,7 @@ Confirm branch: `verification.recorded` CONFIRMED (800) → `escrow.released` (1
 - Registry: `ROUTER_SIGNER_ROLE`, `VERIFIER_SIGNER_ROLE`, `ANALYST_SIGNER_ROLE` to the three signer addresses; `EXECUTOR_ROLE` to the escrow contract and to the relayer.
 - Escrow: `ROUTER_ROLE` to the relayer; `ANALYST_ROLE` to the analyst signer; `GUARDIAN_ROLE` to the guardian.
 
-It then mints 10,000,000 tEURC to `EU_CASP_ADDRESS` and writes `deployments/<chainId>.json` with addresses and block numbers. The EU CASP's `approve` of the escrow is a separate script run with the EU CASP key (Lane C, v1). The deploy must run against a local Anvil node (`make anvil-deploy`).
+It then mints 10,000,000 tEURC to `EU_CASP_ADDRESS` and writes `deployments/<chainId>.json` with addresses and block numbers: `{ "chainId": int, "registry": address, "escrow": address, "token": address, "startBlock": int }` (`startBlock` is where log readers start). `deployments/43113.json` (Fuji) is committed; `deployments/31337.json` (Anvil) is git-ignored. The EU CASP's `approve` of the escrow is a separate script run with the EU CASP key (Lane C, v1). The deploy must run against a local Anvil node (`make anvil-deploy`).
 
 ## 7. `/ml` and `/chain` skeletons
 

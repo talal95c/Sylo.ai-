@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
@@ -14,6 +15,7 @@ interface Step {
   state: StepState;
   time: string;
   badge: string;
+  extra?: ReactNode;
 }
 
 const STEP_EVENTS: Record<string, string[]> = {
@@ -59,8 +61,9 @@ function buildSteps(state: ViewState): Step[] {
       key: "route",
       label: "Compliant route selected",
       done: Boolean(state.selectedRouteId),
-      detail: p?.routeName ? `${p.routeId} / ${p.routeName}` : "Cheapest eligible payment rail",
+      detail: p?.routeName ? `${p.routeId} / ${p.routeName}` : "Fraud risk never enters the route score",
       badge: state.selectedRouteId ? "Selected" : undefined,
+      extra: state.routeScores.length || state.routes.length ? <RouteTable state={state} /> : undefined,
     },
     {
       key: "approval",
@@ -105,8 +108,33 @@ function buildSteps(state: ViewState): Step[] {
       value = step.warn && waiting ? "warn" : "running";
     }
     const defaultBadge = value === "running" ? "Processing" : value === "pending" ? "Pending" : value === "warn" ? "Review" : value === "fail" ? "Blocked" : "Complete";
-    return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key), badge: step.badge ?? defaultBadge };
+    return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key), badge: step.badge ?? defaultBadge, extra: step.extra };
   });
+}
+
+function RouteTable({ state }: { state: ViewState }) {
+  const rows: { routeId: string; s: number | null | undefined }[] = state.routeScores.length
+    ? state.routeScores
+    : state.routes.map((route) => ({ routeId: route.routeId, s: route.status === "EXCLUDED" ? null : undefined }));
+  const rank = (s: number | null | undefined) => (typeof s === "number" ? s : s === undefined ? 1e9 : 2e9);
+  return (
+    <div className="mt-2 space-y-0.5">
+      {[...rows]
+        .sort((a, b) => rank(a.s) - rank(b.s))
+        .map((score) => {
+          const route = state.routes.find((candidate) => candidate.routeId === score.routeId);
+          const chosen = score.routeId === state.selectedRouteId;
+          const excluded = score.s === null;
+          return (
+            <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[10.5px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
+              <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
+              <span className={excluded ? "text-ink-3 line-through decoration-[rgba(0,0,0,.25)]" : chosen ? "font-medium" : ""}>{route?.name ?? score.routeId}</span>
+              <span className={cx("tabular-nums", excluded && "text-[var(--danger)]")}>{excluded ? "excluded" : typeof score.s === "number" ? euros(score.s) : "—"}</span>
+            </div>
+          );
+        })}
+    </div>
+  );
 }
 
 const STEP_COLOR: Record<StepState, string> = {
@@ -132,7 +160,8 @@ function decisionSummary(state: ViewState) {
   if (status === "in_transit") return { title: "Payment released", detail: "The approved payment is following its signed route.", color: "var(--accent)" };
   if (status === "held" || status === "awaiting_supplier") return { title: "Conditional hold active", detail: "Funds remain protected while the known-contact check is completed.", color: "var(--medium)" };
   if (status === "stopped") return { title: "Payment stopped", detail: "The intent was revoked and the funds were returned to the payer.", color: "var(--danger)" };
-  return { title: "Payment cleared", detail: "The supplier was credited through the approved route.", color: "var(--low)" };
+  if (status === "credited") return { title: "Payment cleared", detail: "The supplier was credited through the approved route.", color: "var(--low)" };
+  return { title: "Awaiting events", detail: "The panel updates as the engine reports each step.", color: "var(--ink-3)" };
 }
 
 export function DecisionSteps({ state }: { state: ViewState }) {
@@ -156,9 +185,10 @@ export function DecisionSteps({ state }: { state: ViewState }) {
             </span>
             <div className="min-w-0">
               <div className={cx("text-[12.5px] font-medium", step.state === "pending" && "text-ink-3")} style={step.state === "running" ? { color: "var(--accent)" } : undefined}>{step.label}</div>
-              <div className="mt-0.5 truncate text-[10.5px] leading-snug text-ink-3">{step.detail}</div>
+              <div className="mt-0.5 truncate text-[10.5px] leading-snug text-ink-3" title={step.detail}>{step.detail}</div>
             </div>
             <span className="mt-0.5 rounded-full border px-2 py-1 text-[9px] font-medium" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 14%, white)`, background: `color-mix(in srgb, ${STEP_COLOR[step.state]} 8%, white)` }}>{step.badge}</span>
+            {step.extra && step.state !== "pending" ? <div className="col-span-2 col-start-3 min-w-0">{step.extra}</div> : null}
           </motion.li>
         ))}
       </ol>

@@ -23,3 +23,5 @@ packages = ["sylo_chain"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Long tracebacks print function arguments, which include the role private keys on Fuji runs.
+addopts = "--tb=short"

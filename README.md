@@ -26,11 +26,35 @@ Open <http://localhost:3000> and use the demo buttons at the bottom left:
 
 Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
 
+### Engine v1 (Lane A)
+
+The engine now also runs the human steps and the integrity checks of v1 ([`spec/api.md`](spec/api.md)):
+
+- **Payer approval with dual control** (Claire, then Marc from EUR 20,000), **analyst actions** (confirm the revocation, release, freeze) and the supplier's answer. By default the approvals and the analyst are played by the engine (`HUMAN_STEPS=auto`); set `HUMAN_STEPS=manual` in `.env` when the payer panel and the analyst drawer call the API.
+- **Rail adapters**: every leg is checked against the sealed intent before it is sent. Three attacks fail visibly: `release_revoked`, `swap_beneficiary`, `replay`.
+- **SIM-swap check** before the supplier is texted (scenario `diverted_simswap`: nobody is texted, the analyst decides).
+- **Case file** for the analyst (`case.ready`), **alerts** in the app or by SMS, never by e-mail (`alert.raised`).
+- **Decision log** chained by hash in `engine/data/log.jsonl` and `GET /v1/payments/{id}/proof`.
+
+And the network defence of v2:
+
+- **Mule wave and circuit breaker** (`POST /v1/sim/mule-wave`): three linked payments reveal a cluster near Aflao; once the analyst confirms, payments into that region are at least MEDIUM for 24 hours.
+- **Rail outage** (scenario `outage`, or `POST /v1/sim/rails/R3/down`): the payment takes the best remaining route; an outage never changes the tier.
+- **Kill switch**: two legs changed or replayed on one adapter cut it, and a payment held on that route is revoked and refunded.
+- **Guardian incidents** with a DORA incident draft, and `GET /v1/metrics`.
+
+```bash
+make demo-check   # scenes 1, 2, 2b, 3, 5, the kill switch and the proof against the running engine (or a temporary one)
+make verify-log   # recompute the hash chain of the decision log; an edited line makes it fail
+make integrity    # 300 changed or replayed payments through the adapters: 0 must get through
+```
+
 ## Tests
 
 ```bash
 make test            # spec, engine, ml, chain, contracts (forge test) and web (typecheck, tests, build)
 make fixtures-check  # recorded events still match the engine
+make demo-check      # the demo scenes and the three attacks, end to end over HTTP
 make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
 ```
 

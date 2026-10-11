@@ -7,7 +7,7 @@ that additive spec changes never break a consumer.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -180,6 +180,13 @@ class PayerSession(SpecModel):
     country: str = "FR"
 
 
+class PairHistory(SpecModel):
+    successful_count: int = 0
+    median_amount_eur: float | None = None
+    payments_24h: int = 0
+    last_account_id: str | None = None
+
+
 class RiskContext(SpecModel):
     payee: Payee | None
     account: Account | None
@@ -189,6 +196,7 @@ class RiskContext(SpecModel):
     account_age_hours: float
     amount_eur: float
     sanctions_hit: bool = False
+    history: PairHistory | None = None
 
 
 class RiskReason(SpecModel):
@@ -204,6 +212,95 @@ class RiskResult(SpecModel):
     rules_fired: list[str]
     reasons: list[RiskReason]
     model: str
+    oob_resolvable: bool = False
+    """True when the risk is about the beneficiary's identity only (families B, V, R), so an
+    out-of-band confirmation by the real supplier can lift it. False (the safe default) keeps the
+    current action matrix: HIGH and above get no route."""
+
+
+# --- Case file (System 2, written by Lane B's CasePort) ---------------------------------------
+
+RecommendedAction = Literal["CONFIRM_REVOCATION", "RELEASE_AFTER_CONFIRMATION", "ESCALATE_AML", "NO_ACTION"]
+LlmMode = Literal["off", "cached", "live"]
+
+
+class Citation(SpecModel):
+    ref: str
+    """A reason ref, a rule id (e.g. ``R-PV-01``) or an event id (``evt-000012``)."""
+    source: str
+    """Where the cited fact comes from: ``rule``, ``model``, ``event`` or ``norms``."""
+
+
+class CaseSentence(SpecModel):
+    text: str
+    refs: list[str] = Field(min_length=1)
+
+
+class TimelineEntry(SpecModel):
+    at: str
+    event_id: str
+    text: str
+
+
+class CaseFile(SpecModel):
+    """Analyst case file. Advisory only: no engine decision ever reads it."""
+
+    payment_id: str
+    summary: str
+    sentences: list[CaseSentence]
+    timeline: list[TimelineEntry]
+    typology: str
+    recommended_action: RecommendedAction
+    explanation: str
+    citations: list[Citation]
+    report_draft: str | None = None
+    llm: LlmMode
+    prompt_version: str
+    model: str
+
+
+# --- Mule clusters (v2, detected by Lane B's ClusterPort) --------------------------------------
+
+
+class GeoPoint(SpecModel):
+    lat: float
+    lng: float
+
+
+class WeightedPoint(GeoPoint):
+    weight: float = 1.0
+
+
+class WindowPayment(SpecModel):
+    """One recent payment, as the cluster detector sees it. No names: ids, amounts and time only."""
+
+    payment_id: str
+    account_id: str
+    institution_id: str
+    amount_eur: float
+    at: str
+
+
+class Cluster(SpecModel):
+    """A group of accounts and cash-out agents that behave like one mule network.
+
+    ``centroid`` and ``points`` are coarse, region-level coordinates (never a precise location).
+    """
+
+    cluster_id: str
+    accounts: list[str]
+    agents: list[str] = Field(default_factory=list)
+    region: str
+    region_name: str | None = None
+    institutions: list[str] = Field(default_factory=list)
+    centroid: GeoPoint
+    points: list[WeightedPoint] = Field(default_factory=list)
+    linked_payments: list[str] = Field(default_factory=list)
+    detected_at_day: int | None = None
+
+
+ClusterCentroid = GeoPoint
+ClusterPoint = WeightedPoint
 
 
 # --- EIP-712 structs (field order is binding, see eip712.py) --------------------------------

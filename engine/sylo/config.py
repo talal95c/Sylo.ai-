@@ -6,14 +6,25 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from . import ENGINE_DIR
+
 
 def _get(env: Mapping[str, str], name: str, default: str) -> str:
     value = env.get(name)
     return default if value is None or not value.strip() else value.strip()
 
 
+def _journal_path(env: Mapping[str, str]) -> str | None:
+    """The decision log is written by default when the engine runs from the environment; "off" disables it."""
+    value = _get(env, "JOURNAL_PATH", str(ENGINE_DIR / "data" / "log.jsonl"))
+    return None if value.lower() == "off" else value
+
+
 @dataclass(frozen=True)
 class Settings:
+    """``human_steps``: ``auto`` simulates the payer approvals and the analyst's confirmation (v0 behaviour);
+    ``manual`` waits for them on the API unless the scenario runs with ``auto: true``."""
+
     risk_mode: str = "rules"
     chain_mode: str = "mock"
     llm_mode: str = "off"
@@ -26,6 +37,12 @@ class Settings:
     registry_address: str | None = None
     token_address: str | None = None
     explorer_base_url: str = "https://testnet.snowtrace.io"
+    # v1: human steps, dual control, out-of-band check, decision log
+    human_steps: str = "auto"
+    dual_control_eur: float = 20_000.0
+    dual_control_new_payee_eur: float = 5_000.0
+    sim_swap_max_age_hours: int = 168
+    journal_path: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -44,4 +61,9 @@ class Settings:
             registry_address=env.get("REGISTRY_ADDRESS") or None,
             token_address=env.get("TOKEN_ADDRESS") or None,
             explorer_base_url=_get(env, "EXPLORER_BASE_URL", "https://testnet.snowtrace.io"),
+            human_steps=_get(env, "HUMAN_STEPS", "auto").lower(),
+            dual_control_eur=float(_get(env, "DUAL_CONTROL_EUR", "20000")),
+            dual_control_new_payee_eur=float(_get(env, "DUAL_CONTROL_NEW_PAYEE_EUR", "5000")),
+            sim_swap_max_age_hours=int(_get(env, "SIM_SWAP_MAX_AGE_HOURS", "168")),
+            journal_path=_journal_path(env),
         )

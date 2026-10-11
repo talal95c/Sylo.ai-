@@ -1,15 +1,20 @@
 """Port interfaces between the engine and the lanes (v0 spec §4.7).
 
-Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``); Lane C implements ``ChainPort``
+Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``), ``CasePort``
+(``sylo_risk.CaseWriter``), and ``ClusterPort``; Lane C implements ``ChainPort``
 (``sylo_chain.FujiChain``). Both must pass the suites in ``sylo_spec.conformance``.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, Union, runtime_checkable
+from collections.abc import Mapping
+from typing import Any, Protocol, Union, runtime_checkable
 
 from .models import (
+    CaseFile,
+    Cluster,
     Eip712Domain,
+    Event,
     PaymentIntent,
     PaymentOrder,
     Revocation,
@@ -18,10 +23,14 @@ from .models import (
     Status,
     TxRef,
     VerificationAttestation,
+    WindowPayment,
 )
 
 PaymentIdLike = Union[bytes, str]
 """A bytes32 payment id, as 32 raw bytes or a 0x-prefixed hex string."""
+
+CorridorIdLike = Union[bytes, str]
+"""A bytes32 corridor id (``corridor_id_of("FR-GH")``), as 32 raw bytes or a 0x-prefixed hex string."""
 
 
 @runtime_checkable
@@ -29,6 +38,32 @@ class RiskPort(Protocol):
     name: str
 
     def score(self, order: PaymentOrder, ctx: RiskContext) -> RiskResult: ...
+
+
+@runtime_checkable
+class CasePort(Protocol):
+    """System 2: writes the analyst case file of a held payment from its events.
+
+    Advisory only: the result is shown to humans and never read by a decision. Every sentence must
+    cite a ref, rule id or event id present in ``events``; on any failure, fall back to a template.
+    """
+
+    name: str
+
+    def write(self, payment_id: str, events: list[Event]) -> CaseFile: ...
+
+
+@runtime_checkable
+class ClusterPort(Protocol):
+    """v2: finds mule clusters among recent payments (Lane B, ``sylo_risk.clusters``).
+
+    ``detect`` returns the clusters that at least three payments of ``window`` point to, with the
+    ids of those payments in ``linked_payments``. An empty list means nothing to report.
+    """
+
+    name: str
+
+    def detect(self, window: list[WindowPayment]) -> list[Cluster]: ...
 
 
 class ChainReverted(Exception):
@@ -64,3 +99,13 @@ class ChainPort(Protocol):
     def status(self, payment_id: PaymentIdLike) -> Status: ...
 
     def intent_hash(self, payment_id: PaymentIdLike) -> bytes: ...
+
+    def freeze(self, payment_id: PaymentIdLike) -> TxRef:
+        """Freezes the escrow hold (analyst or guardian): release then reverts ``PaymentNotReleasable``;
+        refund still works. ``NoHold`` if nothing is escrowed."""
+        ...
+
+    def pause_corridor(self, corridor_id: CorridorIdLike) -> TxRef:
+        """Pauses a corridor (guardian): every release on it reverts ``PaymentNotReleasable`` until an
+        admin unpauses it. Never pause a real corridor in a test: unpausing needs the deployer key."""
+        ...

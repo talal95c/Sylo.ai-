@@ -28,6 +28,33 @@ function nameFor(id: unknown): string {
   return institutionNames[key] ?? key.replaceAll("_", " ");
 }
 
+export type OutcomeTone = "success" | "warning" | "danger" | "neutral";
+
+const VERIFICATION_BADGES: Record<string, { label: string; tone: OutcomeTone }> = {
+  CONFIRMED: { label: "Confirmed", tone: "success" },
+  DENIED: { label: "Denied", tone: "danger" },
+};
+
+const TIER_BADGES: Record<string, { label: string; tone: OutcomeTone }> = {
+  LOW: { label: "Low risk", tone: "success" },
+  MEDIUM: { label: "Medium risk", tone: "warning" },
+  HIGH: { label: "High risk", tone: "warning" },
+  CRITICAL: { label: "Critical", tone: "danger" },
+};
+
+/** Badge for events whose status comes from a structured outcome field; null for other event types. */
+export function outcomeBadge(
+  item: Pick<FeedItem, "type" | "outcome">,
+): { label: string; tone: OutcomeTone } | null {
+  if (item.type === "verification.recorded") {
+    return (item.outcome && VERIFICATION_BADGES[item.outcome]) || { label: "Recorded", tone: "neutral" };
+  }
+  if (item.type === "risk.scored") {
+    return (item.outcome && TIER_BADGES[item.outcome]) || { label: "Scored", tone: "neutral" };
+  }
+  return null;
+}
+
 export function describe(
   event: SyloEvent,
 ): Omit<FeedItem, "seq" | "ts" | "simulated"> {
@@ -39,6 +66,7 @@ export function describe(
       : undefined;
   let family: FeedItem["family"] = "system";
   let label = `Event received: ${event.type}`;
+  let outcome: string | undefined;
 
   switch (event.type) {
     case "session.reset":
@@ -74,6 +102,7 @@ export function describe(
     case "risk.scored":
       family = "decision";
       label = `Risk ${number(data.score)} · ${text(data.tier)}`;
+      outcome = text(data.tier) || undefined;
       break;
     case "route.selected":
       family = "decision";
@@ -110,6 +139,10 @@ export function describe(
       family = "alert";
       label = text(data.headline, "Payment held for review");
       break;
+    case "case.ready":
+      family = "alert";
+      label = `Analyst case file ready · ${text(data.typology, "case")}`;
+      break;
     case "verification.requested":
       family = "alert";
       label = `Known-contact check requested for ${text(data.contactName)}`;
@@ -117,6 +150,7 @@ export function describe(
     case "verification.recorded":
       family = "alert";
       label = text(data.answerText, `Supplier response: ${text(data.result)}`);
+      outcome = text(data.result) || undefined;
       break;
     case "intent.revoked":
       family = "chain";
@@ -158,5 +192,6 @@ export function describe(
     text: label,
     ...(txHash ? { txHash } : {}),
     ...(explorerUrl !== undefined ? { explorerUrl } : {}),
+    ...(outcome ? { outcome } : {}),
   };
 }

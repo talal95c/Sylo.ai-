@@ -1,5 +1,6 @@
-"""Sylo.ai Lane B package: ``ModelRisk`` implements ``sylo_spec.ports.RiskPort``."""
+"""Sylo.ai Lane B risk and case-writing package."""
 
 from .model_risk import ModelRisk
+from .case import CaseWriter, TemplateCaseWriter
 
-__all__ = ["ModelRisk"]
+__all__ = ["CaseWriter", "ModelRisk", "TemplateCaseWriter"]
