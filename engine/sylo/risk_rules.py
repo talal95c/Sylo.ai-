@@ -16,7 +16,9 @@ class RulesRisk:
     name = "rules-v0"
 
     def __init__(self, *, strict: bool = False) -> None:
-        # strict: used when a dependency (the model) is missing; adds 10 points whenever a rule fires.
+        # strict: used when the model is missing. Every payment is verified, large payments outside the
+        # allowlist are held, and 10 points are added whenever a rule fires. Measured against the model in
+        # ml/reports/metrics.json ("degraded").
         self.strict = strict
 
     def score(self, order: PaymentOrder, ctx: RiskContext) -> RiskResult:
@@ -52,6 +54,8 @@ class RulesRisk:
         degraded_cause = (
             session_cause or structuring_cause or velocity_cause or spike_cause
         )
+        # The model refuses a call-back release for a second payment to the same supplier within 24 h.
+        repeat_cause = ctx.history is not None and ctx.history.payments_24h >= 1
         allowlisted = (
             not untrusted
             and account is not None
@@ -83,7 +87,7 @@ class RulesRisk:
             fired.append(("R-FL-03", 12, "B", texts.reason_name_mismatch(holder, payee_name, ctx.name_match)))
         if "R1" in ctx.norm_signals:
             fired.append(("R-NM-01", 7, "R", texts.REASON_NOT_NOMINATED))
-        if self.strict and not allowlisted:
+        if self.strict:
             fired.append(
                 (
                     "R-DG-01",
@@ -99,7 +103,7 @@ class RulesRisk:
         floor = Tier.MEDIUM if fired else Tier.LOW
         if self.strict and any(rule[0] == "R-DG-01" for rule in fired):
             floor = Tier(max(floor, Tier.MEDIUM))
-        if self.strict and degraded_cause:
+        if self.strict and (degraded_cause or (ctx.amount_eur >= 10_000 and not allowlisted)):
             floor = Tier(max(floor, Tier.HIGH))
         tier = Tier(max(floor, band(score)))
 
@@ -120,7 +124,7 @@ class RulesRisk:
                 in {"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01", "R-DG-01"}
                 for rule in fired
             )
-            and not (self.strict and degraded_cause),
+            and not (self.strict and (degraded_cause or repeat_cause)),
             model=self.name,
         )
 

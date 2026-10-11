@@ -82,13 +82,14 @@ def test_strict_mode_holds_legit_golden_when_history_is_missing():
 
     result = RulesRisk(strict=True).score(order, ctx)
 
-    assert result.tier == Tier.MEDIUM
-    assert result.floor_tier == Tier.MEDIUM
+    assert result.tier == Tier.HIGH
+    assert result.floor_tier == Tier.HIGH
     assert result.score == 20
     assert "R-DG-01" in result.rules_fired
+    assert result.oob_resolvable
 
 
-def test_strict_mode_allows_established_trusted_history_known_legit():
+def test_strict_mode_verifies_established_trusted_history_known_legit():
     order, ctx = golden_case("legit")
     assert ctx.account is not None and ctx.payee is not None
     established_context = ctx.model_copy(
@@ -104,8 +105,32 @@ def test_strict_mode_allows_established_trusted_history_known_legit():
 
     result = RulesRisk(strict=True).score(order, established_context)
 
-    assert result.tier == Tier.LOW
-    assert "R-DG-01" not in result.rules_fired
+    assert result.tier == Tier.MEDIUM
+    assert "R-DG-01" in result.rules_fired
+    assert result.oob_resolvable
+
+
+def test_strict_mode_holds_large_payment_outside_the_allowlist():
+    order, ctx = golden_case("legit")
+    history = PairHistory(successful_count=14, median_amount_eur=85_000.0)
+    unverified = ctx.model_copy(update={"history": history, "account_age_hours": 200.0})
+
+    large = RulesRisk(strict=True).score(order, unverified.model_copy(update={"amount_eur": 10_000.0}))
+    small = RulesRisk(strict=True).score(order, unverified.model_copy(update={"amount_eur": 4_000.0}))
+
+    assert large.floor_tier == Tier.HIGH and large.oob_resolvable
+    assert small.floor_tier == Tier.MEDIUM
+
+
+def test_strict_mode_second_payment_within_24h_cannot_be_cleared_by_call_back():
+    order, ctx = golden_case("legit")
+    history = PairHistory(successful_count=14, median_amount_eur=85_000.0, payments_24h=1)
+
+    result = RulesRisk(strict=True).score(order, ctx.model_copy(update={"history": history}))
+
+    assert result.tier >= Tier.MEDIUM
+    assert not result.oob_resolvable
+    assert RulesRisk().score(order, ctx.model_copy(update={"history": history})).oob_resolvable
 
 
 def test_strict_mode_session_and_velocity_causes_force_high_non_oob():
@@ -202,7 +227,7 @@ def test_strict_mode_degraded_account_causes_remain_resolvable_but_structuring_d
             update={"amount_eur": 9_500.0, "history": history}
         ),
     )
-    assert "R-DG-01" not in result.rules_fired
+    assert result.floor_tier == Tier.MEDIUM and result.oob_resolvable
 
 
 def test_model_load_failure_holds_sim_swap_payment_at_medium(monkeypatch):
