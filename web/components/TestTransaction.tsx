@@ -90,6 +90,11 @@ export default function TestTransaction() {
     setSteps([]);
     setStep(0);
     setWatchNote(null);
+    if (replay) {
+      setRun("offline");
+      setStep(-1);
+      return;
+    }
     try {
       const response = await fetch(`${base}/v1/quotes`, {
         method: "POST",
