@@ -7,7 +7,7 @@ that additive spec changes never break a consumer.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -203,6 +203,51 @@ class RiskResult(SpecModel):
     floor_tier: Tier
     rules_fired: list[str]
     reasons: list[RiskReason]
+    model: str
+    oob_resolvable: bool = False
+    """True when the risk is about the beneficiary's identity only (families B, V, R), so an
+    out-of-band confirmation by the real supplier can lift it. False (the safe default) keeps the
+    current action matrix: HIGH and above get no route."""
+
+
+# --- Case file (System 2, written by Lane B's CasePort) ---------------------------------------
+
+RecommendedAction = Literal["CONFIRM_REVOCATION", "RELEASE_AFTER_CONFIRMATION", "ESCALATE_AML", "NO_ACTION"]
+LlmMode = Literal["off", "cached", "live"]
+
+
+class Citation(SpecModel):
+    ref: str
+    """A reason ref, a rule id (e.g. ``R-PV-01``) or an event id (``evt-000012``)."""
+    source: str
+    """Where the cited fact comes from: ``rule``, ``model``, ``event`` or ``norms``."""
+
+
+class CaseSentence(SpecModel):
+    text: str
+    refs: list[str] = Field(min_length=1)
+
+
+class TimelineEntry(SpecModel):
+    at: str
+    event_id: str
+    text: str
+
+
+class CaseFile(SpecModel):
+    """Analyst case file. Advisory only: no engine decision ever reads it."""
+
+    payment_id: str
+    summary: str
+    sentences: list[CaseSentence]
+    timeline: list[TimelineEntry]
+    typology: str
+    recommended_action: RecommendedAction
+    explanation: str
+    citations: list[Citation]
+    report_draft: str | None = None
+    llm: LlmMode
+    prompt_version: str
     model: str
 
 

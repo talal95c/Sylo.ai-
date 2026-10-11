@@ -1,0 +1,39 @@
+{
+  "sample": true,
+  "modelVersion": "sample",
+  "generatedAt": "2026-10-11T00:00:00Z",
+  "dataset": { "seedTrain": "A", "seedEval": "B", "payments": 150000, "days": 30, "synthetic": true },
+  "metrics": {
+    "recallT1": 0.9,
+    "recallT1Evasive": 0.6,
+    "recallAll": 0.85,
+    "precisionHigh": 0.9,
+    "fprMediumPlus": 0.02,
+    "ttdP95Ms": 5,
+    "valueStoppedPct": 0.9,
+    "diversionRate": 0,
+    "stpRate": 0.95,
+    "precisionAtAlertBudget": 0.5,
+    "alertBudget": 100
+  },
+  "byTypology": [
+    { "typology": "T1", "count": 450, "recall": 0.9 },
+    { "typology": "T2", "count": 300, "recall": 0.8 },
+    { "typology": "T3", "count": 450, "recall": 0.8 },
+    { "typology": "T4", "count": 300, "recall": 0.7 }
+  ],
+  "outOfDistribution": { "seed": "C", "recallAll": 0.75, "recallT1": 0.8, "recallT1Evasive": 0.5, "fprMediumPlus": 0.03 },
+  "degraded": [
+    { "mode": "model_down_rules_strict", "recallAll": 0.8, "fprMediumPlus": 0.05, "neverLooser": true }
+  ],
+  "baselines": [
+    { "name": "rules_only", "recallAll": 0.7, "fprMediumPlus": 0.03 },
+    { "name": "isolated_institution", "recallAll": 0.5, "fprMediumPlus": 0.03 },
+    { "name": "logistic_regression", "recallAll": 0.75, "fprMediumPlus": 0.02 }
+  ],
+  "ablations": [
+    { "step": "rules", "recallAtFpr": 0.7 },
+    { "step": "+model", "recallAtFpr": 0.85 }
+  ],
+  "limits": ["SAMPLE numbers, not measured. Replace with ml/reports/metrics.json from `make eval SEED=B`."]
+}

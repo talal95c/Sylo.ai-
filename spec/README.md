@@ -15,6 +15,7 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 |---|---|---|
 | `events.schema.json` | JSON Schema (draft 2020-12) of every event; per-type `data` checks | hand-written |
 | `api.md` | Engine HTTP API and stream | hand-written |
+| `metrics.schema.json` / `metrics.sample.json` | Lane B risk metrics (`ml/reports/metrics.json`); the sample is labelled `sample: true` | hand-written |
 | `eip712.json` | EIP-712 domain, type strings, enums and one test vector per type | **generated**: `cd spec/python && uv run python -m sylo_spec.eip712 --write` |
 | `geo/institutions.json` | Fictional institutions with coordinates (globe nodes) | hand-written |
 | `fixtures/*.jsonl` | Recorded event streams of the demo scenes (replay mode, web tests) | **generated**: `make fixtures` |
@@ -40,8 +41,9 @@ Recorded with a virtual clock starting `2026-10-11T09:00:00.000Z`, seed 42, spee
 ## Ports
 
 - `RiskPort.score(order, ctx) -> RiskResult` — implemented by `RulesRisk` (engine) and `ModelRisk` (Lane B, v1). Must pass `sylo_spec.conformance.run_risk_conformance`.
+- `CasePort.write(payment_id, events) -> CaseFile` — System 2 case file, implemented by `sylo_risk.CaseWriter` (Lane B). Advisory: no decision reads it; the engine emits it as `case.ready`. The engine checks the answer (summary of at most 120 words, every citation and sentence ref is a rule, signal or event of the payment) and otherwise builds the case file from the rules (`llm: "off"`).
+- `RiskResult.oobResolvable` (optional, default false) — true when only the beneficiary's identity is in doubt, so an out-of-band confirmation can lift the risk. The engine then treats a HIGH payment like a MEDIUM one: conditional settlement, never a direct payment.
 - `ChainPort` — implemented by `MockChain` (engine) and `FujiChain` (Lane C, v1). Must pass `sylo_spec.conformance.run_chain_conformance`. The engine also calls `freeze(payment_id)` when the chain client has it (analyst action `FREEZE`).
-- `CasePort.write(payment_id, events) -> CaseFile` — Lane B's case writer (`sylo_risk.case.CaseWriter`), called by the engine for `LLM_MODE=cached|live`. The engine checks the answer (summary of at most 120 words, every citation is a rule, signal or event of the payment) and otherwise builds the case file from the rules.
 
 `sylo_spec.devkeys` holds the **public** Anvil keys (mnemonic `test test … junk`). Use them only in mock and local mode; never fund them on Fuji.
 

@@ -1,6 +1,7 @@
 """Port interfaces between the engine and the lanes (v0 spec §4.7).
 
-Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``); Lane C implements ``ChainPort``
+Lane B implements ``RiskPort`` (``sylo_risk.ModelRisk``) and ``CasePort``
+(``sylo_risk.CaseWriter``); Lane C implements ``ChainPort``
 (``sylo_chain.FujiChain``). Both must pass the suites in ``sylo_spec.conformance``.
 """
 
@@ -9,7 +10,9 @@ from __future__ import annotations
 from typing import Protocol, Union, runtime_checkable
 
 from .models import (
+    CaseFile,
     Eip712Domain,
+    Event,
     PaymentIntent,
     PaymentOrder,
     Revocation,
@@ -29,6 +32,19 @@ class RiskPort(Protocol):
     name: str
 
     def score(self, order: PaymentOrder, ctx: RiskContext) -> RiskResult: ...
+
+
+@runtime_checkable
+class CasePort(Protocol):
+    """System 2: writes the analyst case file of a held payment from its events.
+
+    Advisory only: the result is shown to humans and never read by a decision. Every sentence must
+    cite a ref, rule id or event id present in ``events``; on any failure, fall back to a template.
+    """
+
+    name: str
+
+    def write(self, payment_id: str, events: list[Event]) -> CaseFile: ...
 
 
 class ChainReverted(Exception):
