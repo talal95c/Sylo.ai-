@@ -81,8 +81,8 @@ export function PaymentCard({ state }: { state: ViewState }) {
               <PaymentRow
                 icon="route"
                 label="Route"
-                value={payment.routeName ?? "Awaiting route selection"}
-                detail={routeDetail(payment)}
+                value={payment.routeName ?? (payment.status === "stopped" ? "No route" : "Awaiting route selection")}
+                detail={payment.routeName || payment.status !== "stopped" ? routeDetail(payment) : "Blocked before any money moved"}
               />
               <PaymentRow
                 icon="status"
