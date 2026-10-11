@@ -12,6 +12,9 @@
     { "id": "bank_gh", "name": "Gold Coast Commercial Bank (nominated bank)", "short": "Gold Coast Bank", "kind": "bank", "city": "Kumasi", "country": "GH", "lat": 6.6885, "lng": -1.6244 },
     { "id": "momo_gh", "name": "AccraPay Wallets", "short": "AccraPay Wallets", "kind": "wallet_operator", "city": "Takoradi", "country": "GH", "lat": 4.8845, "lng": -1.7554 },
     { "id": "supplier_ssx", "name": "Savanna Shea Exports Ltd", "short": "Savanna Shea Exports", "kind": "business", "city": "Tamale", "country": "GH", "lat": 9.4034, "lng": -0.8424 },
-    { "id": "mule_bank", "name": "Volta Rural Bank, Aflao branch", "short": "Volta Rural Bank (Aflao)", "kind": "bank", "city": "Aflao", "country": "GH", "lat": 6.1186, "lng": 1.1903 }
+    { "id": "mule_bank", "name": "Volta Rural Bank, Aflao branch", "short": "Volta Rural Bank (Aflao)", "kind": "bank", "city": "Aflao", "country": "GH", "lat": 6.1186, "lng": 1.1903 },
+    { "id": "bank_gh_accra", "name": "Osu Heritage Bank", "short": "Osu Heritage Bank", "kind": "bank", "city": "Accra", "country": "GH", "lat": 5.6037, "lng": -0.187 },
+    { "id": "bank_gh_tamale", "name": "Northern Savannah Bank", "short": "Northern Savannah Bank", "kind": "bank", "city": "Tamale", "country": "GH", "lat": 9.4008, "lng": -0.8393 },
+    { "id": "bank_gh_takoradi", "name": "Western Gate Bank", "short": "Western Gate Bank", "kind": "bank", "city": "Takoradi", "country": "GH", "lat": 4.8845, "lng": -1.7554 }
   ]
 }

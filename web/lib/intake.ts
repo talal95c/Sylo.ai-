@@ -7,6 +7,7 @@ export interface IntakeField {
 export interface IntakeResponse {
   intake: {
     fields: Record<string, IntakeField>;
+    senderDomain?: IntakeField;
   };
   matchedOrder: string | null;
   decision: {

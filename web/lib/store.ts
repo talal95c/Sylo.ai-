@@ -28,6 +28,7 @@ export type PaymentStatus =
   | "in_transit"
   | "held"
   | "awaiting_supplier"
+  | "awaiting_analyst"
   | "frozen"
   | "stopped"
   | "credited";
@@ -477,7 +478,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "verification.requested":
       return {
         ...next,
-        payment: paymentWithStatus(next.payment, "awaiting_supplier"),
+        payment: paymentWithStatus(next.payment, data.channel === "ANALYST" ? "awaiting_analyst" : "awaiting_supplier"),
         verification: {
           ...next.verification,
           requested: data as unknown as VerificationRequestedData,

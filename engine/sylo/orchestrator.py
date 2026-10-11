@@ -20,15 +20,20 @@ import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypeVar
 
 from eth_utils import to_checksum_address
-
-from sylo_spec.canonical import corridor_id_of, hash_record, keccak_text, offchain_hash, to_hex
+from sylo_spec.canonical import (
+    corridor_id_of,
+    hash_record,
+    keccak_text,
+    offchain_hash,
+    to_hex,
+)
 from sylo_spec.devkeys import dev_address
 from sylo_spec.eip712 import Message, digest, primary_type, typed_data
 from sylo_spec.models import (
@@ -51,7 +56,17 @@ from sylo_spec.models import (
     WindowPayment,
 )
 from sylo_spec.ports import ChainPort, ChainReverted, RiskPort
-from sylo_spec.scenarios import ACCOUNTS, CORRIDOR, DIVERTED_ORDER, LEGIT_ORDER, MULE_ACCOUNT, ORDERS, PAYEES, PAYER, build_risk_context
+from sylo_spec.scenarios import (
+    ACCOUNTS,
+    CORRIDOR,
+    DIVERTED_ORDER,
+    LEGIT_ORDER,
+    MULE_ACCOUNT,
+    ORDERS,
+    PAYEES,
+    PAYER,
+    build_risk_context,
+)
 
 from . import texts
 from .approvals import ApprovalSession, required_approvers
@@ -60,15 +75,16 @@ from .bus import EventBus
 from .case import CaseService, redact_case_document, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
-from .intake import extract, match_order
 from .config import (
     ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS,
     Settings,
     orange_playground_number,
 )
+from .intake import extract, match_order
 from .journal import Journal
 from .norms import NormsEngine, NormsResult, load_pack
 from .pacer import Pacer, RealPacer, iso_ms
+from .payees import PaymentIn, build_order, forget_session_accounts
 from .ports_loader import load_case_writer, load_ports
 from .rails import LegMessage, LegRejected, RailAdapter, Rails
 from .risk_rules import CombinedRisk
@@ -143,6 +159,8 @@ SCENARIOS: dict[str, ScenarioDef] = {
     "diverted_expiry": ScenarioDef("diverted", supplier_silent=True),
     "diverted_timelock": ScenarioDef("diverted", rail_down="R3"),
 }
+CUSTOM = "custom"  # scenario name a typed payment is published under
+"""A payment typed by a user (``POST /v1/quotes`` with ``payment``): no injected incident."""
 ATTACKS = ("release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
 HOLD_MODES = {"ONCHAIN_ESCROW": "escrow", "FIAT_HOLD": "bank"}
@@ -530,6 +548,7 @@ class Orchestrator:
         self._current_pacer = None
         self._clock_offset = timedelta(0)
         self._quotes.clear()
+        forget_session_accounts()
         self._submitted.clear()
         for account_id, account in self._custom_accounts.items():
             if ACCOUNTS.get(account_id) is account:
@@ -648,9 +667,14 @@ class Orchestrator:
         pack = engine.pack
         norms = engine.evaluate(order)
         context = (
-            build_risk_context(order, norms.signal_codes)
+            build_risk_context(order, norms.signal_codes, sanctions_hit=norms.sanctions_hit)
             if own
-            else build_risk_context(order, norms.signal_codes, session=PayerSession(country=order.channel.session_country))
+            else build_risk_context(
+                order,
+                norms.signal_codes,
+                session=PayerSession(country=order.channel.session_country),
+                sanctions_hit=norms.sanctions_hit,
+            )
         )
         risk = self._overlays(order, self.risk.score(order, context))
         amount = order.amount.as_float
@@ -734,6 +758,33 @@ class Orchestrator:
             "rails": rails,
         }
 
+    def quote_payment(self, payment: PaymentIn) -> dict[str, Any]:
+        """Norms, risk, best route and price for a payment typed by a user. Executable for 600 s."""
+        if self._custom_order_count >= 200:
+            raise CustomOrderLimit()
+        order = self._verified_order(build_order(payment, f"PAY-2026-{self._next_custom_order:04d}"))
+        self._custom_orders[order.id] = order
+        self._custom_scenarios[order.id] = ScenarioDef(order=order.id)
+        self._custom_order_count += 1
+        self._next_custom_order += 1
+        return self._store_quote(order.id, order, executable=True, invoice_text=payment.invoiceText)
+
+    def _store_quote(
+        self, order_name: str, order: PaymentOrder, *, executable: bool, invoice_text: str | None = None, **decide: Any
+    ) -> dict[str, Any]:
+        quote = Quote(
+            id=f"Q-{len(self._quotes) + 1:04d}",
+            order_name=order_name,
+            order=order,
+            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
+            executable=executable,
+            invoice_text=invoice_text,
+        )
+        self._quotes[quote.id] = quote
+        decision = self._decision(order, **decide)
+        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
+        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+
     def quote(self, order_name: str, amount: str | None = None) -> dict[str, Any]:
         """Norms, risk, best route and reason for one of the demo orders, valid 600 s. Nothing is committed.
 
@@ -749,17 +800,7 @@ class Orchestrator:
             raise UnknownScenario(order_name)
         if amount is not None:
             order = order.model_copy(update={"amount": order.amount.model_copy(update={"value": amount})})
-        quote = Quote(
-            id=f"Q-{len(self._quotes) + 1:04d}",
-            order_name=order_name,
-            order=order,
-            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
-            executable=amount is None and engine is None,
-        )
-        self._quotes[quote.id] = quote
-        decision = self._decision(order, engine=engine, payer=payer)
-        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
-        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+        return self._store_quote(order_name, order, executable=amount is None and engine is None, engine=engine, payer=payer)
 
     def quote_custom(self, custom: Mapping[str, Any]) -> dict[str, Any]:
         if self._custom_order_count >= 200:
@@ -1356,7 +1397,12 @@ class Orchestrator:
         return run
 
     def _new_run(
-        self, name: str, speed: float, auto: bool, auto_answer: str, invoice_text: str | None = None
+        self,
+        name: str,
+        speed: float,
+        auto: bool,
+        auto_answer: str,
+        invoice_text: str | None = None,
     ) -> PaymentRun:
         scenario = self._scenario(name)
         if scenario is None:
@@ -1721,7 +1767,8 @@ class Orchestrator:
             self.telecom.declare_swap(contact.msisdn_masked, hours_ago=swap_hours)
         order = run.order = self._verified_order(order)
 
-        self._emit(run, "scenario.started", {"scenario": run.scenario, "speed": pacer.speed, "auto": run.auto})
+        scenario_name = CUSTOM if run.scenario in self._custom_scenarios else run.scenario
+        self._emit(run, "scenario.started", {"scenario": scenario_name, "speed": pacer.speed, "auto": run.auto})
         if scenario.rail_down is not None:
             await pacer.wait(600)
             self.rail_down(scenario.rail_down)
@@ -1754,7 +1801,8 @@ class Orchestrator:
         self._emit(run, "norms.checked", norms.to_event_data())
 
         await pacer.wait(900)
-        risk = self._overlays(order, self.risk.score(order, build_risk_context(order, norms.signal_codes)))
+        context = build_risk_context(order, norms.signal_codes, sanctions_hit=norms.sanctions_hit)
+        risk = self._overlays(order, self.risk.score(order, context))
         run.risk = risk
         self._emit(
             run,
@@ -2111,21 +2159,30 @@ class Orchestrator:
         run.escalation = asyncio.get_running_loop().create_future()
         run.expiry = asyncio.get_running_loop().create_future()
 
-        payee = PAYEES[order.payee_id]
-        contact = payee.known_contacts[0]
-        telecom_msisdn = (
-            orange_playground_number(contact.msisdn_masked, run.scenario)
-            if isinstance(self.telecom, OrangeSimSwap)
-            else contact.msisdn_masked
-        )
-        max_age_hours = self.settings.sim_swap_max_age_hours
-        if isinstance(self.telecom, OrangeSimSwap):
-            max_age_hours = max(max_age_hours, ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS)
-        sim_swap_recent = self.telecom.check(telecom_msisdn, max_age_hours)
-        if getattr(self.telecom, "degraded", False):
-            self._degrade("telecom")
+        payee = PAYEES.get(order.payee_id)
+        contact = payee.known_contacts[0] if payee is not None and payee.known_contacts else None
+        custom = run.scenario in self._custom_scenarios
         reasons = list(risk.reasons)
-        next_step = texts.NEXT_STEP
+        sim_swap_recent = False
+        if contact is None:
+            # Nobody known can confirm the account out of band: never trust a number given with the payment.
+            next_step = texts.NEXT_STEP_NO_CONTACT
+            reasons.append(RiskReason(ref="O", text=next_step, rule_id="R-OOB-02"))
+        else:
+            telecom_msisdn = (
+                orange_playground_number(contact.msisdn_masked, run.scenario)
+                if isinstance(self.telecom, OrangeSimSwap)
+                else contact.msisdn_masked
+            )
+            max_age_hours = self.settings.sim_swap_max_age_hours
+            if isinstance(self.telecom, OrangeSimSwap):
+                max_age_hours = max(max_age_hours, ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS)
+            sim_swap_recent = self.telecom.check(telecom_msisdn, max_age_hours)
+            if getattr(self.telecom, "degraded", False):
+                self._degrade("telecom")
+            next_step = (
+                texts.NEXT_STEP_CONTACT.format(payee=texts.payee_short(payee), contact=contact.name) if custom else texts.NEXT_STEP
+            )
         if sim_swap_recent:
             changed = self.telecom.retrieve_date(telecom_msisdn)
             if getattr(self.telecom, "degraded", False):
@@ -2151,7 +2208,7 @@ class Orchestrator:
                 "headline": texts.HELD_HEADLINE,
                 "reasons": [r.to_json_dict() for r in reasons],
                 "protection": (
-                    texts.PROTECTION
+                    (texts.PROTECTION_AMOUNT.format(amount=amount) if custom else texts.PROTECTION)
                     if mode == "escrow"
                     else texts.PROTECTION_BANK.format(amount=amount, bank=bank_name, payer=PAYER.name)
                 ),
@@ -2161,25 +2218,26 @@ class Orchestrator:
             simulated=self.chain_simulated if mode == "escrow" else True,
         )
         self._alert(run, "payer", PAYER.approvers[0].name, "IN_APP", texts.ALERT_HELD)
-        await self._open_case(run, "analyst" if sim_swap_recent else "held")
+        analyst_only = sim_swap_recent or contact is None
+        await self._open_case(run, "analyst" if analyst_only else "held")
 
         await pacer.wait(800)
         self._emit(
             run,
             "verification.requested",
             {
-                "contactName": contact.name,
-                "contactMasked": contact.msisdn_masked,
-                "contactSince": contact.since,
-                "channel": "ANALYST" if sim_swap_recent else "SMS",
+                "contactName": contact.name if contact else texts.NO_CONTACT,
+                "contactMasked": contact.msisdn_masked if contact else "—",
+                "contactSince": contact.since if contact else "—",
+                "channel": "ANALYST" if analyst_only else "SMS",
                 "simSwapChecked": True,
                 "simSwapRecent": sim_swap_recent,
                 "simSwapSource": self.telecom.source,
             },
             simulated=True,
         )
-        if sim_swap_recent:
-            # Rule R-OOB-01: the known number cannot be trusted, so nobody is texted and the analyst decides.
+        if analyst_only:
+            # Rule R-OOB-01 (number not trusted) or R-OOB-02 (no contact on file): the known number cannot be trusted, so nobody is texted and the analyst decides.
             who, answer = "analyst", await self._await_analyst(run)
         else:
             who, answer = await self._await_supplier_or_analyst(run)
@@ -2396,7 +2454,12 @@ class Orchestrator:
         await pacer.wait(2000)
         self._alert(run, "payer", PAYER.approvers[0].name, "SMS", payer_alert)
         run.status = "stopped"
-        self._emit(run, "payment.stopped", {"headline": texts.STOPPED_HEADLINE, "detail": detail}, simulated=True)
+        headline = (
+            texts.STOPPED_HEADLINE_AMOUNT.format(amount=texts.eur(float(run.order.amount.value)))
+            if run.scenario in self._custom_scenarios
+            else texts.STOPPED_HEADLINE
+        )
+        self._emit(run, "payment.stopped", {"headline": headline, "detail": detail}, simulated=True)
 
     # --- attacks -----------------------------------------------------------------------------
 
@@ -2560,6 +2623,10 @@ def build_orchestrator(
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
     if keys_missing:
         degraded.append("chain")
+    if chain.mode == "fuji":
+        for address_name in ("EU_CASP_ADDRESS", "GH_VASP_ADDRESS"):
+            if not env.get(address_name):
+                log.warning("CHAIN_MODE=fuji but %s is not set", address_name)
     if chain.mode != "mock":
         # The registry outlives this process and keeps every nonce: start from this session's own base
         # (microseconds since the epoch), so no message repeats a nonce of an earlier session.
@@ -2594,7 +2661,7 @@ def build_orchestrator(
         degraded=degraded,
         beneficiary=env.get("GH_VASP_ADDRESS") or None,
         payer_address=env.get("EU_CASP_ADDRESS") or None,
-        token=settings.token_address,
+        token=settings.token_address or getattr(chain, "token_address", None),
         case=CaseService(
             settings.llm_mode,
             writer,

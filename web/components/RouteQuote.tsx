@@ -8,7 +8,7 @@ import { cx, ease, euros } from "./ui";
 export function RouteQuote({ state }: { state: ViewState }) {
   const quote = buildQuote(state);
   const status = state.payment?.status;
-  const notPaid = status === "stopped" ? "Stopped · not paid" : status === "held" || status === "frozen" || status === "awaiting_supplier" ? "On hold · not paid yet" : null;
+  const notPaid = status === "stopped" ? "Stopped · not paid" : status === "held" || status === "frozen" || status === "awaiting_supplier" || status === "awaiting_analyst" ? "On hold · not paid yet" : null;
   return (
     <AnimatePresence initial={false}>
       {quote ? (

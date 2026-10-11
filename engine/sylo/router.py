@@ -180,6 +180,8 @@ def choose_route(
             reason = texts.NO_ROUTE_LIMITS.format(
                 usual=usual, routes=", ".join(over_limit), fees=limits.max_fees_eur, days=limits.max_days, symbol=symbol
             )
+        elif any(score.get("excludedBy") == "SANCTIONS_SCREEN" for score in scores):
+            blocked_by, reason = "TIER", texts.NO_ROUTE_SANCTIONS
         elif action_tier >= Tier.HIGH or not unavailable:
             blocked_by, reason = "TIER", texts.NO_ROUTE_DETAIL.format(tier=action_tier.name)
         else:

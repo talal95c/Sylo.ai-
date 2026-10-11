@@ -153,6 +153,10 @@ NO_ROUTE_LIMITS = (
     "{usual} to come back, or for the payer to accept the other route."
 )
 ALERT_WAITING_ROUTE = "Your payment is waiting: its usual route is unavailable and the other one costs more than your limit."
+NO_ROUTE_SANCTIONS = (
+    "A party is on the sanctions list (synthetic list). The payment is blocked before any money moves "
+    "and a case is opened for the analyst."
+)
 NO_ROUTE_DETAIL = "Risk is {tier}. The payment is blocked before any money moves and a case is opened for the analyst."
 
 # --- Approval --------------------------------------------------------------------------------
@@ -175,6 +179,15 @@ NEXT_STEP = (
     "We are asking Savanna Shea on the number already on file for Kwame Asante, after checking that it was "
     "not SIM-swapped."
 )
+PROTECTION_AMOUNT = (
+    "{amount} is locked in the escrow smart contract on Avalanche. It can only go to the account fixed in "
+    "the signed payment or back to Rhône Cosmétiques. Automatic refund in 24 h if nobody confirms."
+)
+NEXT_STEP_CONTACT = "We are asking {payee} on the number already on file for {contact}, after checking that it was not SIM-swapped."
+NEXT_STEP_NO_CONTACT = (
+    "No contact is on file for this beneficiary, so nobody can confirm the account out of band: an analyst decides."
+)
+NO_CONTACT = "No contact on file"
 HIGH_IDENTITY_ONLY_HOLD = (
     "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
 )
@@ -183,6 +196,7 @@ ANSWER_CONFIRM = 'Kwame Asante: "Yes, this is our new account."'
 REVOKED_BY = "Analyst (auto-confirmed)"
 ANALYST = "Julien (fraud analyst)"
 STOPPED_HEADLINE = "Payment stopped. EUR 85,000 returned to Rhône Cosmétiques."
+STOPPED_HEADLINE_AMOUNT = "Payment stopped. EUR {amount} returned to Rhône Cosmétiques."
 STOPPED_DETAIL = (
     "The supplier denied the new bank details. The payment was revoked on-chain and refunded from escrow. "
     "A case was opened for the analyst."

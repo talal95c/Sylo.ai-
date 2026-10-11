@@ -137,8 +137,8 @@ Lecture à assumer : une régression logistique fait presque aussi bien → **no
 - Lien avec le terrain : la fraude « SIM swap » figure comme catégorie dans le rapport 2025 de la Bank of Ghana ✅ [3].
 
 ### A11. Fail safe, et on le dit à l'écran — *Faisabilité*
-- Sans modèle, sans chaîne, sans LLM : le système devient **plus strict dans l'ensemble**, une bannière l'indique, rien n'est libéré par défaut. Pas sur chaque paiement : sans modèle, 0,1 % des actions sont moins strictes que le système complet (`neverLooser: false`), et on le dit.
-- Échelle de repli : LightGBM → régression logistique numpy → règles strictes. En repli, rappel **100 %**, mais la friction monte fortement (régression logistique : **71,9 %** des légitimes retenus ; historique absent : 100 %). C'est volontaire et affiché, pas un mode de croisière.
+- Sans modèle, sans chaîne, sans LLM : le système devient **plus strict**, une bannière l'indique, rien n'est libéré par défaut. Sans modèle, chaque paiement est vérifié : sur 300 000 paiements synthétiques, **un seul** obtient un niveau de risque plus bas que le système complet (seed C ; aucun sur seed B). Sans historique, 0,17–0,19 % des actions restent moins strictes, et on le dit.
+- Échelle de repli : LightGBM → régression logistique numpy → règles strictes. En repli, rappel **100 %**, mais chaque paiement légitime passe par une vérification (friction **100 %**). C'est volontaire et affiché, pas un mode de croisière.
 - Panne de rail (scène 5) : la route change (R3 → R1), **le niveau de risque ne change jamais**.
 
 ### A12. Tout est rejouable par quelqu'un qui ne nous fait pas confiance — *Conformité*
@@ -219,7 +219,7 @@ Lecture à assumer : une régression logistique fait presque aussi bien → **no
 | Friction sur les légitimes | **6,72 %** des légitimes à MEDIUM+ (cible 2 %) | 80,5 % viennent des garanties voulues (nouveau bénéficiaire de source non fiable) ; le modèle seul : **0,45 %** ; bloqué dur : **0,07 %**. Une friction = un appel, pas un paiement perdu. |
 | Cas légitimes difficiles | 47,6 % retenus (vrais changements de banque, noms commerciaux) | C'est le prix de la garantie ; le séquestre le rend supportable. |
 | Précision HIGH+ | 89,86 % vs 90 % | Manqué de 0,14 pt. |
-| Mode dégradé | `neverLooser: false` (jusqu'à 12 HIGH → MEDIUM sur 150 000 selon le mode) ; friction 43–100 % | Ne **jamais** dire « jamais plus laxiste ». |
+| Mode dégradé | Sans modèle : 1 HIGH → MEDIUM sur 150 000 (seed C), 0 sur seed B ; sans historique : 0,17–0,19 % d'actions moins strictes ; friction 100 % | Ne **jamais** dire « jamais plus laxiste ». |
 | Mules | 30/30 faux clusters sur les comptes jeunes mais populaires | Campagnes synthétiques faciles (14–15 payeurs). |
 | Évasion | Rappel 75,5 % au niveau E3 (fiche fournisseur empoisonnée) | Mesuré et publié. |
 | Données | Synthétiques, générateur maison | Seed C hors distribution réduit la circularité sans la supprimer. |

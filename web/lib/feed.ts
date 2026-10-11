@@ -252,7 +252,12 @@ export function describe(
       break;
     case "verification.requested":
       family = "alert";
-      label = `Known-contact check requested for ${text(data.contactName)}`;
+      if (text(data.channel) === "ANALYST") {
+        title = "Analyst verification requested";
+        label = "No known contact for this payee: an analyst checks it";
+      } else {
+        label = `Known-contact check requested for ${text(data.contactName)}`;
+      }
       break;
     case "verification.recorded":
       family = "alert";

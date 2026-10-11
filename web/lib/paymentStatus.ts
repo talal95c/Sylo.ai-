@@ -12,6 +12,7 @@ const STATUS: Record<PaymentStatus, PaymentStatusView> = {
   in_transit: { label: "In transit", color: "var(--accent)", busy: true },
   held: { label: "Held in escrow", color: "var(--medium)" },
   awaiting_supplier: { label: "Awaiting supplier", color: "var(--medium)", busy: true },
+  awaiting_analyst: { label: "Awaiting analyst", color: "var(--medium)", busy: true },
   frozen: { label: "Frozen by the guardian", color: "var(--danger)" },
   stopped: { label: "Stopped", color: "var(--danger)" },
   credited: { label: "Supplier credited", color: "var(--low)" },

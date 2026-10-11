@@ -44,6 +44,7 @@ from .orchestrator import (
     UnknownScenario,
     build_orchestrator,
 )
+from .payees import InvalidPayment, PaymentIn, ghana_banks, saved_payees
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -134,16 +135,19 @@ class CustomOrderBody(BaseModel):
 
 
 class QuoteBody(BaseModel):
+    """One of ``order`` (a demo order), ``payment`` (a payment typed by a user) or ``custom`` (the short form)."""
+
     order: Literal["legit", "diverted", "lagos-accra"] | None = None
+    payment: PaymentIn | None = None
     amount: str | None = Field(default=None, pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
     custom: CustomOrderBody | None = None
 
     @model_validator(mode="after")
     def require_one_quote_type(self) -> "QuoteBody":
-        if (self.order is None) == (self.custom is None):
-            raise ValueError("give exactly one of order and custom")
-        if self.custom is not None and self.amount is not None:
-            raise ValueError("amount is part of custom")
+        if sum(part is not None for part in (self.order, self.payment, self.custom)) != 1:
+            raise ValueError("give exactly one of order, payment and custom")
+        if self.order is None and self.amount is not None:
+            raise ValueError("amount is part of payment or custom")
         return self
 
 
@@ -391,6 +395,15 @@ def create_app(
 
     @app.post("/v1/quotes")
     async def quote(body: QuoteBody, request: Request) -> dict[str, Any]:
+        if body.payment is not None:
+            if body.payment.invoiceText is not None and not settings.live_invoice:
+                raise HTTPException(403, "live invoice is disabled (LIVE_INVOICE=off)")
+            try:
+                return orch(request).quote_payment(body.payment)
+            except InvalidPayment as err:
+                raise HTTPException(422, str(err)) from None
+            except CustomOrderLimit:
+                raise HTTPException(429, "this engine has reached its limit of 200 custom orders") from None
         if body.custom is not None:
             if body.custom.invoiceText is not None and not settings.live_invoice:
                 raise HTTPException(403, "live invoice is disabled (LIVE_INVOICE=off)")
@@ -400,6 +413,14 @@ def create_app(
                 raise HTTPException(429, "this engine has reached its limit of 200 custom orders") from None
         assert body.order is not None
         return orch(request).quote(body.order, body.amount)
+
+    @app.get("/v1/banks")
+    async def banks() -> dict[str, Any]:
+        return {"banks": ghana_banks()}
+
+    @app.get("/v1/payees")
+    async def payees() -> dict[str, Any]:
+        return {"payees": saved_payees()}
 
     @app.post("/v1/payments")
     async def submit_payment(

@@ -387,3 +387,12 @@ describe("store reducer", () => {
     expect(state.lastSeq).toBe(Math.max(...events.map((event) => event.seq)));
   });
 });
+
+describe("analyst-only verification", () => {
+  it("waits for the analyst and offers no supplier answer when no contact can be asked", () => {
+    const state = replay(...fixture("scene2-simswap").filter((event) => event.type !== "verification.recorded" && !["payment.stopped", "escrow.refunded", "intent.revoked", "case.action"].includes(event.type)));
+    if (state.verification.requested?.channel !== "ANALYST") return;
+    expect(state.payment?.status).toBe("awaiting_analyst");
+    expect(availableActions(state).confirm).toBe(false);
+  });
+});

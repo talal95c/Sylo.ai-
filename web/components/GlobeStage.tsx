@@ -31,7 +31,7 @@ function globeTone(state: ViewState) {
       halo: "radial-gradient(ellipse at var(--globe-cx, 50%) var(--globe-cy, 48%), rgba(179,225,255,0.38) 0%, rgba(179,225,255,0.17) 42%, transparent 74%)",
     };
   }
-  if (status === "held" || status === "awaiting_supplier") {
+  if (status === "held" || status === "awaiting_supplier" || status === "awaiting_analyst") {
     return {
       atmosphere: "#FBBF77",
       halo: "radial-gradient(ellipse at var(--globe-cx, 50%) var(--globe-cy, 48%), rgba(251,191,119,0.34) 0%, rgba(251,191,119,0.16) 42%, transparent 74%)",
