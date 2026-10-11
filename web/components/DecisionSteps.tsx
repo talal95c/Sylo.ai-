@@ -137,7 +137,7 @@ function RouteTable({ state }: { state: ViewState }) {
           const excluded = score.s === null || Boolean(score.excludedBy);
           const exclusion = ruleLabel(score.excludedBy ?? route?.excludedBy ?? "Excluded");
           return (
-            <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[10.5px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
+            <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[11px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
               <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
               <span className={excluded ? "text-ink-3 line-through decoration-[rgba(0,0,0,.25)]" : chosen ? "font-medium" : ""}>{route?.name ?? score.routeId}</span>
               <span className={cx("max-w-24 truncate tabular-nums", excluded && "text-[var(--danger)]")} title={excluded ? exclusion : undefined}>{excluded ? exclusion : typeof score.s === "number" ? euros(score.s) : "—"}</span>
@@ -160,7 +160,7 @@ const STEP_COLOR: Record<StepState, string> = {
 function StepIcon({ state, index }: { state: StepState; index: number }) {
   if (state === "running") return <Spinner size={14} />;
   if (state === "done") return <Check size={14} />;
-  if (state === "warn") return <span className="text-[10px] font-bold">!</span>;
+  if (state === "warn") return <span className="text-[11px] font-bold">!</span>;
   if (state === "fail") return <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>;
   if (state === "skipped") return <span className="font-mono text-[10px]">−</span>;
   return <span className="font-mono text-[8.5px]">{String(index + 1).padStart(2, "0")}</span>;
@@ -187,7 +187,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
   const summaryCard = (
     <div className="mx-4 mb-4 rounded-lg bg-[var(--accent-soft)] px-3 py-3">
       <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {summary.title.toLowerCase()}</div>
-      <p className="mt-1 text-[10.5px] leading-relaxed text-ink-2">{summary.detail}</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-2">{summary.detail}</p>
     </div>
   );
   return (
@@ -226,9 +226,9 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
             </span>
             <div className="min-w-0">
               <div className={cx("text-[12.5px] font-medium", (step.state === "pending" || step.state === "skipped") && "text-ink-3")} style={step.state === "running" ? { color: "var(--accent)" } : undefined}>{step.label}</div>
-              <div className="mt-0.5 truncate text-[10.5px] leading-snug text-ink-3" title={step.detail}>{step.detail}</div>
+              <div className="mt-0.5 truncate text-[11px] leading-snug text-ink-3" title={step.detail}>{step.detail}</div>
             </div>
-            <span className="mt-0.5 rounded-full border px-2 py-1 text-[9px] font-medium" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 14%, white)`, background: `color-mix(in srgb, ${STEP_COLOR[step.state]} 8%, white)` }}>{step.badge}</span>
+            <span className="mt-0.5 rounded-full border px-2 py-1 text-[11px] font-medium" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 14%, white)`, background: `color-mix(in srgb, ${STEP_COLOR[step.state]} 8%, white)` }}>{step.badge}</span>
             {step.extra && step.state !== "pending" ? <div className="col-span-2 col-start-3 min-w-0">{step.extra}</div> : null}
           </motion.li>
         ))}

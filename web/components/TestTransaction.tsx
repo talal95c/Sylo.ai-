@@ -181,7 +181,7 @@ function RoutePath({
               <span
                 className={cx("mt-[3px] size-[7px] shrink-0 rounded-full", tone === "chosen" ? "bg-ink" : "bg-[rgba(0,0,0,0.25)]")}
               />
-              <span className="mt-1.5 whitespace-nowrap text-[10.5px] text-ink-3">
+              <span className="mt-1.5 whitespace-nowrap text-[11px] text-ink-3">
                 {institutions?.[stop]?.city ?? "·"}
               </span>
             </div>
@@ -225,7 +225,7 @@ const SOURCES: { id: DetailsSource; label: string }[] = [
 
 const NEW_RECIPIENT = { name: "", accountHolder: "", accountNumber: "", bankId: "", detailsSource: "typed" as DetailsSource, senderDomain: "" };
 
-const inputClass = "mt-0.5 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3";
+const inputClass = "mt-0.5 w-full bg-transparent text-[14px] text-ink placeholder:text-ink-3";
 
 const cleanName = (text: string) => text.replace(/[^\p{L}\p{N} .,'&()/_-]/gu, "").slice(0, 120);
 const cleanRef = (text: string) => text.replace(/[^A-Za-z0-9 ._/-]/g, "").slice(0, 40);
@@ -278,7 +278,7 @@ function RecipientCard({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-[14px] font-medium tracking-[-0.02em]">{title}</span>
-          <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium", tagTone)}>{tag}</span>
+          <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium", tagTone)}>{tag}</span>
         </span>
         <span className="mt-0.5 block font-mono text-[11.5px] text-ink-2">
           {account} · {holder}
@@ -356,7 +356,7 @@ function InvoiceIntake({ onRead }: { onRead: (result: IntakeResponse) => void })
             value={text}
             onChange={(event) => setText(event.target.value)}
             rows={5}
-            className="w-full resize-y rounded-xl border border-[var(--line-strong)] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-ink outline-none focus:border-ink"
+            className="w-full resize-y rounded-xl border border-[var(--line-strong)] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-ink focus:border-ink"
           />
           <button
             type="button"
@@ -766,11 +766,11 @@ export default function TestTransaction() {
                       inputMode="decimal"
                       value={amountText}
                       onChange={(event) => setAmountText(formatInput(event.target.value))}
-                      className="min-w-0 flex-1 bg-transparent font-mono text-[32px] tracking-[-0.03em] text-ink outline-none"
+                      className="min-w-0 flex-1 bg-transparent font-mono text-[32px] tracking-[-0.03em] text-ink"
                       aria-label="Amount in euros"
                     />
                     <span className="flex h-9 shrink-0 items-center gap-2 rounded-full bg-[var(--surface-2)] px-3 text-[13px] font-medium">
-                      <span className="grid size-4 place-items-center rounded-full bg-[#003399] text-[8px] text-[#ffcc00]">★</span>
+                      <span className="grid size-4 place-items-center rounded-full bg-[#003399] text-[11px] text-[#ffcc00]">★</span>
                       EUR
                     </span>
                   </span>
@@ -867,7 +867,7 @@ export default function TestTransaction() {
                             <div className="flex items-center gap-2">
                               <span className={cx("text-[13.5px] font-medium tracking-[-0.02em]", reason ? "text-ink-3" : "text-ink")}>{route.name}</span>
                               {isChosen ? (
-                                <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10.5px] font-medium text-accent">Chosen by Sylo</span>
+                                <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[11px] font-medium text-accent">Chosen by Sylo</span>
                               ) : null}
                             </div>
                             <div className="mt-0.5 text-[11.5px] text-ink-3">

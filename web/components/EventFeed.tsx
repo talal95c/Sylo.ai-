@@ -392,7 +392,7 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
                         {item.title ?? EVENT_TITLES[item.type] ?? item.type}
                       </div>
                       <span
-                        className="max-w-[96px] shrink-0 truncate rounded-full border px-2 py-1 text-[8.5px] font-semibold leading-none"
+                        className="max-w-[96px] shrink-0 truncate rounded-full border px-2 py-1 text-[11px] font-semibold leading-none"
                         style={{
                           color: meta.color,
                           borderColor: `color-mix(in srgb, ${meta.color} 11%, white)`,
@@ -403,7 +403,7 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
                         {statusFor(item)}
                       </span>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-[10px] leading-[1.35] text-[rgba(0,0,0,0.46)]">
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-[1.35] text-[rgba(0,0,0,0.55)]">
                       {description}
                       {item.txHash ? (
                         <span className="font-mono" title={item.txHash}>
@@ -425,12 +425,12 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
                       ) : null}
                     </p>
                     {item.simulated ? (
-                      <span className="mt-1.5 inline-flex shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[8px] font-medium leading-none text-ink-2">
+                      <span className="mt-1.5 inline-flex shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-medium leading-none text-ink-2">
                         Simulated
                       </span>
                     ) : null}
                     {item.type === "guardian.incident" && onOpenIncident ? (
-                      <button type="button" onClick={onOpenIncident} className="mt-1.5 text-[10px] font-medium text-[var(--danger)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--danger)]">
+                      <button type="button" onClick={onOpenIncident} className="mt-1.5 text-[11px] font-medium text-[var(--danger)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--danger)]">
                         Open DORA draft
                       </button>
                     ) : null}

@@ -44,7 +44,7 @@ export function PaymentCard({ state, panelOpen = false }: { state: ViewState; pa
               <div className="text-[31px] font-semibold leading-none tabular-nums">
                 {formatAmount(payment.amount.value, payment.amount.currency)}
               </div>
-              <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-medium text-ink-2">
+              <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-ink-2">
                 {payment.amount.currency}
               </span>
             </div>
@@ -132,8 +132,8 @@ function ChainProof({ feed }: { feed: FeedItem[] }) {
   return (
     <div className="mt-3 border-t border-[var(--line)] pt-2.5" aria-label="On-chain proof">
       <div className="flex items-center justify-between">
-        <span className="text-[10.5px] text-ink-3">On-chain proof</span>
-        <span className="text-[9.5px] text-ink-3">Avalanche Fuji · Snowtrace</span>
+        <span className="text-[11px] text-ink-3">On-chain proof</span>
+        <span className="text-[11px] text-ink-3">Avalanche Fuji · Snowtrace</span>
       </div>
       <ul className="mt-1.5">
         <AnimatePresence initial={false}>
@@ -156,7 +156,7 @@ function ChainProof({ feed }: { feed: FeedItem[] }) {
                   <Dot color={danger ? "var(--danger)" : "var(--low)"} />
                   <span className="min-w-0 flex-1 truncate text-ink">{PROOF_LABEL[item.type] ?? item.text}</span>
                   <span className="shrink-0 font-mono text-[10px] text-ink-3">{shortHash(item.txHash)}</span>
-                  <span className="shrink-0 text-[10px] font-medium text-accent group-hover:underline">View ↗</span>
+                  <span className="shrink-0 text-[11px] font-medium text-accent group-hover:underline">View ↗</span>
                 </a>
               </motion.li>
             );
@@ -190,7 +190,7 @@ function riskDetail(payment: NonNullable<ViewState["payment"]>) {
 function AccountBadge({ known }: { known: boolean }) {
   return (
     <span
-      className="rounded-full px-2 py-1 text-[9.5px] font-medium"
+      className="rounded-full px-2 py-1 text-[11px] font-medium"
       style={
         known
           ? { color: "var(--low)", background: "color-mix(in srgb, var(--low) 9%, white)" }
@@ -204,7 +204,7 @@ function AccountBadge({ known }: { known: boolean }) {
 
 function RiskBadge({ tier, score }: { tier: NonNullable<ViewState["payment"]>["tier"]; score: number }) {
   return (
-    <span className="rounded-full bg-[var(--surface-2)] px-2 py-1 text-[9.5px] font-medium text-ink-2">
+    <span className="rounded-full bg-[var(--surface-2)] px-2 py-1 text-[11px] font-medium text-ink-2">
       {tier} · {score}
     </span>
   );
@@ -234,13 +234,13 @@ function PaymentRow({
       <span className="grid size-6 place-items-center rounded-full bg-[var(--surface-2)] text-ink-2">
         <PaymentIcon name={icon} />
       </span>
-      <span className="text-[10.5px] text-ink-3">{label}</span>
+      <span className="text-[11px] text-ink-3">{label}</span>
       <span className="min-w-0">
         <span className="block truncate text-[12px] font-medium" style={valueColor ? { color: valueColor } : undefined}>{value}</span>
         {detail || badge ? (
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
-            {detail ? <span className="block min-w-0 truncate text-[9.5px] text-ink-3" title={detail}>{detail}</span> : null}
-            {badge ? <span className="shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[8px] font-medium leading-none text-ink-2">{badge}</span> : null}
+            {detail ? <span className="block min-w-0 truncate text-[11px] text-ink-3" title={detail}>{detail}</span> : null}
+            {badge ? <span className="shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-medium leading-none text-ink-2">{badge}</span> : null}
           </span>
         ) : null}
       </span>

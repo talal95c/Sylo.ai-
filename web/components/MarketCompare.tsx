@@ -50,7 +50,7 @@ export function MarketCompare({ quote }: { quote: QuoteView }) {
                   />
                 );
               })}
-              <p className="mt-1.5 px-1 text-[9px] leading-snug text-ink-3">
+              <p className="mt-1.5 px-1 text-[11px] leading-snug text-ink-3">
                 Real public quotes for the same amount, EUR→GHS, captured up to {MARKET_CAPTURED_ON} (Wise price API and comparison data). Fees + FX margin vs mid-market. Sylo figures are simulated.
               </p>
             </div>
@@ -68,12 +68,12 @@ function MarketRow({ name, kind, cost, costPct, eta, delta, note, title, highlig
         <div className={cx("truncate text-[11px] font-medium", highlight ? "text-accent" : "text-ink")}>
           {name} <span className="font-normal text-ink-3">· {kind}</span>
         </div>
-        <div className="truncate text-[9.5px] text-ink-3">{eta}{note ? ` · ${note}` : ""}</div>
+        <div className="truncate text-[11px] text-ink-3">{eta}{note ? ` · ${note}` : ""}</div>
       </div>
       <div className="text-right">
         <div className="text-[11px] font-medium tabular-nums text-ink">{euros(Math.round(cost))} <span className="font-normal text-ink-3">{pct(costPct)}</span></div>
         {delta !== undefined ? (
-          <div className="text-[9.5px] tabular-nums" style={{ color: delta > 0 ? "var(--low)" : "var(--medium)" }}>
+          <div className="text-[11px] tabular-nums" style={{ color: delta > 0 ? "var(--low)" : "var(--medium)" }}>
             {delta > 0 ? `Sylo saves ${euros(Math.round(delta))}` : `${euros(Math.round(-delta))} cheaper than Sylo`}
           </div>
         ) : null}
