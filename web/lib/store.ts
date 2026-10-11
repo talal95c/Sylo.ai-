@@ -16,7 +16,7 @@ import type {
   VerificationRequestedData,
   SystemModeData,
 } from "./events";
-import { describe } from "./feed";
+import { describe, distinctReasons } from "./feed";
 
 export type PaymentStatus =
   | "idle"
@@ -51,6 +51,8 @@ export interface FeedItem {
   functionName?: string;
   reasonCode?: string;
   incidentId?: string;
+  /** Title for this event when the type alone is not specific enough (alerts, attacks). */
+  title?: string;
 }
 
 export interface RailView extends RailDownData {
@@ -270,7 +272,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
           score: Number(data.score),
           tier: data.tier as Tier,
           model: String(data.model ?? ""),
-          reasons: data.reasons as { ref: string; text: string }[],
+          reasons: distinctReasons(data.reasons as { ref: string; text: string; ruleId?: string | null }[]),
           rulesFired: data.rulesFired as string[],
           oobResolvable: data.oobResolvable === true,
         },
@@ -353,7 +355,10 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
       return {
         ...next,
         payment: paymentWithStatus(next.payment, "held"),
-        held: data as unknown as PaymentHeldData,
+        held: {
+          ...(data as unknown as PaymentHeldData),
+          reasons: distinctReasons((data as unknown as PaymentHeldData).reasons),
+        },
         alertOpen: true,
       };
     case "case.ready":

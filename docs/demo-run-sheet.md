@@ -36,7 +36,7 @@ Times are at speed 1. "UI" means a button on the demo screen; "More scenes" is t
 |---|---|---|---|---|
 | 1 | Legitimate payment | UI: **Legitimate payment** | R4 excluded by Ghana's export-proceeds rule; LOW 10 (rules) or LOW 25 (model); R3 chosen; two approvals; intent committed; five hops; "Credited" | 16 s |
 | 1 | Legitimate payment, confidential (`CONFIDENTIAL_MODE` not `off`) | UI: **Legitimate payment** | Same as above, plus `confidential.transfer` on the Avalanche leg: amount hidden, the auditor decrypted EUR 85,000. The diverted invoice of Scene 2 still uses the public escrow | 16 s (about 25 s with `eerc`) |
-| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons (seven with the model); HIGH 77 with the model, handled like MEDIUM because only the beneficiary's identity is in doubt; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
+| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons (five on screen with the model: it sends seven, and the screen hides the two that repeat a rule); HIGH 77 with the model, handled like MEDIUM because only the beneficiary's identity is in doubt; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
 | 2 | Supplier denies | UI: **"We never changed it"** | Denial recorded; analyst confirms; revoked; refunded; freeze request to the mule's bank; "Payment stopped" | 7 s |
 | 2 | Supplier confirms (variant) | UI: **"Yes, it's our account"** | Released; two more hops; credited at the new account | 5 s |
 | 2b | Attack 1: release a revoked payment | UI: **Try release() attack** | `tx.reverted`, `PaymentNotReleasable` | 1 s |

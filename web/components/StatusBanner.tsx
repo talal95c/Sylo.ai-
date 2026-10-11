@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { actionLabel } from "@/lib/feed";
 import type { ViewState } from "@/lib/store";
 import { cx, ease } from "./ui";
 
@@ -20,7 +21,7 @@ export function StatusBanner({ state, onOpenIncident }: { state: ViewState; onOp
           key: `incident-${state.incident.incidentId}`,
           tone: "danger" as const,
           title: state.incident.headline ?? `Guardian incident · ${state.incident.incidentId}`,
-          detail: state.incident.action,
+          detail: actionLabel(state.incident.action),
           simulated: state.incident.simulated,
           action: onOpenIncident,
         }

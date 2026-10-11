@@ -93,7 +93,7 @@ Suggested order:
 - [ ] **The outage outcome reads "€216 all-in vs €216 via SWIFT · Saved €0"** (`components/AlertOverlay.tsx` ~168-172, `components/DecisionSteps.tsx` ~96). When the payment was rerouted to SWIFT, say so instead: "Rerouted to SWIFT: Avalanche rail was down · €216 · 1–3 days."
 - [ ] **The outage banner stays after "Payment rail restored."** Clear it on `rail.up`.
 - [ ] **The savings line is the best pitch number but is tiny grey text** ("Saved €36.79 vs SWIFT" in the credited toast). Make it the headline of the credited card.
-- [ ] **[Youssef] Reason counts disagree.** The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
+- [x] **[Youssef] Reason counts disagree.** (Done in the web: model reasons that repeat a fired rule are hidden, and the panel counts reasons.) The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
   - "first payment ever to this account" / "Only 0 successful payments on this account";
   - "name match 0.38" / "name match score is 38%".
   - **Fix:** de-duplicate in the web, or ask Lane B to stop the model reasons repeating the rules. Use one count everywhere.
@@ -106,13 +106,13 @@ Suggested order:
 
 Where a fix is inside a component Talal is editing (`DecisionSteps`, `StatusBanner`, `IncidentDrawer`), give him the sentence instead of editing the file.
 
-- [ ] Rule IDs: `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK` (feed, and cut to 96px in red in the route list), `TIER_MEDIUM_REQUIRES_CONDITIONAL_SET`, `PAYER_LIMIT`, `RAIL_DOWN` (`lib/feed.ts` ~97, `components/DecisionSteps.tsx` ~133).
-- [ ] "Scenario started: diverted" / "mule_wave" / "outage": use the scene names from the controls.
-- [ ] `IN_APP alert to Claire Martin`, `NETWORK alert to mule_bank`. The title "Security alert sent" is wrong for the in-app reassurance. Build the title from the `audience` and `channel` fields (`lib/feed.ts` ~225).
-- [ ] `FREEZE_AND_PAUSE` (`components/StatusBanner.tsx` ~23, `components/IncidentDrawer.tsx` ~55).
+- [x] Rule IDs: `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK` (feed, and cut to 96px in red in the route list), `TIER_MEDIUM_REQUIRES_CONDITIONAL_SET`, `PAYER_LIMIT`, `RAIL_DOWN` (`lib/feed.ts` ~97, `components/DecisionSteps.tsx` ~133).
+- [x] "Scenario started: diverted" / "mule_wave" / "outage": use the scene names from the controls.
+- [x] `IN_APP alert to Claire Martin`, `NETWORK alert to mule_bank`. The title "Security alert sent" is wrong for the in-app reassurance. Build the title from the `audience` and `channel` fields (`lib/feed.ts` ~225).
+- [x] `FREEZE_AND_PAUSE` (`components/StatusBanner.tsx` ~23, `components/IncidentDrawer.tsx` ~55).
 - [ ] Case file refs `V · R-PV-01 · evt-000328`, "T1 supplier impersonation", "(p=1.00)": fine for an analyst view, but put them in a hover or small-print line.
-- [ ] Amounts in three formats: "€85,000.00", "EUR 85,000" and an unformatted "EUR 85000.00" (`lib/feed.ts` ~86, ~135). Use one formatter.
-- [ ] "1 accounts", and other unpluralised counts.
+- [x] Amounts in three formats: "€85,000.00", "EUR 85,000" and an unformatted "EUR 85000.00" (`lib/feed.ts` ~86, ~135). Use one formatter.
+- [x] "1 accounts", and other unpluralised counts. (Lane B: the model reason "Only N successful payments on this account" still says "1 payments"; the web hides it when rule R-FL-01 already fired.)
 
 ### Animations
 
