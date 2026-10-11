@@ -47,6 +47,13 @@ def main() -> int:
     schema = json.loads((SPEC / "events.schema.json").read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
+    traffic_validator = Draft202012Validator(
+        {
+            "$schema": schema["$schema"],
+            "$defs": schema["$defs"],
+            **schema["$defs"]["TrafficSample"],
+        }
+    )
     geo = json.loads((SPEC / "geo" / "institutions.json").read_text(encoding="utf-8"))
     known = {inst["id"] for inst in geo["institutions"]}
 
@@ -57,6 +64,24 @@ def main() -> int:
 
     total = 0
     for path in files:
+        if path.name == "traffic.jsonl":
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                if not line.strip():
+                    continue
+                total += 1
+                where = f"{path.name}:{lineno}"
+                try:
+                    sample = json.loads(line)
+                except json.JSONDecodeError as err:
+                    problems.append(f"{where}: invalid JSON ({err})")
+                    continue
+                for err in traffic_validator.iter_errors(sample):
+                    problems.append(f"{where} (TrafficSample): {err.message}")
+                for arc in sample.get("arcs", []):
+                    for inst in (arc.get("from"), arc.get("to")):
+                        if inst is not None and inst not in known:
+                            problems.append(f"{where}: unknown institution {inst!r}")
+            continue
         previous = None
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if not line.strip():

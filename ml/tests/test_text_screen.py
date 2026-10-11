@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from sylo_spec import SPEC_DIR
 
 from sylo_risk.case import CaseWriter, TemplateCaseWriter, TextScreen, TextSignals
@@ -70,6 +71,53 @@ def test_unavailable_screen_adds_unverified_sentence(tmp_path, monkeypatch):
         sentence.text == "Text screening unavailable: treat the document as unverified."
         and sentence.refs == ["TX-UNAVAILABLE"]
         for sentence in case.sentences
+    )
+
+
+@pytest.mark.parametrize("writer_kind", ["template", "case"])
+def test_writer_resolves_bundled_invoice_by_invoice_ref_without_explicit_documents(
+    writer_kind,
+):
+    events = _events()
+
+    class FixedScreen:
+        def screen(self, text):
+            assert text
+            return TextSignals(0.99, 0.1, 0.99, "jev-cached", "jev-text-v1")
+
+    screen = FixedScreen()
+    writer = (
+        TemplateCaseWriter(text_screen=screen)
+        if writer_kind == "template"
+        else CaseWriter(mode="off", text_screen=screen)
+    )
+
+    case = writer.write(PAYMENT_ID, events)
+
+    refs = {ref for sentence in case.sentences for ref in sentence.refs}
+    assert {"TX-CHANGE", "TX-INJECTION"} <= refs
+
+
+@pytest.mark.parametrize("writer_kind", ["template", "case"])
+def test_writer_ignores_unknown_invoice_ref_without_crashing(writer_kind):
+    events = _events()
+    payment = next(event for event in events if event["type"] == "payment.created")
+    payment["data"]["invoiceRef"] = "../unknown"
+
+    class FixedScreen:
+        def screen(self, text):
+            raise AssertionError("no document should be screened")
+
+    writer = (
+        TemplateCaseWriter(text_screen=FixedScreen())
+        if writer_kind == "template"
+        else CaseWriter(mode="off", text_screen=FixedScreen())
+    )
+
+    case = writer.write(PAYMENT_ID, events)
+
+    assert not any(
+        ref.startswith("TX-") for sentence in case.sentences for ref in sentence.refs
     )
 
 

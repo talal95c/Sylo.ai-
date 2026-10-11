@@ -7,7 +7,7 @@
       "refs": [
         "V",
         "R-PV-01",
-        "evt-000004"
+        "risk.scored"
       ]
     },
     {
@@ -15,7 +15,7 @@
       "refs": [
         "B",
         "R-FL-01",
-        "evt-000004"
+        "risk.scored"
       ]
     },
     {
@@ -23,7 +23,7 @@
       "refs": [
         "B",
         "R-FL-03",
-        "evt-000004"
+        "risk.scored"
       ]
     },
     {
@@ -31,105 +31,18 @@
       "refs": [
         "R",
         "R-NM-01",
-        "evt-000004"
-      ]
-    },
-    {
-      "text": "The untrusted document contains instructions addressed to a system or reviewer, citing evt-000015.",
-      "refs": [
-        "evt-000015"
+        "risk.scored"
       ]
     },
     {
       "text": "Funds are locked in escrow pending out-of-band confirmation.",
       "refs": [
-        "evt-000013",
-        "evt-000014"
+        "escrow.deposited",
+        "payment.held"
       ]
     }
   ],
-  "timeline": [
-    {
-      "at": "2026-10-11T09:00:00.000Z",
-      "eventId": "evt-000001",
-      "text": "Scenario started."
-    },
-    {
-      "at": "2026-10-11T09:00:00.400Z",
-      "eventId": "evt-000002",
-      "text": "Payment instruction received."
-    },
-    {
-      "at": "2026-10-11T09:00:01.300Z",
-      "eventId": "evt-000003",
-      "text": "Payment route checked against corridor norms."
-    },
-    {
-      "at": "2026-10-11T09:00:02.200Z",
-      "eventId": "evt-000004",
-      "text": "Risk scored MEDIUM."
-    },
-    {
-      "at": "2026-10-11T09:00:03.100Z",
-      "eventId": "evt-000005",
-      "text": "A compliant settlement route was selected."
-    },
-    {
-      "at": "2026-10-11T09:00:04.100Z",
-      "eventId": "evt-000006",
-      "text": "Approval granted."
-    },
-    {
-      "at": "2026-10-11T09:00:05.000Z",
-      "eventId": "evt-000007",
-      "text": "Intent committed."
-    },
-    {
-      "at": "2026-10-11T09:00:05.300Z",
-      "eventId": "evt-000008",
-      "text": "Leg sent."
-    },
-    {
-      "at": "2026-10-11T09:00:06.700Z",
-      "eventId": "evt-000009",
-      "text": "Leg settled."
-    },
-    {
-      "at": "2026-10-11T09:00:07.000Z",
-      "eventId": "evt-000010",
-      "text": "Leg sent."
-    },
-    {
-      "at": "2026-10-11T09:00:08.400Z",
-      "eventId": "evt-000011",
-      "text": "Leg settled."
-    },
-    {
-      "at": "2026-10-11T09:00:08.700Z",
-      "eventId": "evt-000012",
-      "text": "Leg sent."
-    },
-    {
-      "at": "2026-10-11T09:00:09.800Z",
-      "eventId": "evt-000013",
-      "text": "Funds deposited into escrow."
-    },
-    {
-      "at": "2026-10-11T09:00:10.000Z",
-      "eventId": "evt-000014",
-      "text": "Payment held for out-of-band confirmation."
-    },
-    {
-      "at": "2026-10-11T09:00:11.500Z",
-      "eventId": "evt-000015",
-      "text": "Case ready."
-    },
-    {
-      "at": "2026-10-11T09:00:11.500Z",
-      "eventId": "evt-000016",
-      "text": "Out-of-band verification requested."
-    }
-  ],
+  "timeline": [],
   "typology": "T1 supplier impersonation",
   "recommendedAction": "RELEASE_AFTER_CONFIRMATION",
   "explanation": "The payment is held due to high-risk indicators: emailed invoice with new bank details, first-time high-value payment, and mismatched account holder name. Ghanaian FX rules require export proceeds to reach the exporter's nominated bank, which this account is not. Funds are safely locked in escrow until out-of-band verification confirms legitimacy.",
@@ -143,8 +56,8 @@
       "source": "rule:R-PV-01"
     },
     {
-      "ref": "evt-000004",
-      "source": "event:evt-000004"
+      "ref": "risk.scored",
+      "source": "event:risk.scored"
     },
     {
       "ref": "B",
@@ -167,16 +80,12 @@
       "source": "rule:R-NM-01"
     },
     {
-      "ref": "evt-000013",
-      "source": "event:evt-000013"
+      "ref": "escrow.deposited",
+      "source": "event:escrow.deposited"
     },
     {
-      "ref": "evt-000014",
-      "source": "event:evt-000014"
-    },
-    {
-      "ref": "evt-000015",
-      "source": "event:evt-000015"
+      "ref": "payment.held",
+      "source": "event:payment.held"
     }
   ],
   "reportDraft": null,

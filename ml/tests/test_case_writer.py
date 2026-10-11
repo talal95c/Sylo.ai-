@@ -90,9 +90,9 @@ class _Response:
         return {"choices": [{"message": {"content": json.dumps(self.body)}}]}
 
 
-def _mocked_case(monkeypatch, action: str):
+def _mocked_case(monkeypatch, action: str, *, text_screen: TextScreen | None = None):
     events = scene2_events()
-    base = TemplateCaseWriter().write("PAY-2026-0002", events)
+    base = TemplateCaseWriter(text_screen=text_screen).write("PAY-2026-0002", events)
     body = base.model_dump(by_alias=True, mode="json")
     body["recommendedAction"] = action
     observed = {}
@@ -114,7 +114,7 @@ def test_injected_less_strict_action_is_rejected(monkeypatch):
 
 
 def test_stricter_action_is_accepted_and_prompt_is_spotlighted(monkeypatch):
-    events, observed = _mocked_case(monkeypatch, "ESCALATE_AML")
+    events, observed = _mocked_case(monkeypatch, "ESCALATE_AML", text_screen=TextScreen(mode="off"))
     invoice = (Path(__file__).parents[1] / "sylo_risk/case/fixtures/scene2_invoice.txt").read_text()
     case = CaseWriter(
         mode="live",
@@ -148,3 +148,23 @@ def test_cache_hit_is_revalidated_and_invalid_cache_falls_back(tmp_path):
     path.write_text(json.dumps(body), encoding="utf-8")
     fallback = CaseWriter(mode="cached", cache_dir=tmp_path).write("PAY-2026-0002", events)
     assert fallback.llm == "off"
+
+
+def _renumbered(events: list[dict], offset: int) -> list[dict]:
+    return [{**event, "id": f"evt-{int(event['id'][4:]) + offset:06d}", "seq": event["seq"] + offset} for event in events]
+
+
+def test_scene2_cache_survives_earlier_scenes_in_the_session():
+    events = _renumbered([event for event in scene2_events() if event["type"] != "case.ready"], 45)
+    case = CaseWriter(mode="cached").write("PAY-2026-0002", events)
+
+    assert case.llm == "cached"
+    ids = {event["id"] for event in events}
+    cited_events = {ref for sentence in case.sentences for ref in sentence.refs if ref.startswith("evt-")}
+    assert cited_events and cited_events <= ids
+    assert [entry.event_id for entry in case.timeline] == [event["id"] for event in events]
+
+
+def test_scene2_cache_falls_back_when_a_cited_event_is_missing():
+    events = [event for event in scene2_events() if event["type"] not in {"case.ready", "payment.held"}]
+    assert CaseWriter(mode="cached").write("PAY-2026-0002", events).llm == "off"
