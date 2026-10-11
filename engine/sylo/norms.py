@@ -49,6 +49,7 @@ class RouteDef:
     token: str = "EURC"
     fees_min: float | None = None
     fees_max: float | None = None
+    fx_margin_pct: float = 0.0
 
     def fees(self, amount: float) -> float:
         """Fixed part plus percentage, within the rail's minimum and maximum, in the pack's currency."""
@@ -58,6 +59,9 @@ class RouteDef:
         if self.fees_max is not None:
             total = min(total, self.fees_max)
         return total
+
+    def fx_margin(self, amount: float) -> float:
+        return self.fx_margin_pct * amount
 
     @property
     def days(self) -> float:
@@ -98,8 +102,8 @@ class Pack:
         return {**institution_countries(), **{item["id"]: item["country"] for item in self.institutions}}
 
     @property
-    def fx_eur_ghs(self) -> float:
-        return self.fx["EUR_GHS"]
+    def fx_eur_ghs(self) -> float | None:
+        return self.fx.get("EUR_GHS")
 
     def authorities(self) -> dict[str, dict[str, str]]:
         """Supervisor and financial intelligence unit of each country of the corridor, from its profile."""
@@ -147,6 +151,7 @@ def load_pack(corridor: str = "FR-GH", base: Path = ENGINE_DIR) -> Pack:
                 fees_min=float(r["feesMin"]) if "feesMin" in r else None,
                 fees_max=float(r["feesMax"]) if "feesMax" in r else None,
                 fees_pct=float(r["feesPct"]) if "feesPct" in r else None,
+                fx_margin_pct=float(r.get("fxMarginPct", 0.0)),
                 minutes=float(r["minutes"]),
                 p_fail=float(r["pFail"]),
                 p_unusable=float(r.get("pUnusable", 0)),
@@ -302,6 +307,7 @@ class NormsResult:
     tax_notices: list[dict[str, str]]
     controls: list[dict[str, str]] = field(default_factory=list)
     """Controls a rule asks for without excluding a route (for example the out-of-band check outside SEPA)."""
+    fx_eur_ghs: float | None = None
 
     def route(self, route_id: str) -> RouteEval:
         return next(r for r in self.routes if r.route.id == route_id)
@@ -406,4 +412,4 @@ class NormsEngine:
             for n in self.pack.tax_notices
             if not n.get("whenRoutePasses") or n["whenRoutePasses"] in passing
         ]
-        return NormsResult(self.pack.pack_version, evaluations, signals, notices, controls)
+        return NormsResult(self.pack.pack_version, evaluations, signals, notices, controls, self.pack.fx_eur_ghs)

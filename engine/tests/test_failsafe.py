@@ -60,7 +60,9 @@ async def test_when_the_escrow_rail_is_down_a_medium_payment_is_held_at_the_bank
     run = await orchestrator.run_to_end("diverted", auto_answer="deny")
     selected = events_of(orchestrator, "route.selected")[0]["data"]
     assert (selected["routeId"], selected["settlement"], selected["tier"]) == ("R1", "FIAT_HOLD", "MEDIUM")
-    assert {"routeId": "R3", "s": 179.21, "excludedBy": "RAIL_DOWN"} in selected["scores"]
+    assert {"routeId": "R3", "s": 855.81, "excludedBy": "RAIL_DOWN"}.items() <= next(
+        score for score in selected["scores"] if score["routeId"] == "R3"
+    ).items()
     assert selected["reason"].endswith("R3 is not available: its rail is down.")
     held = events_of(orchestrator, "payment.held")[0]["data"]
     assert (held["at"], held["hop"]) == ("bank", 0) and "Banque Hexagone" in held["protection"]

@@ -1,7 +1,7 @@
 """Router: the cheapest route that is legal and allowed at the payment's tier (v0 spec §5.7).
 
-S(r) = fees + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk. Fraud risk is never an
-input: the tier only filters which settlement modes are allowed.
+S(r) = fees + fxMargin*A + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk. Fraud risk
+is never an input: the tier only filters which settlement modes are allowed.
 """
 
 from __future__ import annotations
@@ -31,13 +31,44 @@ class RerouteLimits:
 
 
 def route_cost(route: RouteDef, amount: float, model: RouteModel, route_risk: float = 0.0) -> float:
-    return (
-        route.fees(amount)
-        + model.lam * amount * route.days
-        + model.mu * amount * route.p_fail
-        + model.nu * amount * route.p_unusable
-        + model.sigma * route_risk
+    return route_cost_breakdown(route, amount, model, route_risk)["totalCostEur"]
+
+
+def route_cost_breakdown(
+    route: RouteDef, amount: float, model: RouteModel, route_risk: float = 0.0
+) -> dict[str, float]:
+    fees = round(route.fees(amount), 2)
+    fx_margin = round(route.fx_margin(amount), 2)
+    cash_cost = round(fees + fx_margin, 2)
+    time_cost = round(model.lam * amount * route.days, 2)
+    failure_cost = round(
+        model.mu * amount * route.p_fail + model.nu * amount * route.p_unusable + model.sigma * route_risk, 2
     )
+    return {
+        "feesEur": fees,
+        "fxMarginEur": fx_margin,
+        "timeCostEur": time_cost,
+        "failureCostEur": failure_cost,
+        "cashCostEur": cash_cost,
+        "totalCostEur": round(cash_cost + time_cost + failure_cost, 2),
+    }
+
+
+def _route_comparison(
+    route: RouteDef, amount: float, model: RouteModel, mid_rate: float | None
+) -> dict[str, Any]:
+    cost = route_cost_breakdown(route, amount, model)
+    return {
+        "name": route.name,
+        "etaLabel": route.eta_label,
+        "etaMinutes": route.minutes,
+        "feesEur": cost["feesEur"],
+        "fxMarginEur": cost["fxMarginEur"],
+        "cashCostEur": cost["cashCostEur"],
+        "recipientGetsGhs": (
+            round(amount * (1 - route.fx_margin_pct) * mid_rate, 2) if mid_rate is not None else None
+        ),
+    }
 
 
 def tier_exclusion(tier: Tier, route: RouteDef) -> str | None:
@@ -61,6 +92,10 @@ class RouteDecision:
     price_of_safety: float
     blocked_by: str | None = None
     """Why no route was chosen: ``TIER``, ``RAILS`` or ``PAYER_LIMIT``. None when a route was chosen."""
+    cost: dict[str, float] | None = None
+    eta_minutes: float | None = None
+    mid_rate_eur_ghs: float | None = None
+    recipient_gets_ghs: float | None = None
 
     @property
     def route(self) -> RouteDef | None:
@@ -80,6 +115,10 @@ class RouteDecision:
             "etaLabel": route.eta_label,
             "priceOfSafetyEur": self.price_of_safety,
             "hops": self.route_eval.hops,
+            "cost": self.cost,
+            "etaMinutes": self.eta_minutes,
+            "midRateEurGhs": self.mid_rate_eur_ghs,
+            "recipientGetsGhs": self.recipient_gets_ghs,
         }
 
 
@@ -117,19 +156,20 @@ def choose_route(
     over_limit: list[str] = []
     for evaluation in norms.routes:
         route = evaluation.route
+        comparison = _route_comparison(route, amount, model, norms.fx_eur_ghs)
         if evaluation.status != PASS:
-            scores.append({"routeId": route.id, "s": None, "excludedBy": evaluation.excluded_by})
+            scores.append({"routeId": route.id, "s": None, "excludedBy": evaluation.excluded_by, **comparison})
             continue
         s = cost_by_id[route.id]
         if route.id in unavailable:
-            scores.append({"routeId": route.id, "s": s, "excludedBy": unavailable[route.id]})
+            scores.append({"routeId": route.id, "s": s, "excludedBy": unavailable[route.id], **comparison})
             continue
         legal.append((s, route.id, evaluation))
         exclusion = tier_exclusion(action_tier, route)
         if exclusion is None and rerouting and limits.exceeded_by(route, amount):
             exclusion = PAYER_LIMIT
             over_limit.append(route.id)
-        scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion})
+        scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion, **comparison})
         if exclusion is None:
             allowed.append((s, route.id, evaluation))
 
@@ -169,6 +209,7 @@ def choose_route(
         reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety, symbol)
         settlement = best.route.settlement
     reason += texts.rails_unavailable(unavailable)
+    cost = route_cost_breakdown(best.route, amount, model)
     return RouteDecision(
         tier=action_tier,
         route_eval=best,
@@ -179,4 +220,12 @@ def choose_route(
         s_selected=best_s,
         s_swift=swift,
         price_of_safety=price_of_safety,
+        cost=cost,
+        eta_minutes=best.route.minutes,
+        mid_rate_eur_ghs=norms.fx_eur_ghs,
+        recipient_gets_ghs=(
+            round(amount * (1 - best.route.fx_margin_pct) * norms.fx_eur_ghs, 2)
+            if norms.fx_eur_ghs is not None
+            else None
+        ),
     )

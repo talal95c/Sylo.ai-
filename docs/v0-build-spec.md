@@ -188,7 +188,7 @@ Field notation is TypeScript-like. `Hop = { from: InstitutionId, to: Institution
 | `payment.created` | order received | `{ uetr, payer: { id, name, institutionId }, beneficiary: { payeeName, accountHolder, accountMasked, institutionId, knownPayee: boolean, knownAccount: boolean }, amount: { value, currency }, purpose, invoiceRef, provenance, senderDomain? }` |
 | `norms.checked` | norms evaluated | `{ packVersion, routes: [{ routeId, name, settlement, hops: Hop[], status: "PASS"\|"EXCLUDED", excludedBy?: string, reason?: string, legalRef?: string }], signals: [{ code, text, ruleId }], taxNotices: [{ text, reference }] }` |
 | `risk.scored` | risk computed | `{ score: 0-100, tier: "LOW"\|"MEDIUM"\|"HIGH"\|"CRITICAL", rulesFired: string[], reasons: [{ ref, text }], model: string }` |
-| `route.selected` | route chosen | `{ routeId, name, settlement, tier, scores: [{ routeId, s: number\|null, excludedBy: string\|null }], reason, feesEur, etaLabel, priceOfSafetyEur }` |
+| `route.selected` | route chosen | `{ routeId, name, settlement, tier, scores: [{ routeId, s: number\|null, excludedBy: string\|null }], reason, feesEur, etaLabel, priceOfSafetyEur }` (v1 optional: `cost`, `etaMinutes`, `midRateEurGhs`, `recipientGetsGhs`; each score may include `name`, `etaLabel`, `etaMinutes`, `feesEur`, `fxMarginEur`, `cashCostEur`, `recipientGetsGhs`) |
 | `approval.granted` | approval recorded (auto in v0) | `{ by: [{ name, role }], method: "SCA"\|"DUAL_CONTROL", conditional: boolean, approvalHash }` |
 | `intent.committed` | `commit` succeeded | `{ intentHash, tier, txHash, explorerUrl: string\|null }` |
 | `leg.sent` | a hop starts | `{ hop: number, from, to, kind, rail, durationMs }` |
@@ -201,7 +201,7 @@ Field notation is TypeScript-like. `Hop = { from: InstitutionId, to: Institution
 | `escrow.refunded` | `refund` succeeded | `{ to: InstitutionId, amount, txHash, explorerUrl }` |
 | `escrow.released` | `release` succeeded | `{ to: InstitutionId, amount, txHash, explorerUrl }` |
 | `intent.executed` | registry status becomes EXECUTED | `{ txHash, explorerUrl }` |
-| `payment.credited` | last hop settled | `{ at: InstitutionId, feesEur, routeCostEur, swiftRouteCostEur, elapsedLabel }` |
+| `payment.credited` | last hop settled | `{ at: InstitutionId, feesEur, routeCostEur, swiftRouteCostEur, elapsedLabel }` (v1 optional: `cashCostEur`, `swiftCashCostEur`, `fxMarginEur`, `recipientGetsGhs`, `etaMinutes`, `swiftEtaLabel`, `swiftEtaMinutes`) |
 | `payment.stopped` | refund finished | `{ headline, detail }` |
 | `attack.attempted` | attack endpoint called | `{ attack: "release_revoked", description, by: "attacker" }` |
 | `tx.reverted` | a chain call reverted | `{ function, reason, txHash: string\|null, explorerUrl: string\|null }` |
@@ -435,16 +435,16 @@ Legit R3 therefore has 5 hops: `payer_rhone→bank_fr→casp_eu→vasp_gh→bank
 
 Rail parameters (in the pack YAML):
 
-| Route | Fees | Time `T` (days) | pFail | pUnusable |
-|---|---|---|---|---|
-| R1 | €80 | 2 | 0.01 | 0 |
-| R2 | €935 | 1/24 | 0.0025 | 0 |
-| R3 | €170 | 2/24 | 0.0025 | 0 |
-| R4 | 1.5% of amount | 10/1440 | 0.03 | 0.05 |
+| Route | Fees | FX margin | Time `T` (days) | pFail | pUnusable |
+|---|---|---|---|---|---|
+| R1 | €80 | 2% | 2 | 0.01 | 0 |
+| R2 | €935 | 2% | 1/24 | 0.0025 | 0 |
+| R3 | €170 | 0.8% | 2/24 | 0.0025 | 0 |
+| R4 | 1.5% of amount | 2% | 10/1440 | 0.03 | 0.05 |
 
-- `S(r) = fees + λ·A·T + μ·A·pFail + ν·A·pUnusable + σ·routeRisk`, with λ = 0.0007, μ = 0.02, ν = 0.05, σ = 1, routeRisk = 0 in v0. **Fraud risk is never an input.**
+- `S(r) = fees + fxMargin·A + λ·A·T + μ·A·pFail + ν·A·pUnusable + σ·routeRisk`, with λ = 0.00022 (≈ 8%/yr SME cost of capital, simulated), μ = 0.02, ν = 0.05, σ = 1, routeRisk = 0 in v0. FX margin and delay are distinct cost components; **fraud risk is never an input.**
 - Eligible: norms PASS ∧ tier LOW, or tier MEDIUM ∧ settlement in {ONCHAIN_ESCROW, FIAT_HOLD}; HIGH and CRITICAL → no route.
-- Expected for A = 85,000: **R1 = 216.00, R3 = 179.21, R2 = 941.73**, R4 excluded → R3. At MEDIUM, R2 is excluded with `excludedBy: "TIER_MEDIUM_REQUIRES_CONDITIONAL_SETTLEMENT"`.
+- Expected for A = 85,000: **R1 = 1,834.40, R3 = 855.81, R2 = 2,640.03**, R4 excluded → R3. The route cost breakdown is `feesEur`, `fxMarginEur`, `timeCostEur`, `failureCostEur`, `cashCostEur` (fees plus FX), and `totalCostEur`; `route.selected` also exposes ETA and recipient GHS at the modeled mid-rate. At MEDIUM, R2 is excluded with `excludedBy: "TIER_MEDIUM_REQUIRES_CONDITIONAL_SETTLEMENT"`.
 - `priceOfSafetyEur` = S(best at this tier) − S(best if LOW) → 0 in both scenarios.
 - `etaLabel`: R3 "≈ 2 h", R1 "1–3 days".
 

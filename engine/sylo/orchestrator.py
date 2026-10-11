@@ -1691,6 +1691,7 @@ class Orchestrator:
 
         await pacer.wait(300)
         run.status = "credited"
+        swift_score = next((score for score in decision.scores if score["routeId"] == "R1"), None)
         self._emit(
             run,
             "payment.credited",
@@ -1699,6 +1700,13 @@ class Orchestrator:
                 "feesEur": decision.fees_eur,
                 "routeCostEur": decision.s_selected,
                 "swiftRouteCostEur": decision.s_swift,
+                "cashCostEur": decision.cost["cashCostEur"],
+                "swiftCashCostEur": swift_score["cashCostEur"] if swift_score else None,
+                "fxMarginEur": decision.cost["fxMarginEur"],
+                "recipientGetsGhs": decision.recipient_gets_ghs,
+                "etaMinutes": decision.eta_minutes,
+                "swiftEtaLabel": swift_score["etaLabel"] if swift_score else None,
+                "swiftEtaMinutes": swift_score["etaMinutes"] if swift_score else None,
                 "elapsedLabel": f"{decision.route.eta_label}{texts.ELAPSED_SUFFIX}",
             },
             simulated=True,

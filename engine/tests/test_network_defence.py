@@ -179,7 +179,9 @@ async def test_scene_5_the_rail_goes_down_the_payment_is_rerouted_and_the_rail_c
     assert [t for t in sequence if not t.startswith("rail.")] == LEGIT_SEQUENCE[:-12] + ["leg.sent", "leg.settled"] * 4 + ["intent.executed", "payment.credited"]
     selected = events_of(orchestrator, "route.selected")[0]["data"]
     assert (selected["routeId"], selected["tier"], selected["settlement"]) == ("R1", "LOW", "DIRECT")
-    assert {"routeId": "R3", "s": 179.21, "excludedBy": "RAIL_DOWN"} in selected["scores"]
+    assert {"routeId": "R3", "s": 855.81, "excludedBy": "RAIL_DOWN"}.items() <= next(
+        score for score in selected["scores"] if score["routeId"] == "R3"
+    ).items()
     assert run.tier == Tier.LOW and run.status == "credited"
     assert orchestrator.rails.adapter("R3").available
     assert (await orchestrator.run_to_end("legit")).decision.route.id == "R3"
@@ -231,7 +233,9 @@ async def test_two_changed_legs_cut_the_adapter_and_later_payments_avoid_it(even
 
     run = await orchestrator.run_to_end("legit")
     selected = events_of(orchestrator, "route.selected")[-1]["data"]
-    assert run.decision.route.id == "R1" and {"routeId": "R3", "s": 179.21, "excludedBy": "KILL_SWITCH"} in selected["scores"]
+    assert run.decision.route.id == "R1" and {"routeId": "R3", "s": 855.81, "excludedBy": "KILL_SWITCH"}.items() <= next(
+        score for score in selected["scores"] if score["routeId"] == "R3"
+    ).items()
     assert "its adapter was cut by the kill switch" in selected["reason"]
     orchestrator.rail_up("R3")
     assert (await orchestrator.run_to_end("legit")).decision.route.id == "R3"
