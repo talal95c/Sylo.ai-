@@ -963,11 +963,12 @@ export default function GlobeCanvas({
     return () => {
       timers.forEach(clearTimeout);
     };
-  }, [lastEvent, state.scenario, institutions, lockPoint, reducedMotion, chainAltitude]);
+  }, [lastEvent, state.scenario, state.wave, institutions, lockPoint, reducedMotion, chainAltitude]);
 
   function onReady() {
     const globe = globeRef.current;
     if (!globe) return;
+    globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const controls = globe.controls() as unknown as {
       autoRotate: boolean;
       autoRotateSpeed: number;

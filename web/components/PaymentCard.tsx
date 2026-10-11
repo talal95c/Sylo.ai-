@@ -87,7 +87,8 @@ export function PaymentCard({ state }: { state: ViewState }) {
                 label="Status"
                 value={status.label}
                 valueColor={status.color}
-                detail={payment.intentHash ? `Signed intent ${shortHash(payment.intentHash, 8, 5)} · ${payment.intentSimulated ? "Simulated" : "On-chain"}` : riskDetail(payment)}
+                detail={payment.intentHash ? `Signed intent ${shortHash(payment.intentHash, 8, 5)}` : riskDetail(payment)}
+                badge={payment.intentHash ? (payment.intentSimulated ? "Simulated" : "On-chain") : undefined}
                 trailing={payment.tier && payment.score !== undefined ? <RiskBadge tier={payment.tier} score={payment.score} /> : undefined}
                 last
               />
@@ -160,6 +161,7 @@ function PaymentRow({
   label,
   value,
   detail,
+  badge,
   trailing,
   valueColor,
   last,
@@ -168,6 +170,7 @@ function PaymentRow({
   label: string;
   value: ReactNode;
   detail?: string;
+  badge?: string;
   trailing?: ReactNode;
   valueColor?: string;
   last?: boolean;
@@ -180,7 +183,12 @@ function PaymentRow({
       <span className="text-[10.5px] text-ink-3">{label}</span>
       <span className="min-w-0">
         <span className="block truncate text-[12px] font-medium" style={valueColor ? { color: valueColor } : undefined}>{value}</span>
-        {detail ? <span className="mt-0.5 block truncate text-[9.5px] text-ink-3" title={detail}>{detail}</span> : null}
+        {detail || badge ? (
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            {detail ? <span className="block min-w-0 truncate text-[9.5px] text-ink-3" title={detail}>{detail}</span> : null}
+            {badge ? <span className="shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[8px] font-medium leading-none text-ink-2">{badge}</span> : null}
+          </span>
+        ) : null}
       </span>
       {trailing ? <span className="ml-1 shrink-0">{trailing}</span> : null}
     </div>
