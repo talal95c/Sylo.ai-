@@ -16,7 +16,7 @@ help:
 	@echo "  fixtures-check  fail if re-recording would change the fixtures"
 	@echo "  demo-check      run the demo scenes and the three attacks against the engine and assert the events"
 	@echo "  verify-log      recompute the hash chain of the decision log (engine/data/log.jsonl)"
-	@echo "  integrity       run 300 changed or replayed payments through the adapters; writes engine/reports/integrity.json"
+	@echo "  integrity       run 400 changed or replayed payments through the adapters; writes engine/reports/integrity.json"
 	@echo "  eval            evaluate the frozen Lane B model (SEED=B or C)"
 	@echo "  data            generate seeded Lane B data (SEED=A, B or C)"
 	@echo "  train           train the Lane B model on seed A"
