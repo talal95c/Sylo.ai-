@@ -30,8 +30,8 @@ Open the **[live demo](https://sylo-0wck.onrender.com/demo)**. A short guided to
 |---|---|---|---|
 | 1 | **Legitimate payment** | The mobile-money route flashes red and is excluded (Ghana's export-proceeds rule). The payment is sealed, then travels five hops to Tamale: **"Credited"**. | Compliance comes first. The cheapest *legal* route wins. Nothing moves before the intent is sealed. |
 | 2 | **Diverted invoice** | Four reasons: the bank details came from an e-mailed invoice, it's the first payment ever to this account, the holder name doesn't match the supplier, and the account isn't the exporter's nominated bank. The payment stops on the Avalanche arc behind an escrow lock: **"Payment held"**. | Fraud is caught **before** the money is lost, with reasons a human can read. |
-| 3 | **"We never changed it"** | The supplier denies on his known phone. The payment is revoked on-chain and the money flies back to Lyon. (Or **"Yes, it's our account"**: released.) | A held payment can be refunded or released. A false alarm costs one confirmation call. |
-| 4 | **Try release() attack** | The smart contract rejects it: `PaymentNotReleasable`. | The contract refuses to release a held payment without a recorded supplier confirmation. |
+| 3 | **"We never changed it"** | The supplier denies on his known phone. The payment is revoked on-chain and the money flies back to Lyon. (Or **"Yes, it's our account"**: released.) | A doubt costs minutes, not money. A false alarm costs one call. |
+| 4 | **Try release() attack** | The smart contract rejects it: `PaymentNotReleasable`. | No model, no admin, no Sylo operator can release the money alone. Only the supplier's confirmation unlocks it, and a forged one is frozen by the guardian. |
 | 5 | **More scenes** | Mule wave and regional circuit breaker, stolen verifier key and guardian, rail outage, SIM swap, beneficiary swap and replay attacks. | Network defence and on-chain defence. |
 
 ![Legitimate payment credited in Tamale, with the saving against SWIFT](docs/assets/readme-demo-credited.png)
@@ -166,6 +166,7 @@ All contracts are source-verified, so anyone can read the code and the transacti
 
 ## Honest limits
 
+We'd rather say them before the judges find them:
 - **False positives:** 6.72 % of legitimate payments are held, against a 2 % target. 80 % of those holds are deliberate: a new payee whose details come from an untrusted source is always checked. The model alone holds 0.45 %. A false alarm costs a confirmation call, not a lost payment.
 - **Precision at HIGH** is 89.9 %, just under our 90 % target.
 - **Evasion:** recall falls to 75.5 % against an attacker who poisons the supplier record.
