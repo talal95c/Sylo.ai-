@@ -173,7 +173,7 @@ function decisionSummary(state: ViewState) {
   if (status === "in_transit") return { title: "Payment released", detail: "The approved payment is following its signed route.", color: "var(--accent)" };
   if (status === "held" || status === "awaiting_supplier" || status === "awaiting_analyst") return { title: "Conditional hold active", detail: "Funds remain protected while the known-contact check is completed.", color: "var(--medium)" };
   if (status === "frozen") return { title: "Guardian freeze active", detail: state.incident?.headline ?? "The payment is frozen and the corridor is paused.", color: "var(--danger)" };
-  if (status === "stopped") return { title: "Payment stopped", detail: "The intent was revoked and the funds were returned to the payer.", color: "var(--danger)" };
+  if (status === "stopped") return { title: "Payment stopped", detail: state.refunded ? "The intent was revoked and the funds were returned to the payer." : "Blocked before any money moved. A case was opened for the analyst.", color: "var(--danger)" };
   if (status === "credited") return { title: "Payment cleared", detail: "The supplier was credited through the approved route.", color: "var(--low)" };
   return { title: "Awaiting events", detail: "The panel updates as the engine reports each step.", color: "var(--ink-3)" };
 }
