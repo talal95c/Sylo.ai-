@@ -129,7 +129,7 @@ rules:
 # Information only: tax notices never change a decision.
 taxNotices:
   - reference: FR-GH-DTC-1993
-    text: "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention (1993) in force."
+    text: "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention signed in Accra on 5 April 1993, in force since 1 April 1997 (BOFiP BOI-INT-CVB-GHA)."
   - reference: DAC8
     whenRoutePasses: R3
     text: "The EU crypto-asset provider reports this leg under DAC8 (since 1 January 2026)."
