@@ -4,6 +4,6 @@ name: France
 currency: EUR
 supervisor: ACPR / Banque de France
 fiu: TRACFIN
-rules: [EU_MICA_EMT_CASP, EU_TRAVEL_RULE, SANCTIONS_SCREEN]
+rules: [EU_MICA_EMT_CASP, EU_TRAVEL_RULE, EU_HIGH_RISK_EDD, EU_VOP_SCOPE, SANCTIONS_SCREEN]
 notes:
   - "Verification of Payee covers SEPA only (Regulation (EU) 2024/886): it does not check a Ghanaian account."

@@ -107,3 +107,94 @@ def validate_case(
 ) -> CaseFile | None:
     case, _ = validate_case_with_reason(value, events, template)
     return case
+
+
+def explain_invalid_case(
+    output: CaseFile | Mapping[str, Any],
+    events: list[Any],
+    template: CaseFile,
+) -> str | None:
+    try:
+        case = output if isinstance(output, CaseFile) else CaseFile.model_validate(output)
+    except ValidationError as error:
+        missing = next(
+            (issue for issue in error.errors() if issue["type"] == "missing"),
+            None,
+        )
+        if missing is not None:
+            field = ".".join(str(part) for part in missing["loc"])
+            return f"missing_field:{field}"
+        short_refs = next(
+            (
+                issue
+                for issue in error.errors()
+                if issue["type"] == "too_short"
+                and len(issue["loc"]) >= 3
+                and issue["loc"][0] == "sentences"
+                and issue["loc"][-1] == "refs"
+            ),
+            None,
+        )
+        return "missing_refs" if short_refs is not None else "invalid_case"
+    except (TypeError, ValueError):
+        return "invalid_case"
+
+    if len(case.explanation.split()) > 120:
+        return "explanation_too_long"
+
+    normalized = [event_dict(event) for event in events]
+    event_ids = {str(event.get("id")) for event in normalized if event.get("id")}
+    risk_data: Mapping[str, Any] = next(
+        (event.get("data", {}) for event in normalized if event.get("type") == "risk.scored"), {}
+    )
+    rules = {str(rule) for rule in risk_data.get("rulesFired", [])}
+    families = {
+        str(reason.get("ref"))
+        for reason in risk_data.get("reasons", [])
+        if isinstance(reason, Mapping) and reason.get("ref")
+    }
+    template_refs = {ref for sentence in template.sentences for ref in sentence.refs}
+    allowed = event_ids | rules | families | (template_refs & TEXT_SCREEN_REFS)
+
+    for sentence in case.sentences:
+        if not sentence.refs:
+            return "missing_refs"
+        if any(ref not in allowed for ref in sentence.refs):
+            return "unknown_ref"
+
+    distinct_refs = {ref for sentence in case.sentences for ref in sentence.refs}
+    citation_refs = {citation.ref for citation in case.citations}
+    if len(citation_refs) != len(case.citations):
+        return "duplicate_citation"
+    if citation_refs != distinct_refs:
+        return "citation_mismatch"
+
+    for citation in case.citations:
+        expected = (
+            f"event:{citation.ref}"
+            if citation.ref in event_ids
+            else f"rule:{citation.ref}"
+            if citation.ref in rules
+            else f"reason:{citation.ref}"
+        )
+        if citation.ref not in allowed or citation.source != expected:
+            return "invalid_citation_source"
+
+    events_json = json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
+    available_numbers = _numbers(events_json)
+    available_numbers.update(
+        _numbers(
+            " ".join(
+                sentence.text
+                for sentence in template.sentences
+                if set(sentence.refs) & TEXT_SCREEN_REFS
+            )
+        )
+    )
+    for text in [case.summary, case.explanation, *(sentence.text for sentence in case.sentences)]:
+        if not _numbers(_strip_refs(text, allowed)).issubset(available_numbers):
+            return "unsupported_claim"
+
+    if ACTION_RANK[case.recommended_action] < ACTION_RANK[template.recommended_action]:
+        return "less_strict_action"
+    return None

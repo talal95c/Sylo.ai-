@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -12,14 +13,15 @@ import httpx
 from sylo_spec.models import CaseFile
 from sylo_spec.ports import CasePort
 
-from .template import event_dict, template_case
+from .template import ACTION_RANK, event_dict, template_case
 from .text_screen import TEXT_SCREEN_REFS, TextScreen, TextSignals
-from .validation import validate_case, validate_case_with_reason
+from .validation import TYPOLOGIES, explain_invalid_case, validate_case
 
 log = logging.getLogger("sylo.case_writer")
 
 PROMPT_VERSION = "s2-v1"
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+SCHEMA_LABEL = "json_schema-strict"
 SAFE_FILENAME = re.compile(r"[A-Za-z0-9._-]+")
 DOCUMENTS_DIR = Path(__file__).resolve().parent / "fixtures" / "documents"
 SYSTEM_PROMPT = """You write an analyst case file for a payment that a bank's payment-integrity system has held or scored.
@@ -33,10 +35,10 @@ Inputs:
 Rules:
 1. Every sentence must cite at least one identifier from <allowed_refs> in its "refs" list.
 2. Do not state any fact, number, name or date that is not in <events>.
-3. recommended_action must be one of ESCALATE_AML, CONFIRM_REVOCATION, RELEASE_AFTER_CONFIRMATION, NO_ACTION. Never recommend releasing money unless the events contain a confirmed out-of-band verification; prefer the stricter action when unsure.
+3. recommendedAction must be one of ESCALATE_AML, CONFIRM_REVOCATION, RELEASE_AFTER_CONFIRMATION, NO_ACTION. Never recommend releasing money unless the events contain a confirmed out-of-band verification; prefer the stricter action when unsure.
 4. explanation: plain English for a bank analyst, at most 120 words, no speculation.
-5. citations must contain exactly one item per distinct sentence ref. The source must be event:<id> for an event id, rule:<id> for a rule id, and reason:<ref> for a reason or TX-* text-screen ref.
-6. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommended_action, explanation, citations[{ref, source}]."""
+5. For each distinct sentence ref, include one citation. Use event:<id> for event ids, rule:<id> for rule ids, and reason:<ref> for reasons or TX-* text-screen refs.
+6. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommendedAction, explanation, citations[{ref, source}]."""
 
 
 def _safe_exception_message(error: Exception, document: str | None, api_key: str | None) -> str:
@@ -146,35 +148,21 @@ def _allowed_refs(
 def _canonicalize_citations(
     output: dict[str, Any], events: list[Any], template: CaseFile
 ) -> dict[str, Any]:
-    sentences = output.get("sentences")
-    if not isinstance(sentences, list):
-        return output
-
     allowed = set(_allowed_refs([event_dict(event) for event in events], template))
-    sentence_refs: set[str] = set()
-    for sentence in sentences:
-        if not isinstance(sentence, Mapping):
-            return output
-        refs = sentence.get("refs")
-        if not isinstance(refs, list):
-            return output
-        for ref in refs:
-            if not isinstance(ref, str) or ref not in allowed:
+    sentences = output.get("sentences")
+    if isinstance(sentences, list):
+        for sentence in sentences:
+            if not isinstance(sentence, Mapping):
+                continue
+            refs = sentence.get("refs")
+            if not isinstance(refs, list):
+                continue
+            if any(not isinstance(ref, str) or ref not in allowed for ref in refs):
                 raise ValueError("Mistral output cited an unknown reference")
-            sentence_refs.add(ref)
 
-    citations = output.get("citations", [])
+    citations = output.get("citations")
     if not isinstance(citations, list):
-        raise ValueError("Mistral output citations are malformed")
-    for citation in citations:
-        if not isinstance(citation, Mapping) or not isinstance(citation.get("ref"), str):
-            raise ValueError("Mistral output citations are malformed")
-        ref = citation["ref"]
-        if ref not in allowed:
-            raise ValueError("Mistral output cited an unknown reference")
-        if ref not in sentence_refs:
-            raise ValueError("Mistral citation has no matching sentence")
-
+        return output
     normalized = [event_dict(event) for event in events]
     event_ids = {str(event.get("id")) for event in normalized if event.get("id")}
     risk_data = next(
@@ -182,11 +170,14 @@ def _canonicalize_citations(
         {},
     )
     rules = {str(rule) for rule in risk_data.get("rulesFired", [])}
-    provided_sources = {citation["ref"]: citation.get("source") for citation in citations}
-    repaired_citations = []
+    repaired = []
     corrected_sources = 0
-    added_citations = 0
-    for ref in sorted(sentence_refs):
+    for citation in citations:
+        if not isinstance(citation, Mapping) or not isinstance(citation.get("ref"), str):
+            continue
+        ref = citation["ref"]
+        if ref not in allowed:
+            raise ValueError("Mistral output cited an unknown reference")
         source = (
             f"event:{ref}"
             if ref in event_ids
@@ -194,19 +185,80 @@ def _canonicalize_citations(
             if ref in rules
             else f"reason:{ref}"
         )
-        if ref not in provided_sources:
-            added_citations += 1
-        elif provided_sources[ref] != source:
-            corrected_sources += 1
-        repaired_citations.append({"ref": ref, "source": source})
+        corrected_sources += citation.get("source") != source
+        repaired.append({**citation, "source": source})
+    if len(repaired) == len(citations):
+        output["citations"] = repaired
     log.info(
-        "Mistral citation normalization: refs=%d corrected_sources=%d added_citations=%d",
-        len(sentence_refs),
+        "Mistral citation normalization: citations=%d corrected_sources=%d",
+        len(repaired),
         corrected_sources,
-        added_citations,
     )
-    output["citations"] = repaired_citations
     return output
+
+
+def _allowed_citation_sources(events: list[dict[str, Any]], refs: list[str]) -> list[str]:
+    event_ids = {str(event.get("id")) for event in events if event.get("id")}
+    risk_data = next(
+        (event.get("data", {}) for event in events if event.get("type") == "risk.scored"), {}
+    )
+    rules = {str(rule) for rule in risk_data.get("rulesFired", [])}
+    return sorted(
+        {
+            f"event:{ref}"
+            if ref in event_ids
+            else f"rule:{ref}"
+            if ref in rules
+            else f"reason:{ref}"
+            for ref in refs
+        }
+    )
+
+
+def _case_schema(refs: list[str], citation_sources: list[str]) -> dict[str, Any]:
+    ref_schema = {"type": "string", "enum": refs}
+    return {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "sentences": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "refs": {"type": "array", "items": ref_schema},
+                    },
+                    "required": ["text", "refs"],
+                    "additionalProperties": False,
+                },
+            },
+            "typology": {"type": "string", "enum": sorted(TYPOLOGIES)},
+            "recommendedAction": {"type": "string", "enum": list(ACTION_RANK)},
+            "explanation": {"type": "string"},
+            "citations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "ref": ref_schema,
+                        "source": {"type": "string", "enum": citation_sources},
+                    },
+                    "required": ["ref", "source"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": [
+            "summary",
+            "sentences",
+            "typology",
+            "recommendedAction",
+            "explanation",
+            "citations",
+        ],
+        "additionalProperties": False,
+    }
 
 
 def _bind_event_refs(raw: dict[str, Any], events: list[Any], template: CaseFile) -> dict[str, Any]:
@@ -300,8 +352,16 @@ class TemplateCaseWriter:
         return template_case(payment_id, events, text_signals=signals)
 
 
+class _CaseWriterFailure(Exception):
+    def __init__(self, reason: str, assistant_content: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+        self.assistant_content = assistant_content
+
+
 class CaseWriter:
     name = "case-writer"
+    schema_label = SCHEMA_LABEL
 
     def __init__(
         self,
@@ -323,6 +383,9 @@ class CaseWriter:
         self.documents = dict(documents or {})
         self.timeout = timeout
         self.text_screen = text_screen or TextScreen()
+        self.last_fallback_reason: str | None = None
+        self.last_repair = False
+        self.last_http_error_body: str | None = None
 
     @staticmethod
     def _with_text_screen(case: CaseFile, template: CaseFile) -> CaseFile:
@@ -382,6 +445,7 @@ class CaseWriter:
             raise RuntimeError("MISTRAL_API_KEY is not configured")
         pseudonymized, replacements = _placeholder_events(events)
         refs = _allowed_refs(pseudonymized, template)
+        schema = _case_schema(refs, _allowed_citation_sources(pseudonymized, refs))
         document = document or "none"
         if text_signals and text_signals.injection is not None and text_signals.injection >= 0.5:
             document = "withheld: embedded instructions detected"
@@ -392,84 +456,141 @@ class CaseWriter:
             f"<events>{json.dumps(pseudonymized, ensure_ascii=False)}</events>\n"
             f"<untrusted_document>{document}</untrusted_document>"
         )
-        response = httpx.post(
-            MISTRAL_URL,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "max_tokens": 900,
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        output = json.loads(content)
-        if not isinstance(output, dict):
-            raise ValueError("Mistral returned non-object JSON")
-        output.update(
-            {
-                "paymentId": payment_id,
-                "timeline": template.model_dump(by_alias=True, mode="json")["timeline"],
-                "llm": "live",
-                "promptVersion": PROMPT_VERSION,
-                "model": self.model,
-            }
-        )
-        _canonicalize_citations(output, pseudonymized, template)
-        case, failure = validate_case_with_reason(output, pseudonymized, template)
-        if case is None:
-            raise ValueError(f"Mistral output failed case validation: {failure}")
-        case = _restore_case(case, replacements)
-        case = self._with_text_screen(case, template)
-        validated, failure = validate_case_with_reason(case, events, template)
-        if validated is None:
-            raise ValueError(f"Mistral output failed text-screen validation: {failure}")
-        return validated
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
+        deadline = time.monotonic() + self.timeout * 2
+
+        def complete(conversation: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise httpx.TimeoutException("case writer deadline exceeded")
+            response = httpx.post(
+                MISTRAL_URL,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": conversation,
+                    "temperature": 0,
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "sylo_case_file",
+                            "strict": True,
+                            "schema": schema,
+                        },
+                    },
+                    "max_tokens": 900,
+                },
+                timeout=min(self.timeout, remaining),
+            )
+            response.raise_for_status()
+            try:
+                content = response.json()["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError, ValueError) as error:
+                raise _CaseWriterFailure("parse_error") from error
+            try:
+                output = json.loads(content)
+            except (TypeError, ValueError) as error:
+                raise _CaseWriterFailure("parse_error", str(content)) from error
+            if not isinstance(output, dict):
+                raise _CaseWriterFailure("parse_error", str(content))
+            return content, output
+
+        def validate_output(output: dict[str, Any]) -> CaseFile:
+            output = dict(output)
+            output.update(
+                {
+                    "paymentId": payment_id,
+                    "timeline": template.model_dump(by_alias=True, mode="json")["timeline"],
+                    "llm": "live",
+                    "promptVersion": PROMPT_VERSION,
+                    "model": self.model,
+                }
+            )
+            try:
+                output = _canonicalize_citations(output, pseudonymized, template)
+            except ValueError as error:
+                raise _CaseWriterFailure(f"invalid:{error}") from error
+            reason = explain_invalid_case(output, pseudonymized, template)
+            if reason is not None:
+                raise _CaseWriterFailure(f"invalid:{reason}")
+            case = validate_case(output, pseudonymized, template)
+            if case is None:
+                raise _CaseWriterFailure("invalid:invalid_case")
+            case = _restore_case(case, replacements)
+            case = self._with_text_screen(case, template)
+            reason = explain_invalid_case(case, events, template)
+            if reason is not None:
+                raise _CaseWriterFailure(f"text_screen_invalid:{reason}")
+            validated = validate_case(case, events, template)
+            if validated is None:
+                raise _CaseWriterFailure("text_screen_invalid:invalid_case")
+            return validated
+
+        try:
+            content, output = complete(messages)
+            return validate_output(output)
+        except _CaseWriterFailure as error:
+            if not (
+                error.reason == "parse_error"
+                or error.reason.startswith(("invalid:", "text_screen_invalid:"))
+            ):
+                raise
+            previous_content = error.assistant_content or locals().get("content", "")
+            repair_messages = [
+                *messages,
+                {"role": "assistant", "content": previous_content},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Your previous JSON was rejected: {error.reason}. "
+                        "Return corrected JSON only."
+                    ),
+                },
+            ]
+        repaired_content, repaired_output = complete(repair_messages)
+        repaired_case = validate_output(repaired_output)
+        self.last_repair = True
+        return repaired_case
+
+    def _fallback(self, template: CaseFile, reason: str) -> CaseFile:
+        self.last_fallback_reason = reason
+        self.last_repair = False
+        log.warning("CaseWriter fallback to template: %s", reason)
+        return template
 
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
+        self.last_fallback_reason = None
+        self.last_repair = False
+        self.last_http_error_body = None
         document = _resolve_document(self.documents, payment_id, events)
         text_signals = (
             self.text_screen.screen(document)
             if isinstance(document, str) and document.strip()
             else None
         )
-        if document and text_signals is not None:
-            withheld = text_signals.injection is not None and text_signals.injection >= 0.5
-            log.info(
-                "Jev screening: source=%s change=%s pressure=%s injection=%s mistral_document_withheld=%s",
-                text_signals.source,
-                text_signals.change,
-                text_signals.pressure,
-                text_signals.injection,
-                withheld,
-            )
         template = template_case(payment_id, events, text_signals=text_signals)
         if self.mode == "off":
-            return template
-        if (
-            self.mode == "live"
-            and getattr(self.text_screen, "mode", None) == "live"
-            and isinstance(document, str)
-            and document.strip()
-            and text_signals is not None
-            and text_signals.source == "unavailable"
-        ):
-            log.warning("CaseWriter live text screening is unavailable; using the template")
             return template
         if self.mode == "cached":
             return self._cached(payment_id, events, template) or template
         if not self.api_key:
-            log.warning("CaseWriter live mode has no API key; trying the cache before the template")
-            return self._cached(payment_id, events, template) or template
+            cached = self._cached(payment_id, events, template)
+            if cached is not None:
+                return cached
+            return self._fallback(template, "no_api_key")
         try:
             return self._request(payment_id, events, template, text_signals, document)
+        except httpx.TimeoutException:
+            return self._fallback(template, "timeout")
+        except httpx.HTTPStatusError as error:
+            self.last_http_error_body = error.response.text
+            return self._fallback(template, f"http_{error.response.status_code}")
+        except _CaseWriterFailure as error:
+            return self._fallback(template, error.reason)
         except Exception as error:
             message = _safe_exception_message(error, document, self.api_key)
             log.warning("CaseWriter live generation failed: %s; using the template", message)
-            return template
+            return self._fallback(template, "request_error")

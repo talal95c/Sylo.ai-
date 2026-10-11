@@ -46,6 +46,10 @@
         "breaker.off",
         "rail.down",
         "rail.up",
+        "clock.advanced",
+        "payee.verification",
+        "timelock.on",
+        "timelock.off",
         "killswitch.on",
         "guardian.incident",
         "confidential.transfer",
@@ -90,6 +94,11 @@
     { "if": { "properties": { "type": { "const": "breaker.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/BreakerOff" } } } },
     { "if": { "properties": { "type": { "const": "rail.down" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailDown" } } } },
     { "if": { "properties": { "type": { "const": "rail.up" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailUp" } } } },
+    { "if": { "properties": { "type": { "const": "clock.advanced" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ClockAdvanced" } } } },
+    { "if": { "properties": { "type": { "const": "payee.verification" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PayeeVerification" } } } },
+    { "if": { "properties": { "type": { "const": "confidential.transfer" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ConfidentialTransfer" } } } },
+    { "if": { "properties": { "type": { "const": "timelock.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOn" } } } },
+    { "if": { "properties": { "type": { "const": "timelock.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOff" } } } },
     { "if": { "properties": { "type": { "const": "killswitch.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/KillSwitchOn" } } } },
     { "if": { "properties": { "type": { "const": "guardian.incident" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/GuardianIncident" } } } },
     { "if": { "properties": { "type": { "const": "traffic.sample" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TrafficSample" } } } }
@@ -147,7 +156,7 @@
       "required": ["scenario", "speed", "auto"],
       "additionalProperties": true,
       "properties": {
-        "scenario": { "enum": ["legit", "diverted", "diverted_simswap", "outage", "mule_wave"] },
+        "scenario": { "enum": ["legit", "diverted", "diverted_simswap", "outage", "mule_wave", "diverted_expiry", "diverted_timelock"] },
         "speed": { "type": "number", "exclusiveMinimum": 0 },
         "auto": { "type": "boolean" }
       }
@@ -418,7 +427,7 @@
       "required": ["attack", "description", "by"],
       "additionalProperties": true,
       "properties": {
-        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay"] },
+        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key"] },
         "description": { "type": "string" },
         "by": { "const": "attacker" }
       }
@@ -648,6 +657,63 @@
       "required": ["routeId"],
       "additionalProperties": true,
       "properties": { "routeId": { "type": "string" }, "name": { "type": "string" } }
+    },
+    "ClockAdvanced": {
+      "description": "Demo clock (PRD P1-9): the session's time jumped forward, so an expiry or a time-lock is shown in seconds.",
+      "type": "object",
+      "required": ["hours", "now"],
+      "additionalProperties": true,
+      "properties": { "hours": { "type": "number", "exclusiveMinimum": 0 }, "now": { "$ref": "#/$defs/Timestamp" }, "text": { "type": "string" } }
+    },
+    "PayeeVerification": {
+      "description": "Out-of-band check of a payee's account before any payment (POST /v1/payees/{id}/verify). No names of people beyond the contact already shown in verification.requested.",
+      "type": "object",
+      "required": ["payeeId", "accountId", "step", "channel", "simSwapChecked", "simSwapRecent"],
+      "additionalProperties": true,
+      "properties": {
+        "payeeId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "step": { "enum": ["REQUESTED", "RECORDED"] },
+        "channel": { "enum": ["SMS", "ANALYST"] },
+        "simSwapChecked": { "type": "boolean" },
+        "simSwapRecent": { "type": "boolean" },
+        "result": { "enum": ["CONFIRMED", "DENIED", null] },
+        "text": { "type": "string" }
+      }
+    },
+    "ConfidentialTransfer": {
+      "description": "P1 (PRD §13.6). The chain leg of a payment that needs no hold, sent as an eERC confidential transfer: the amount is not readable on-chain and the designated auditor decrypts it. Addresses and the amounts wrapped and unwrapped at the two ends stay visible.",
+      "type": "object",
+      "required": ["hop", "from", "to", "token", "amountHidden", "txHash", "auditorMatches"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "token": { "const": "eEURC" },
+        "amountHidden": { "const": true },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "type": ["string", "null"] },
+        "auditorDecryptedAmountEur": { "type": ["number", "null"] },
+        "auditorMatches": { "type": "boolean" },
+        "metadataEncrypted": { "type": "boolean" },
+        "hidden": { "type": "array", "items": { "type": "string" } },
+        "visible": { "type": "array", "items": { "type": "string" } },
+        "text": { "type": ["string", "null"] }
+      }
+    },
+    "TimeLockOn": {
+      "description": "A confirmed first payment to a new account stays in the bank hold until the lock ends (PRD §12.3).",
+      "type": "object",
+      "required": ["hours", "until"],
+      "additionalProperties": true,
+      "properties": { "hours": { "type": "number", "exclusiveMinimum": 0 }, "until": { "$ref": "#/$defs/Timestamp" }, "text": { "type": "string" } }
+    },
+    "TimeLockOff": {
+      "type": "object",
+      "required": ["reason"],
+      "additionalProperties": true,
+      "properties": { "reason": { "enum": ["ELAPSED"] } }
     },
     "KillSwitchOn": {
       "description": "v2. Repeated integrity refusals cut a rail adapter: nothing more goes through it until it is restored.",

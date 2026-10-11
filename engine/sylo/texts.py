@@ -18,6 +18,10 @@ EXCLUSION_REASONS = {
     "EU_MICA_EMT_CASP": "Excluded: the EU crypto-asset provider or token on this route is not authorised under MiCA.",
     "EU_TRAVEL_RULE": "Excluded: the originator or beneficiary information required by the travel rule is missing.",
     "SANCTIONS_SCREEN": "Excluded: a party is on the sanctions list.",
+    "EU_HIGH_RISK_EDD": (
+        "Excluded: an institution on this route is in a country on the EU high-risk list, "
+        "and no enhanced due diligence file is attached."
+    ),
 }
 
 RULE_LABELS = {
@@ -27,9 +31,18 @@ RULE_LABELS = {
     "EU_MICA_EMT_CASP": "MiCA",
     "EU_TRAVEL_RULE": "the travel rule",
     "SANCTIONS_SCREEN": "sanctions screening",
+    "EU_HIGH_RISK_EDD": "the EU high-risk country rule",
+    "EU_VOP_SCOPE": "the scope of Verification of Payee",
 }
 
 SIGNAL_R1 = "The requested account is not {payee_short}'s nominated export account."
+SIGNAL_R4 = "The requested account is held in {country}, a country on the EU high-risk list, while the payee is in {expected}."
+CONTROL_NOTICES = {
+    "EU_VOP_SCOPE": (
+        "The bank's Verification of Payee does not reach this account (outside SEPA): new or changed bank "
+        "details need an out-of-band check on a known contact."
+    ),
+}
 
 # --- Risk ------------------------------------------------------------------------------------
 
@@ -84,24 +97,35 @@ def reason_known_supplier(account: Account) -> str:
 SETTLEMENT_LABELS = {"FIAT_HOLD": "bank hold", "ONCHAIN_ESCROW": "escrow"}
 
 
-def route_reason_low(best_id: str, best_s: float, swift_s: float | None, excluded: list[tuple[str, str]]) -> str:
+def route_reason_low(
+    best_id: str, best_s: float, swift_s: float | None, excluded: list[tuple[str, str]], symbol: str = "€"
+) -> str:
     if swift_s is None or best_id == "R1":
-        text = f"{best_id} is the cheapest compliant route: €{best_s:.0f} all-in."
+        text = f"{best_id} is the cheapest compliant route: {symbol}{best_s:.0f} all-in."
     else:
-        text = f"{best_id} is the cheapest compliant route: €{best_s:.0f} all-in against €{swift_s:.0f} via SWIFT."
+        text = f"{best_id} is the cheapest compliant route: {symbol}{best_s:.0f} all-in against {symbol}{swift_s:.0f} via SWIFT."
     for route_id, rule_id in excluded:
         text += f" {route_id} is excluded by {RULE_LABELS.get(rule_id, rule_id)}."
     return text
 
 
 def route_reason_medium(
-    best_id: str, best_s: float, swift_s: float | None, holding: list[tuple[str, str]], price_of_safety: float
+    best_id: str,
+    best_s: float,
+    swift_s: float | None,
+    holding: list[tuple[str, str]],
+    price_of_safety: float,
+    symbol: str = "€",
 ) -> str:
     allowed = ", ".join(f"{rid} {SETTLEMENT_LABELS.get(settlement, settlement)}" for rid, settlement in holding)
-    comparison = f"€{best_s:.0f}" if swift_s is None or best_id == "R1" else f"€{best_s:.0f} against €{swift_s:.0f}"
+    comparison = (
+        f"{symbol}{best_s:.0f}"
+        if swift_s is None or best_id == "R1"
+        else f"{symbol}{best_s:.0f} against {symbol}{swift_s:.0f}"
+    )
     return (
         f"Risk is MEDIUM, so only routes that can hold the money are allowed ({allowed}). "
-        f"{best_id} is the cheapest: {comparison}. Price of safety: €{price_of_safety:.0f}."
+        f"{best_id} is the cheapest: {comparison}. Price of safety: {symbol}{price_of_safety:.0f}."
     )
 
 
@@ -119,6 +143,13 @@ NO_ROUTE_HEADLINE = "Payment blocked: no route is allowed at this risk level"
 NO_ROUTE_RAILS = (
     "No usable route is left ({routes} unavailable). The payment is not sent and a case is opened for the analyst."
 )
+NO_ROUTE_LIMITS_HEADLINE = "Payment waiting: no replacement route within the payer's limits"
+NO_ROUTE_LIMITS = (
+    "{usual} cannot be used right now, and the replacement ({routes}) is above what the payer accepts without "
+    "being asked (fees up to {symbol}{fees:.0f}, at most {days:.0f} days). Nothing is sent: the payment waits for "
+    "{usual} to come back, or for the payer to accept the other route."
+)
+ALERT_WAITING_ROUTE = "Your payment is waiting: its usual route is unavailable and the other one costs more than your limit."
 NO_ROUTE_DETAIL = "Risk is {tier}. The payment is blocked before any money moves and a case is opened for the analyst."
 
 # --- Approval --------------------------------------------------------------------------------
@@ -155,6 +186,7 @@ STOPPED_DETAIL = (
 )
 CHAIN_REFUSED_HEADLINE = "Payment stopped: the smart contract refused a step"
 CHAIN_REFUSED_DETAIL = "The chain rejected {function} with {reason}. No money moved beyond the last confirmed step."
+CHAIN_REFUSED_HELD = "{detail} The money stays in the hold until an analyst decides."
 CHAIN_DOWN_HEADLINE = "Chain unavailable: the payment stays where it is"
 CHAIN_DOWN_DETAIL = (
     "The chain did not answer during {step}. Nothing is released by default: the payment stays held "
@@ -176,6 +208,10 @@ NEXT_STEP_ANALYST = (
     "The SIM card behind Kwame Asante's number changed {hours:.0f} hours ago, so we do not text it (rule R-OOB-01). "
     "The analyst decides."
 )
+NEXT_STEP_ANALYST_UNAVAILABLE = (
+    "The SIM-swap check was unavailable, so the known contact cannot be trusted and we do not text it "
+    "(rule R-OOB-01). The analyst decides."
+)
 STOPPED_DETAIL_ANALYST = (
     "The out-of-band check could not be trusted, and the analyst revoked the payment. It was refunded from escrow."
 )
@@ -183,6 +219,54 @@ STOPPED_DETAIL_ANALYST_BANK = (
     "The analyst revoked the payment and the bank hold was lifted: the money never left {bank}."
 )
 FROZEN_DETAIL = "The analyst froze this payment: it cannot be released. Only a refund to the payer is possible."
+
+# Payee verification before any payment (PRD §6.3 "protect before approval", §12.3)
+PAYEE_VERIFICATION_REQUESTED = "Out-of-band check of {account} ({holder}) with {contact}, on a number on file since {since}."
+PAYEE_VERIFICATION_ANALYST = (
+    "The known contact of {payee} cannot be used ({why}): nobody is texted and an analyst checks {account}."
+)
+PAYEE_VERIFICATION_RECORDED = {
+    "CONFIRMED": "{contact} confirmed that {account} ({holder}) belongs to {payee}.",
+    "DENIED": "{contact} denied that {account} ({holder}) belongs to {payee}.",
+}
+CONTACT_TOO_RECENT = "it was registered less than {days} days ago"
+CONTACT_SIM_SWAP = "its SIM card changed recently"
+DENIED_ACCOUNT_HEADLINE = "Payment blocked: the supplier denied this account"
+DENIED_ACCOUNT_DETAIL = (
+    "{payee} said on {at} that {account} ({holder}) is not theirs. Nothing was sent and no approval was asked."
+)
+ALERT_DENIED_ACCOUNT = "Payment not sent: your supplier told us this bank account is not theirs."
+
+# Confidential chain leg with eERC (PRD §13.6)
+CONFIDENTIAL_TRANSFER = (
+    "Sent as an eERC confidential transfer: the amount is not readable on-chain. The designated auditor "
+    "decrypted EUR {amount}, which matches the payment."
+)
+CONFIDENTIAL_FALLBACK = (
+    "The confidential leg is unavailable ({why}). This leg was sent as a public transfer instead: "
+    "the amount is visible on-chain."
+)
+CONFIDENTIAL_MISMATCH_HEADLINE = "Payment stopped: the confidential leg does not match the payment"
+CONFIDENTIAL_MISMATCH = (
+    "The auditor decrypted EUR {seen} for a payment of EUR {expected}. The next leg is not sent and an analyst is alerted."
+)
+
+# Hold expiry and time-lock (PRD §12.3), shown in seconds with the demo clock
+EXPIRY_BY = "Hold expiry (automatic)"
+STOPPED_DETAIL_EXPIRED = (
+    "Nobody confirmed the new bank details before the hold expired. The payment was revoked on-chain and "
+    "refunded from escrow."
+)
+STOPPED_DETAIL_EXPIRED_BANK = (
+    "Nobody confirmed the new bank details before the hold expired. The payment was revoked and the money "
+    "never left {bank}."
+)
+ALERT_STOPPED_EXPIRED = "Payment returned: your supplier did not confirm the new account in time. Funds returned."
+TIME_LOCK_ON = (
+    "First payment to a new account: EUR {amount} stays at {bank} until {hours:g} h after the hold started, "
+    "even though the supplier confirmed."
+)
+CLOCK_ADVANCED = "Demo clock: {hours:g} h later."
 
 # --- Alerts (payer and supplier are told in the app or by SMS, never by e-mail) ---------------
 
@@ -192,8 +276,12 @@ ALERT_STOPPED = "Payment stopped: the supplier did not confirm the new account. 
 ALERT_STOPPED_ANALYST = "Payment stopped by your bank's fraud team. Funds returned."
 ALERT_FREEZE_REQUEST = (
     "Fraud alert on UETR {uetr}: please freeze account {account} ({holder}). A payment to it was revoked "
-    "after the real supplier denied the bank details."
+    "{cause}."
 )
+FREEZE_CAUSE_DENIED = "after the real supplier denied the bank details"
+FREEZE_CAUSE_ANALYST = "by the sender's fraud team"
+FREEZE_CAUSE_KILL = "after the route it used was cut"
+FREEZE_CAUSE_GUARDIAN = "after a confirmation that the supplier never gave"
 
 # --- Rails -----------------------------------------------------------------------------------
 
@@ -233,6 +321,19 @@ STOPPED_DETAIL_KILL_BANK = (
 )
 ALERT_STOPPED_KILL = "Payment stopped for safety: the route it was using was cut. Funds returned."
 GUARDIAN_HEADLINE = "On-chain incident: {rule}"
+GUARDIAN_PAUSE_REASON = "Corridor paused by the guardian (incident {incident}): no escrow release until it is reopened"
+ALERT_GUARDIAN_FROZEN = (
+    "The guardian froze this hold ({rule}): a confirmation reached the registry that the engine never signed. "
+    "The supplier's answer is no longer waited for. Revoke the payment to refund the payer."
+)
+STOPPED_DETAIL_GUARDIAN = (
+    "A confirmation reached the registry that the engine never signed, so the guardian froze the hold. "
+    "The analyst revoked the payment and it was refunded from escrow."
+)
+ALERT_REGISTRY_REFUSED = (
+    "The registry refused the supplier's answer ({reason}): its state changed outside the engine. "
+    "Nothing is released. Revoke the payment to refund the payer."
+)
 DORA_CRITICALITY = "Payment execution (critical function)"
 
 # --- Case file built from the rules (used when no case writer is available) -----------------
@@ -270,10 +371,15 @@ ATTACK_SWAP_BENEFICIARY = (
     "with the modified payment."
 )
 ATTACK_REPLAY = "An attacker replays the signed payment to commit it a second time."
+ATTACK_STOLEN_KEY = (
+    "A thief holding the verifier's signing key confirms the held payment without the supplier, "
+    "then calls release() to push the money out of escrow."
+)
 ATTACK_DESCRIPTIONS = {
     "release_revoked": ATTACK_RELEASE_REVOKED,
     "swap_beneficiary": ATTACK_SWAP_BENEFICIARY,
     "replay": ATTACK_REPLAY,
+    "stolen_verifier_key": ATTACK_STOLEN_KEY,
 }
 ATTACKER_ACCOUNT = {"name": "K. MENSAH VENTURES (attacker)", "account": "GH•• •••• 6660", "bank": "mule_bank"}
 REVERTED = "Rejected by the smart contract: {reason}."

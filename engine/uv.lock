@@ -2860,7 +2860,10 @@ requires-dist = [
 provides-extras = ["jev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
+dev = [
+    { name = "hypothesis", specifier = ">=6.100" },
+    { name = "pytest", specifier = ">=8" },
+]
 
 [[package]]
 name = "sylo-spec"

@@ -15,7 +15,7 @@ Any failure is refused (``LegRejected``): a substituted beneficiary is prevented
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -92,6 +92,10 @@ class LegMessage:
                 "idempotencyKey": self.idempotency_key,
             },
         }
+
+
+LEG_STATUSES = ("PENDING", "SETTLED", "FAILED", "RETURNED")
+WEBHOOK_STATUSES = ("SETTLED", "FAILED", "RETURNED")
 
 
 class LegRejected(Exception):
@@ -178,6 +182,40 @@ class RailAdapter:
 
     def status(self, idempotency_key: str) -> str:
         return self._legs.get(idempotency_key, "UNKNOWN")
+
+    def on_webhook(self, notification: Mapping[str, Any]) -> dict[str, Any]:
+        """An asynchronous status sent by the rail. It can only move a leg this adapter sent, and only
+        forward: a webhook never creates a leg, and a final status is not reopened (a settled leg can
+        still come back as returned)."""
+        key = str(notification.get("idempotencyKey") or "")
+        status = str(notification.get("status") or "").upper()
+        with self._lock:
+            current = self._legs.get(key)
+            if current is None:
+                return {"accepted": False, "reason": "UNKNOWN_LEG"}
+            if status not in WEBHOOK_STATUSES:
+                return {"accepted": False, "reason": "UNKNOWN_STATUS", "status": current}
+            if current != "PENDING" and not (current == "SETTLED" and status == "RETURNED"):
+                return {"accepted": False, "reason": "FINAL_STATUS", "status": current}
+            self._legs[key] = status
+            return {"accepted": True, "status": status}
+
+    def reconcile(self) -> dict[str, Any]:
+        """What the adapter holds about its legs, to compare with the rail's own statement."""
+        with self._lock:
+            counts = {status: 0 for status in LEG_STATUSES}
+            for status in self._legs.values():
+                counts[status] = counts.get(status, 0) + 1
+            return {
+                "routeId": self.id,
+                "rail": self.name,
+                "legs": len(self._legs),
+                "byStatus": counts,
+                "open": sorted(key for key, status in self._legs.items() if status == "PENDING"),
+                "toInvestigate": sorted(key for key, status in self._legs.items() if status in ("FAILED", "RETURNED")),
+                "refusals": len(self._refusals),
+                "simulated": True,
+            }
 
     # --- routing facts -----------------------------------------------------------------------
 

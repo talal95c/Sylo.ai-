@@ -33,10 +33,21 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
             from sylo_risk import ModelRisk
 
             risk = CombinedRisk(RulesRisk(), ModelRisk())
+            log.info("RISK_MODE=model selected normal model risk")
         except Exception as err:
-            log.warning("RISK_MODE=model but the model is unavailable (%s); using stricter rules", err)
-            risk = RulesRisk(strict=True)
+            log.warning("RISK_MODE=model but the main model is unavailable (%s)", err)
             degraded.append("risk")
+            try:
+                from sylo_risk import FallbackRisk
+
+                risk = CombinedRisk(RulesRisk(strict=True), FallbackRisk())
+                log.warning("RISK_MODE=model selected strict-rules plus logistic fallback")
+            except Exception as fallback_err:
+                log.warning(
+                    "RISK_MODE=model fallback is unavailable (%s); selected strict rules only",
+                    fallback_err,
+                )
+                risk = RulesRisk(strict=True)
 
     chain: ChainPort | None = None
     if settings.chain_mode == "fuji":

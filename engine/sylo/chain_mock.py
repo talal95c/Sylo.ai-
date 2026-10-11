@@ -256,3 +256,9 @@ class MockChain:
         with self._lock:
             self._paused_corridors.add(to_hex(to_bytes32(corridor_id)))
             return self._tx()
+
+    def unpause_corridor(self, corridor_id: str) -> TxRef:
+        """The admin's unpause. Not part of ``ChainPort``: on Fuji only the deployer key can do it."""
+        with self._lock:
+            self._paused_corridors.discard(to_hex(to_bytes32(corridor_id)))
+            return self._tx()

@@ -10,6 +10,12 @@ All evaluation data are synthetic. Passes 1–4 document the prior baselines; Pa
 - Scene 2 cache: live `mistral-small-latest` result.
 - Decision: the CaseWriter is advisory only; invalid or less-strict output falls back to the deterministic template.
 
+### Strict-schema and repair telemetry — 2026-10-11
+
+- Old-code baseline (`json_object`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=223.40097699998296`, `latencyMs.p95=276.91554900047777`.
+- Strict-schema run (`json_schema-strict`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=227.49815599991052`, `latencyMs.p95=244.1048390001015`.
+- Both runs returned HTTP 401 for every request, so they do not measure model output or schema conformance; the strict run returned no HTTP 400 schema rejection. The earlier 50%/50% run above used a prior credential state.
+
 ## Block 2 — evaluation harness
 
 ### Model history
@@ -97,9 +103,9 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 
 The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
-- Engine window detector (`WindowClusterDetector`, main 5971aaa): ≥3 payments into young/thin accounts at a border bank; offline benchmark unchanged.
+The engine adapts its `WindowPayment` window into records for the same `NetworkXClusterDetector`; engine runtime behavior is not measured by this offline benchmark.
 
-The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. The engine's `WindowClusterDetector` is covered by the scene 3 engine test, not by this offline benchmark.
+The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates.
 
 ## Pass 6 — T1 evasion
 
@@ -135,3 +141,30 @@ Seed B prevalence estimates:
 | HIGH+ | 73.87% | 0.0842% | 0.01% | 8.07% | 11.39 |
 
 MEDIUM+ TPR/FPR cite `metrics.json#/metrics/recallAll` and `#/metrics/fprMediumPlus`. `metrics.json` has no legitimate HIGH+ FPR, so HIGH+ TPR/FPR were counted from seed B's existing labels and frozen full-engine tiers using `evaluate._score_engine` (1,108/1,500 frauds and 125/148,500 legitimate payments at HIGH+; no retraining). All figures are synthetic-evaluation measurements, not production efficacy. Full per-level metrics, rules, SHAP examples, formulas, and source paths are in `evasion.json`.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 628.4 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 2.604 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 2.587 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 443.8 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 0.585 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 3.998 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+#### Hard blocks (vs PRD ≤2%) / Verifications / Total friction
+
+| Seed | Hard blocks (vs PRD ≤2%) | Verifications | Total friction |
+|---|---:|---:|---:|
+| B | 0.07% | 6.66% | 6.72% |
+| C | 0.04% | 8.27% | 8.32% |

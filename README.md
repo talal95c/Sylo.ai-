@@ -47,13 +47,22 @@ The engine now also runs the human steps and the integrity checks of v1 ([`spec/
 
 And the network defence of v2:
 
-- **Mule wave and circuit breaker** (`POST /v1/sim/mule-wave`): three linked payments reveal a cluster near Aflao; once the analyst confirms, payments into that region are at least MEDIUM for 24 hours.
-- **Rail outage** (scenario `outage`, or `POST /v1/sim/rails/R3/down`): the payment takes the best remaining route; an outage never changes the tier.
+- **Mule wave and circuit breaker** (`POST /v1/sim/mule-wave`): three unrelated payers are sent to the same young account; Lane B's detector links them (a sample cluster is the fallback when its package is missing), and once the analyst confirms, payments into that region are at least MEDIUM for 24 hours.
+- **Rail outage** (scenario `outage`, or `POST /v1/sim/rails/R3/down`): the payment takes the best remaining route within the payer's limits; an outage never changes the tier.
 - **Kill switch**: two legs changed or replayed on one adapter cut it, and a payment held on that route is revoked and refunded.
-- **Guardian incidents** with a DORA incident draft, and `GET /v1/metrics`.
+- **Guardian incidents** with a DORA incident draft, and `GET /v1/metrics`. A hold the guardian froze goes to the analyst and always ends revoked and refunded (Scene 4, `POST /v1/attacks/stolen_verifier_key` on a simulated chain).
+
+What closes the Fintech brick ([`spec/api.md`](spec/api.md) has the details):
+
+- **Demo clock** (`POST /v1/sim/clock`): a hold nobody answers expires and is refunded (`diverted_expiry`); a confirmed first payment to a new account waits for its time-lock at the bank (`diverted_timelock`).
+- **Integration API**: `POST /v1/quotes`, `POST /v1/payments` (with `Idempotency-Key`), status leg by leg, `GET /v1/cases`, payee verification before any payment (`POST /v1/payees/{id}/verify`), an attack console (`POST /v1/sim/events`), rail webhooks and reconciliation.
+- **Norms**: `EU_HIGH_RISK_EDD` and `EU_VOP_SCOPE` join the pack.
+- **Confidential leg** (`CONFIDENTIAL_MODE=simulated` or `eerc`): the chain leg of a payment that needs no hold is an eERC confidential transfer; a held payment keeps the public escrow.
+- **Second corridor from files only**: `POST /v1/quotes {"order": "lagos-accra"}` prices Lagos → Accra from `engine/packs/NG-GH.yaml` and `engine/profiles/NG.yaml`.
+- **Intake** (`POST /v1/intake`): invoice text becomes fixed fields with provenance; 20 injected invoices change neither tier nor route.
 
 ```bash
-make demo-check   # scenes 1, 2, 2b, 3, 5, the kill switch and the proof against the running engine (or a temporary one)
+make demo-check   # scenes 1 to 5, the kill switch, the demo clock and the proof against the running engine (or a temporary one): 12 checks
 make verify-log   # recompute the hash chain of the decision log; an edited line makes it fail
 make integrity    # 300 changed or replayed payments through the adapters: 0 must get through
 ```

@@ -42,7 +42,10 @@ SWAP_SEQUENCE = ["attack.attempted", "leg.rejected", "tx.reverted"]
 
 
 def make_orchestrator(**settings):
-    """Orchestrator with a virtual clock, default settings and dev keys (ignores the environment)."""
+    """Orchestrator with a virtual clock, default settings and dev keys (ignores the environment).
+
+    The sample cluster is the default so the tests do not depend on Lane B's package being installed."""
+    settings.setdefault("cluster_mode", "sample")
     return build_orchestrator(Settings(**settings), env={}, pacer_factory=lambda speed: VirtualPacer(START, speed))
 
 

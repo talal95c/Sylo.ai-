@@ -11,9 +11,11 @@ import { DemoControls } from "./DemoControls";
 import { EventFeed } from "./EventFeed";
 import { FlowGraph } from "./FlowGraph";
 import GlobeStage from "./GlobeStage";
+import { IncidentDrawer } from "./IncidentDrawer";
 import { PaymentCard } from "./PaymentCard";
+import { StatusBanner } from "./StatusBanner";
 import { TopBar, type DemoView } from "./TopBar";
-import { ease } from "./ui";
+import { cx, ease } from "./ui";
 
 const noopSubscribe = () => () => undefined;
 const readUrlView = () => new URLSearchParams(window.location.search).get("view");
@@ -22,6 +24,9 @@ export default function SyloApp() {
   const sylo = useSylo();
   const urlView = useSyncExternalStore(noopSubscribe, readUrlView, () => null);
   const [picked, setViewState] = useState<DemoView | null>(null);
+  const [decisionsOpen, setDecisionsOpen] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
 
@@ -89,30 +94,32 @@ export default function SyloApp() {
       </AnimatePresence>
 
       <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
+      <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
 
       <AnimatePresence>
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>
-            <aside className="scroll-fade no-scrollbar absolute bottom-[88px] left-4 top-[76px] z-10 flex w-[340px] flex-col gap-3 overflow-y-auto 2xl:w-[372px]">
+            <aside className="thin-scrollbar absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-x-hidden overflow-y-auto 2xl:w-[372px]">
               <PaymentCard state={sylo.state} />
-              <DecisionSteps state={sylo.state} />
+              <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} />
             </aside>
 
-            <aside className="scroll-fade absolute bottom-[88px] right-4 top-[76px] z-10 flex w-[320px] flex-col 2xl:w-[360px]">
-              <EventFeed feed={sylo.state.feed} />
+            <aside className={cx("absolute right-4 top-[76px] z-10 flex min-h-0 w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden 2xl:w-[360px]", feedOpen ? "bottom-[88px]" : "bottom-auto")}>
+              <EventFeed feed={sylo.state.feed} expanded={feedOpen} onExpandedChange={setFeedOpen} onOpenIncident={() => setIncidentOpen(true)} />
             </aside>
 
             <AlertOverlay state={sylo.state} onClose={sylo.actions.closeAlert} />
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <IncidentDrawer incident={sylo.state.incident} open={incidentOpen} onClose={() => setIncidentOpen(false)} />
       <DemoControls
         state={sylo.state}
         actions={sylo.actions}
         available={sylo.available}
-        sourceKind={sylo.sourceKind}
         speed={sylo.speed}
         setSpeed={sylo.setSpeed}
+        sourceKind={sylo.sourceKind}
       />
     </main>
   );
