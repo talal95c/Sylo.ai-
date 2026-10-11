@@ -7,6 +7,18 @@ from sylo.config import Settings
 from sylo.main import create_app
 from sylo.orchestrator import build_orchestrator
 
+
+class PublicInvoiceOrchestrator:
+    def __init__(self):
+        self.calls = []
+
+    async def reset(self):
+        return None
+
+    def start(self, name, **kwargs):
+        self.calls.append((name, kwargs))
+        return "PAY-2026-0002"
+
 OPERATOR = [
     ("/v1/payments/PAY-2026-0002/approve", {"approver": "claire"}),
     ("/v1/cases/PAY-2026-0002/actions", {"action": "FREEZE"}),
@@ -44,6 +56,28 @@ def test_the_demo_buttons_still_work_on_the_public_demo():
         assert client.post("/v1/reset").status_code == 200
         assert client.get("/health").json()["ok"] is True
         assert client.post("/v1/quotes", json={"order": "legit"}).status_code == 200
+
+
+def test_live_invoice_scenario_remains_open_on_the_public_demo():
+    orchestrator = PublicInvoiceOrchestrator()
+    settings = Settings(demo_public=True, live_invoice=True, journal_path=None)
+    with TestClient(create_app(settings, orchestrator)) as client:
+        response = client.post(
+            "/v1/scenarios/diverted/run",
+            json={"invoiceText": "simulated jury invoice"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"paymentId": "PAY-2026-0002"}
+    assert orchestrator.calls[0] == (
+        "diverted",
+        {
+            "speed": settings.demo_speed,
+            "auto": False,
+            "auto_answer": "deny",
+            "invoice_text": "simulated jury invoice",
+        },
+    )
 
 
 def test_the_flag_is_read_from_the_environment():
