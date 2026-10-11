@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import random
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -82,6 +83,10 @@ ANALYST_AUTO_MS = 1500
 GUARDIAN_REACTION_MS = 700
 TIME_LOCK_AUTO_MS = 2000
 QUOTE_VALIDITY_S = 600
+GUARDIAN_KNOWN_RUNS = 50
+"""Lane C's guardian recognises the engine's payments by recomputing their on-chain ids, for the first 50
+runs of an order on a registry (``MAX_RUNS_PER_ORDER`` in ``chain/sylo_chain/guardian.py``)."""
+ID_SEARCH_LIMIT = 1_000_000
 CONTACT_MIN_DAYS = 30
 SIM_EVENTS = ("rail_down", "rail_up", "mule_wave", "sim_swap", "clock", "compromised_connector", "stolen_verifier_key")
 THIEF_RELEASE_MS = 900
@@ -224,6 +229,8 @@ class PaymentRun:
     pacer: Pacer
     auto: bool
     auto_answer: str
+    chain_index: int = 1
+    """Which run of the order this is on the registry: the id is ``keccak(order id)``, then ``id#2``, ``id#3``..."""
     status: str = "deciding"
     risk: RiskResult | None = None
     decision: RouteDecision | None = None
@@ -533,6 +540,8 @@ class Orchestrator:
         return {
             "paymentId": payment_id,
             "uetr": run.order.uetr,
+            "chainPaymentId": to_hex(run.chain_pid),
+            "chainRunIndex": run.chain_index,
             "legs": self._legs(payment_id),
             "status": run.status,
             "tier": run.tier.name if run.tier is not None else None,
@@ -552,6 +561,7 @@ class Orchestrator:
     async def proof(self, payment_id: str) -> dict[str, Any]:
         """Everything an auditor needs to recompute the payment: typed data, signatures, transactions, log."""
         run = self._get(payment_id)
+        payment_id = run.order.id
         chain_status = Status(int(await asyncio.to_thread(self.chain.status, run.chain_pid)))
         approval = None
         if run.approval is not None:
@@ -564,6 +574,8 @@ class Orchestrator:
         return {
             "paymentId": payment_id,
             "chainPaymentId": to_hex(run.chain_pid),
+            "chainPaymentLabel": self._chain_label(payment_id, run.chain_index),
+            "chainRunIndex": run.chain_index,
             "chainStatus": chain_status.name,
             "simulated": self.chain_simulated,
             "domain": self.chain.domain().to_json_dict(),
@@ -1191,8 +1203,11 @@ class Orchestrator:
     # --- internals ---------------------------------------------------------------------------
 
     def _get(self, payment_id: str) -> PaymentRun:
-        """A payment by its id or by its UETR."""
-        run = self._runs.get(payment_id) or next((r for r in self._runs.values() if r.order.uetr == payment_id), None)
+        """A payment by its id, by its UETR, or by its on-chain id (0x-hex, as the registry's events give it)."""
+        wanted = payment_id.lower()
+        run = self._runs.get(payment_id) or next(
+            (r for r in self._runs.values() if r.order.uetr == payment_id or to_hex(r.chain_pid).lower() == wanted), None
+        )
         if run is None:
             raise UnknownPayment(payment_id)
         return run
@@ -1202,19 +1217,74 @@ class Orchestrator:
         if scenario is None:
             raise UnknownScenario(name)
         order = ORDERS[scenario.order]
-        count = self._run_counts.get(order.id, 0) + 1
-        self._run_counts[order.id] = count
-        label = order.id if count == 1 else f"{order.id}#{count}"
+        index = self._run_counts.get(order.id, 0) + 1  # checked against the registry when the run starts
+        self._run_counts[order.id] = index
         run = PaymentRun(
             order=order,
             scenario=name,
-            chain_pid=keccak_text(label),
+            chain_pid=keccak_text(self._chain_label(order.id, index)),
             pacer=self._pacer(speed),
+            chain_index=index,
             auto=auto,
             auto_answer=auto_answer,
         )
         self._runs[order.id] = run
         return run
+
+    @staticmethod
+    def _chain_label(order_id: str, index: int) -> str:
+        """The label hashed into the on-chain payment id: the order id for its first run, then ``id#2``,
+        ``id#3``... Lane C's guardian recomputes exactly these ids to find what the engine signed, so the
+        scheme must not change (no salt, no other separator) without changing the guardian with it."""
+        return order_id if index == 1 else f"{order_id}#{index}"
+
+    async def _claim_chain_id(self, run: PaymentRun) -> None:
+        """Give the run an on-chain id that the registry has never seen.
+
+        The run counter lives in memory, so after a restart it starts again at 1 while a registry that
+        outlives the engine (Fuji, a local node) still holds the ids of earlier sessions; committing one of
+        them again reverts ``InvalidTransition``. The run therefore keeps its id only if the registry does
+        not know it, and otherwise takes a free one further on: doubling steps until a free index is
+        found, then a binary search back towards the lowest free one. If the registry cannot be read
+        now, the id is kept as it is and the commit will say what is wrong.
+        """
+        order_id = run.order.id
+
+        async def used(index: int) -> bool:
+            pid = keccak_text(self._chain_label(order_id, index))
+            return Status(int(await asyncio.to_thread(self.chain.status, pid))) != Status.NONE
+
+        try:
+            if not await used(run.chain_index):
+                return
+            low, step = run.chain_index, 1  # low is always a used index, high a free one
+            high = low + step
+            while await used(high):
+                low, step = high, step * 2
+                high = low + step
+                if high > ID_SEARCH_LIMIT:
+                    raise RuntimeError(f"no free on-chain id below {ID_SEARCH_LIMIT}")
+            while high - low > 1:
+                middle = (low + high) // 2
+                if await used(middle):
+                    low = middle
+                else:
+                    high = middle
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            log.warning("could not look for a free on-chain id for %s (%s); keeping run %d", order_id, err, run.chain_index)
+            return
+        log.info("%s: runs up to %d are already in the registry, this one is run %d", order_id, high - 1, high)
+        run.chain_index = high
+        run.chain_pid = keccak_text(self._chain_label(order_id, high))
+        self._run_counts[order_id] = max(self._run_counts.get(order_id, 0), high)
+        if high > GUARDIAN_KNOWN_RUNS:
+            log.warning(
+                "%s is at run %d on this registry: the guardian only recognises the first %d and will treat "
+                "a genuine confirmation as forged",
+                order_id, high, GUARDIAN_KNOWN_RUNS,
+            )
 
     def _auto_humans(self, run: PaymentRun) -> bool:
         """Whether the script plays the payer approvals and the analyst itself."""
@@ -1284,6 +1354,7 @@ class Orchestrator:
     async def _execute(self, run: PaymentRun) -> None:
         self._current_pacer = run.pacer
         try:
+            await self._claim_chain_id(run)
             await self._script(run)
         except asyncio.CancelledError:
             raise
@@ -2253,6 +2324,10 @@ def build_orchestrator(
     signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
+    if chain.mode != "mock":
+        # The registry outlives this process and keeps every nonce: start from this session's own base
+        # (microseconds since the epoch), so no message repeats a nonce of an earlier session.
+        signer.start_nonces_at(time.time_ns() // 1_000)
     writer, llm_degraded = load_case_writer(settings, env)
     if llm_degraded:
         degraded.append("llm")
