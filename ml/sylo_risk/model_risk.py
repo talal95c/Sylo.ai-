@@ -17,6 +17,7 @@ from .geo import institution_geography
 from .history import HistoryIndex
 from .scores import probability_to_score
 
+NO_PAYMENTS_YET = "No successful payments on this account yet"
 
 @lru_cache(maxsize=1)
 def _load_artifacts() -> tuple[Any, dict[str, Any], HistoryIndex]:
@@ -45,16 +46,14 @@ def _reason_text(feature: str, value: float, order: PaymentOrder, ctx: RiskConte
             "The bank account differs from the one used for the previous payment to this supplier.",
         )
     if feature == "log1p_successful_payments":
-        return "B", f"Only {account.successful_payments if account else 0} successful payments on this account"
+        count = account.successful_payments if account else 0
+        if count == 0:
+            return "B", NO_PAYMENTS_YET
+        return "B", f"Only {count} successful payment{'s' if count > 1 else ''} on this account"
     if feature == "log1p_account_age_days":
         return "B", f"Bank account opened {ctx.account_age_hours / 24:.0f} days ago"
     if feature == "first_payment":
-        return (
-            "B",
-            "No successful payments to this bank account yet"
-            if value
-            else "Prior payments exist on this account",
-        )
+        return "B", NO_PAYMENTS_YET if value else "Prior payments exist on this account"
     if feature == "name_match":
         return "B", f"Beneficiary account name match score is {ctx.name_match:.0%}"
     if feature == "nominated_for_exports":
@@ -85,6 +84,8 @@ def _reason_text(feature: str, value: float, order: PaymentOrder, ctx: RiskConte
     if feature == "log_amount":
         return "H", f"Payment amount is EUR {order.amount.as_float:,.0f}"
     if feature == "amount_vs_history":
+        if math.isnan(value):
+            return "H", "No earlier payments to this supplier to compare the amount with"
         return "H", f"Payment is {value:.1f}× the historical payer-to-supplier median"
     if feature == "under_cap":
         return "S", f"Undeclared payment of EUR {order.amount.as_float:,.0f} is just below a EUR 10,000 cap"
@@ -137,7 +138,7 @@ class ModelRisk:
             )
             for _, feature, value in positive:
                 explanation = _reason_text(feature, value, order, ctx)
-                if explanation is None:
+                if explanation is None or any(r.text == explanation[1] for r in reasons):
                     continue
                 family, text = explanation
                 reasons.append(RiskReason(ref=family, text=text, rule_id=None))
