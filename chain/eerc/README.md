@@ -15,6 +15,7 @@ MockEURC. Live on Fuji, not simulated. Synthetic data and test-only keys.
 | Registration / Mint / Withdraw / Transfer / Burn verifiers (upstream `contracts/prod`) | see `deployments/43113.json` |
 
 Registered: auditor (deployer `0xbDB6…`), EU CASP (`0xBCf6…`), GH VASP (`0x4B83…`). The auditor key is set.
+All 8 contracts are source-verified on Snowtrace (`node src/verify.mjs`, Routescan API, no key).
 Demo runs (tx hashes, auditor result) are in `deployments/demo-runs-43113.json`. The 85,000 EUR run is
 [deposit](https://testnet.snowtrace.io/tx/0x40352f4fe095e8f37be722e730d041dfafa6b3daa09a75186df24394bf93933c),
 [confidential transfer](https://testnet.snowtrace.io/tx/0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e) and
