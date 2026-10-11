@@ -112,6 +112,63 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
 - [ ] `FlowGraph` re-measures the DOM on every event (`useLayoutEffect` with no dependencies); the globe arc cache grows without limit and never disposes materials.
 - [ ] The landing page is a single hero and globe with no one-line explanation of the three things Sylo does, and "Test the project" vs "Watch the demo" is ambiguous. Rename the buttons, for example "Try a payment" and "Watch the 3-minute demo".
 
+---
+
+## Backend, rules and docs (engine / ml / deploy)
+
+From a read-only review of `engine/`, `ml/`, `chain/`, the deploy files and `docs/` against the rules in `AGENTS.md`. Owners: `engine/` is Lane A (Oscar), `ml/` is Lane B, `chain/` and `contracts/` are Lane C, `docs/` is anyone. Paths are from the repo root.
+
+**Verified OK:**
+- Fraud risk never enters the route score (`engine/sylo/router.py`).
+- The payer is never alerted by email (`engine/sylo/texts.py`, and the event schema has no email channel).
+- Invoice and email text is treated as data: intake only counts instruction-like lines, and the case writer withholds documents that look like injections and validates its output.
+- No secrets are tracked; the only key is the public Anvil dev mnemonic.
+- No junk is tracked (no `node_modules`, `.next`, `__pycache__` or `.env`).
+
+### P0
+
+- [ ] **Rule 3 gap: a pay-out leg is not compared with the signed intent** (Lane A). `RailAdapter.initiate` (`engine/sylo/rails.py:139-175`) only checks the intent hash rebuilt from the leg's name, account, bank, invoice reference and UETR. The leg's **amount, hop, sender, receiver and rail are never compared** with the intent or route, and pay-out legs are allowed after `EXECUTED`. Probe: after diverted+confirm, a leg with `hop=99` and **10× the sealed amount** was accepted. The integrity harness (`engine/sylo/integrity.py`) only tampers `intent.amount`, so "0 of 300 got through" (`docs/pitch-handoff.md`, `docs/response-playbook.md`) doesn't cover it.
+  - **Fix:** refuse unless the amount matches `intent.amount` in EUR, `leg.rail == self.id`, `(sender, receiver)` equals `route.hops[hop]`, and the hop was never sent before.
+  - Add an integrity case for a tampered leg amount or an extra hop.
+- [ ] **Rule 6: a model crash at run time falls back to the *lenient* rules, with no banner** (Lane A). `engine/sylo/risk_rules.py:142-145`: on an exception, `CombinedRisk` returns non-strict `RulesRisk()` and nothing marks `risk` as degraded. Use `RulesRisk(strict=True)` and call `_degrade("risk")`.
+- [ ] **Rule 2: the model can lower the tier the rules would give** (Lane A). `engine/sylo/risk_rules.py:150` computes `max(base.floor_tier, band(model))`, which ignores the rules' own score band. Example: rules 74 is HIGH; model 50 makes it MEDIUM. The breaker path has the same issue (`engine/sylo/breakers.py:152`). The demo scenes are unaffected. Use `max(base.tier, band(model))`.
+- [ ] **Rule 6 again: degraded mode is measured as looser** (Lane B). In `ml/reports/metrics.json`, `degraded[*].neverLooser` is `false`: rules-only gives 554 HIGH→MEDIUM transitions on seed C. Either make strict mode floor at MEDIUM (HIGH when R-PV-01 or R-FL-01 fire) and re-run `make eval`, or reword the claim before judging.
+- [ ] **The public Render URL is one shared, unauthenticated session** (Lane A, plus web). Covered on the UI side above. On the engine side:
+  - any visitor can `POST /v1/reset`;
+  - a diverted run started with `auto:false` holds the engine busy, so everyone else gets 409 until it ends;
+  - a mule wave leaves the breaker on for the next visitor;
+  - `POST /v1/guardian/incidents` and `POST /v1/payees/{id}/verify` are open (anyone can close R3, or mark an account as verified).
+  - **Fix:** a `DEMO_PUBLIC=1` flag that disables the mutating debug endpoints and Reset on the public URL, or a private instance for the presenters. Press Reset just before going on stage.
+
+### P1
+
+- [ ] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
+- [ ] **Every attack or chain revert is narrated as "release() on the revoked payment"** (web). `web/lib/flow.ts:116-118` and `web/lib/store.ts:413-434`. Read `attack.attempted.data.attack` and narrate per attack.
+- [ ] **The web infers "escrow" from the tier** (`web/lib/flow.ts:42-45`, `:139-141`), which is wrong for a bank hold (time-lock on R1) and for a blocked payment. The rules say the web never decides, so use `route.selected.settlement` and `payment.stopped`.
+- [ ] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode.
+- [ ] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
+- [ ] **Render free plan:** the service sleeps after 15 minutes and takes about a minute to wake, and state and the journal are lost on sleep. The engine peaks at about 196 MB, which fits in 512 MB with Next.js, but tightly. Ping `/health` a few minutes before the slot, and don't enable eERC or Fuji there.
+- [ ] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
+  - "six with the model" should be 7 reasons;
+  - the "UI vs curl" column is stale (Mule wave, Outage, Swap and Replay are UI buttons now);
+  - there are no Render instructions (`E=https://sylo-0wck.onrender.com`);
+  - Reset does not clear run-time degradations.
+- [ ] **The README Quickstart is stale** (`README.md:20-25`, `:85`). The demo is at `/demo`, the button names are wrong, and `chain/` is no longer a skeleton.
+- [ ] **The pitch handoff doesn't match the metrics** (`docs/pitch-handoff.md`):
+  - p95 says 0.73 ms, but `metrics.json` and `BENCHMARKS.md` say 2.60 ms;
+  - the "generated" time is stale;
+  - open issues 3 and 4 are resolved (Scene 4 is in the run sheet, and the deploy reports `clusters: detector`).
+
+### P2
+
+- [ ] Fuji mode silently signs with the Anvil dev keys when a signer key is missing (`engine/sylo/signer.py:27-37`). Pass `allow_dev_keys=False` on Fuji.
+- [ ] `ChainReverted` isn't caught in some API routes (attack, FREEZE, proof), giving a 500 (`engine/sylo/main.py:233-255`, `:380-392`). Map it to 409.
+- [ ] A Fuji receipt timeout is treated as a revert (`chain/sylo_chain/fuji.py:323-325`). Treat it as "chain unavailable" instead.
+- [ ] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
+- [ ] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
+- [ ] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
+- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused. `ml/pyproject.toml` and `chain/pyproject.toml` still say "skeleton". The pitch handoff has one open TODO (team credits).
+
 ## What already works well (keep it)
 
 - The route-selection moment (blue candidate arcs, red dashed excluded route) and the final "Revoked · refunded" marker read clearly.
