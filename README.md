@@ -64,10 +64,12 @@ make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
 |---|---|---|
 | [`spec/`](spec/) | Shared | Event schema, API, EIP-712 vector, geography, fixtures, Python models and conformance suites |
 | [`engine/`](engine/) | A | FastAPI engine: norms, rules-based risk, router, signer, simulated chain, orchestrator, event stream |
-| [`ml/`](ml/) | B | Fraud model package (skeleton in v0) |
+| [`ml/`](ml/) | B | Synthetic fraud-risk model, simulator and evaluation pipeline |
 | [`contracts/`](contracts/) | C | `PaymentRegistry`, `PaymentEscrow`, `MockEURC` (Foundry) |
 | [`chain/`](chain/) | C | Fuji adapter package (skeleton in v0) |
 | [`web/`](web/) | D | Next.js demo screen with the globe |
+
+Lane B runs with `RISK_MODE=model`; `LLM_MODE=cached|live` controls case generation and `JEV_MODE` controls advisory document screening. Use `make data SEED=A`, `make train` and `make eval SEED=B` for the model workflow. The cached demo needs no API key. See the [model card](docs/model-card.md) and [benchmark journal](ml/reports/BENCHMARKS.md). `make dev` loads `.env`, which overrides shell flags.
 
 ## Documents
 
