@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 import { buildQuote, pct, secondsBetween } from "@/lib/quote";
+import { MarketCompare } from "./MarketCompare";
 import { Savings } from "./RouteQuote";
 import { ease, euros, LockIcon, Spinner } from "./ui";
 
@@ -178,6 +179,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                     : state.stopped?.detail}
               </div>
               {status === "credited" && receipt?.swift && receipt.savedEur !== undefined ? <Savings quote={receipt} compact /> : null}
+              {status === "credited" && receipt ? <MarketCompare quote={receipt} /> : null}
             </div>
           </motion.section>
         ) : null}
