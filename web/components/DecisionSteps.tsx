@@ -8,7 +8,7 @@ import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";
 
-type StepState = "pending" | "running" | "done" | "warn" | "fail";
+type StepState = "pending" | "running" | "done" | "warn" | "fail" | "skipped";
 
 interface Step {
   key: string;
@@ -105,11 +105,12 @@ function buildSteps(state: ViewState): Step[] {
   return definitions.map((step) => {
     let value: StepState = "pending";
     if (step.done) value = step.fail ? "fail" : step.warn ? "warn" : "done";
+    else if (final) value = "skipped";
     else if (p && !final && !runningAssigned) {
       runningAssigned = true;
       value = step.warn && waiting ? "warn" : "running";
     }
-    const defaultBadge = value === "running" ? "Processing" : value === "pending" ? "Pending" : value === "warn" ? "Review" : value === "fail" ? "Blocked" : "Complete";
+    const defaultBadge = value === "running" ? "Processing" : value === "pending" ? "Pending" : value === "skipped" ? "Skipped" : value === "warn" ? "Review" : value === "fail" ? "Blocked" : "Complete";
     return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key), badge: step.badge ?? defaultBadge, extra: step.extra };
   });
 }
@@ -153,6 +154,7 @@ const STEP_COLOR: Record<StepState, string> = {
   done: "var(--low)",
   warn: "var(--medium)",
   fail: "var(--danger)",
+  skipped: "rgba(0,0,0,.2)",
 };
 
 function StepIcon({ state, index }: { state: StepState; index: number }) {
@@ -160,6 +162,7 @@ function StepIcon({ state, index }: { state: StepState; index: number }) {
   if (state === "done") return <Check size={14} />;
   if (state === "warn") return <span className="text-[10px] font-bold">!</span>;
   if (state === "fail") return <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>;
+  if (state === "skipped") return <span className="font-mono text-[10px]">−</span>;
   return <span className="font-mono text-[8.5px]">{String(index + 1).padStart(2, "0")}</span>;
 }
 
@@ -179,8 +182,16 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
   const steps = buildSteps(state);
   const completed = steps.filter((step) => step.state === "done" || step.state === "warn" || step.state === "fail").length;
   const summary = decisionSummary(state);
+  const final =
+    state.payment?.status === "credited" || state.payment?.status === "stopped";
+  const summaryCard = (
+    <div className="mx-4 mb-4 rounded-lg bg-[var(--accent-soft)] px-3 py-3">
+      <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {summary.title.toLowerCase()}</div>
+      <p className="mt-1 text-[10.5px] leading-relaxed text-ink-2">{summary.detail}</p>
+    </div>
+  );
   return (
-    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="min-h-0" panelClassName="flex min-h-0 flex-col overflow-clip" aria-label="Engine decisions">
+    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease }} className={cx("flex min-h-0 w-full", expanded ? "flex-1" : "shrink-0")} panelClassName="flex min-h-0 flex-col overflow-clip" aria-label="Engine decisions">
       <PanelHeaderButton
         index="02"
         title="Engine decisions"
@@ -202,9 +213,10 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
             transition={{ duration: 0.22, ease }}
             className="thin-scrollbar min-h-0 shrink basis-auto overflow-y-auto overscroll-contain"
           >
+      {final ? <div className="sticky top-0 z-[2] bg-white pt-1">{summaryCard}</div> : null}
       <ol className="px-4 py-1">
         {steps.map((step, index) => (
-          <motion.li key={step.key} layout="position" className="relative grid grid-cols-[54px_22px_minmax(0,1fr)_auto] items-start gap-2 py-2">
+          <motion.li key={step.key} layout="position" transition={{ duration: 0.25, ease }} className="relative grid grid-cols-[54px_22px_minmax(0,1fr)_auto] items-start gap-2 py-2">
             <time className="pt-0.5 font-mono text-[9.5px] text-ink-3">{step.time}</time>
             <span data-timeline-column className="grid w-[22px] self-stretch grid-rows-[18px_minmax(0,1fr)] justify-items-center">
               <span data-timeline-marker className="relative z-[1] col-start-1 row-start-1 grid size-[18px] place-items-center rounded-full border bg-white" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 42%, white)` }}>
@@ -213,7 +225,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
               {index < steps.length - 1 ? <span data-timeline-line className="col-start-1 row-start-2 h-[calc(100%+16px)] w-px justify-self-center bg-[var(--line-strong)]" aria-hidden /> : null}
             </span>
             <div className="min-w-0">
-              <div className={cx("text-[12.5px] font-medium", step.state === "pending" && "text-ink-3")} style={step.state === "running" ? { color: "var(--accent)" } : undefined}>{step.label}</div>
+              <div className={cx("text-[12.5px] font-medium", (step.state === "pending" || step.state === "skipped") && "text-ink-3")} style={step.state === "running" ? { color: "var(--accent)" } : undefined}>{step.label}</div>
               <div className="mt-0.5 truncate text-[10.5px] leading-snug text-ink-3" title={step.detail}>{step.detail}</div>
             </div>
             <span className="mt-0.5 rounded-full border px-2 py-1 text-[9px] font-medium" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 14%, white)`, background: `color-mix(in srgb, ${STEP_COLOR[step.state]} 8%, white)` }}>{step.badge}</span>
@@ -222,10 +234,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
         ))}
       </ol>
 
-      <div className="mx-4 mb-4 rounded-lg bg-[var(--accent-soft)] px-3 py-3">
-        <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {summary.title.toLowerCase()}</div>
-        <p className="mt-1 text-[10.5px] leading-relaxed text-ink-2">{summary.detail}</p>
-      </div>
+      {!final ? summaryCard : null}
           </motion.div>
         ) : null}
       </AnimatePresence>
