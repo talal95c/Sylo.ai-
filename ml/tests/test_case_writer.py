@@ -90,9 +90,9 @@ class _Response:
         return {"choices": [{"message": {"content": json.dumps(self.body)}}]}
 
 
-def _mocked_case(monkeypatch, action: str):
+def _mocked_case(monkeypatch, action: str, *, text_screen: TextScreen | None = None):
     events = scene2_events()
-    base = TemplateCaseWriter().write("PAY-2026-0002", events)
+    base = TemplateCaseWriter(text_screen=text_screen).write("PAY-2026-0002", events)
     body = base.model_dump(by_alias=True, mode="json")
     body["recommendedAction"] = action
     observed = {}
@@ -114,7 +114,7 @@ def test_injected_less_strict_action_is_rejected(monkeypatch):
 
 
 def test_stricter_action_is_accepted_and_prompt_is_spotlighted(monkeypatch):
-    events, observed = _mocked_case(monkeypatch, "ESCALATE_AML")
+    events, observed = _mocked_case(monkeypatch, "ESCALATE_AML", text_screen=TextScreen(mode="off"))
     invoice = (Path(__file__).parents[1] / "sylo_risk/case/fixtures/scene2_invoice.txt").read_text()
     case = CaseWriter(
         mode="live",
