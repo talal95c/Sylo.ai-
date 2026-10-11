@@ -12,6 +12,7 @@ import { EventFeed } from "./EventFeed";
 import { FlowGraph } from "./FlowGraph";
 import GlobeStage from "./GlobeStage";
 import { IncidentDrawer } from "./IncidentDrawer";
+import { Onboarding, onboardingSeen } from "./Onboarding";
 import { PaymentCard } from "./PaymentCard";
 import { StatusBanner } from "./StatusBanner";
 import { TopBar, type DemoView } from "./TopBar";
@@ -30,6 +31,14 @@ export default function SyloApp() {
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
   const autoRunRef = useRef(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    const fromTest = new URLSearchParams(window.location.search).has("run");
+    if (fromTest || onboardingSeen()) return;
+    const timer = window.setTimeout(() => setTourOpen(true), 900);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!sylo.ready || autoRunRef.current) return;
@@ -107,7 +116,7 @@ export default function SyloApp() {
         )}
       </AnimatePresence>
 
-      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
+      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} onHelp={() => setTourOpen(true)} />
       <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
 
       <AnimatePresence>
@@ -126,6 +135,7 @@ export default function SyloApp() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <Onboarding open={tourOpen} onClose={() => setTourOpen(false)} onRunLegit={() => void sylo.actions.runLegit()} onRunDiverted={() => void sylo.actions.runDiverted()} />
       <IncidentDrawer incident={sylo.state.incident} open={incidentOpen} onClose={() => setIncidentOpen(false)} />
       <DemoControls
         state={sylo.state}
