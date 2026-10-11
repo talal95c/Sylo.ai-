@@ -112,4 +112,31 @@ describe("submitPayment", () => {
     expect(JSON.parse(init.body)).toEqual({ quoteId: "Q-0007" });
     expect(init.headers["Idempotency-Key"]).toBe("web-Q-0007");
   });
+
+  it("resets and retries once when another scenario is running", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json(
+          { detail: "a scenario is running; wait for it to finish or POST /v1/reset" },
+          { status: 409 },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(Response.json({ paymentId: "PAY-2026-0001" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitPayment("Q-0007")).resolves.toEqual({
+      paymentId: "PAY-2026-0001",
+    });
+
+    const calls = fetchMock.mock.calls;
+    expect(calls.map(([url]) => new URL(url).pathname)).toEqual([
+      "/v1/payments",
+      "/v1/reset",
+      "/v1/payments",
+    ]);
+    expect(calls[0][1].headers["Idempotency-Key"]).toBe("web-Q-0007");
+    expect(calls[2][1].headers["Idempotency-Key"]).toBe("web-Q-0007");
+  });
 });

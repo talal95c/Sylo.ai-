@@ -135,6 +135,25 @@ async function post(
   }
 }
 
+async function startWithTakeover(
+  engineUrl: string,
+  start: () => Promise<void>,
+): Promise<void> {
+  try {
+    await start();
+  } catch (error) {
+    if (
+      !(error instanceof EngineRequestError) ||
+      error.status !== 409 ||
+      !error.message.includes("a scenario is running")
+    ) {
+      throw error;
+    }
+    await post(engineUrl, "/v1/reset");
+    await start();
+  }
+}
+
 export function createLiveSource(engineUrl: string): Source {
   let eventSource: EventSource | null = null;
   let callbacks: SourceCallbacks | null = null;
@@ -173,10 +192,12 @@ export function createLiveSource(engineUrl: string): Source {
     },
     runScenario(name, opts) {
       if (name === "muleWave") {
-        return post(engineUrl, "/v1/sim/mule-wave", {
-          speed: opts.speed,
-          auto: true,
-        });
+        return startWithTakeover(engineUrl, () =>
+          post(engineUrl, "/v1/sim/mule-wave", {
+            speed: opts.speed,
+            auto: true,
+          }),
+        );
       }
       if (name === "guardian") {
         return Promise.reject(new Error("Start a diverted invoice and wait for the escrow hold: the stolen-key attack runs on the held payment."));
@@ -189,12 +210,14 @@ export function createLiveSource(engineUrl: string): Source {
         "diverted_timelock",
         "confidential",
       ].includes(name);
-      return post(engineUrl, `/v1/scenarios/${scenario}/run`, {
-        speed: opts.speed,
-        auto: automated,
-        ...(name === "diverted_timelock" ? { autoAnswer: "confirm" } : {}),
-        ...(opts.invoiceText === undefined ? {} : { invoiceText: opts.invoiceText }),
-      });
+      return startWithTakeover(engineUrl, () =>
+        post(engineUrl, `/v1/scenarios/${scenario}/run`, {
+          speed: opts.speed,
+          auto: automated,
+          ...(name === "diverted_timelock" ? { autoAnswer: "confirm" } : {}),
+          ...(opts.invoiceText === undefined ? {} : { invoiceText: opts.invoiceText }),
+        }),
+      );
     },
     supplierResponse(paymentId, answer) {
       return post(
