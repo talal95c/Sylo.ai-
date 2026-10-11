@@ -11,3 +11,7 @@ export function particleSizeForBucket(bucket: ParticleSizeBucket, baseSize: numb
   if (bucket === "middle") return baseSize * 1.2;
   return baseSize;
 }
+
+export function scaleAnimationDuration(durationMs: number, speed: number) {
+  return durationMs / Math.max(1, speed);
+}

@@ -27,7 +27,12 @@ import {
 } from "@/lib/globeFrame";
 import { isOnVisibleHemisphere } from "@/lib/globeVisibility";
 import { resolveLabelOverlap } from "@/lib/labelPlacement";
-import { particleSizeBucket, particleSizeForBucket, type ParticleSizeBucket } from "@/lib/globeZoom";
+import {
+  particleSizeBucket,
+  particleSizeForBucket,
+  scaleAnimationDuration,
+  type ParticleSizeBucket,
+} from "@/lib/globeZoom";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -361,6 +366,7 @@ export default function GlobeCanvas({
           endLat: to.lat,
           endLng: to.lng,
           ...style,
+          animateTime: scaleAnimationDuration(style.animateTime, speed),
         })),
       );
     };
@@ -489,7 +495,7 @@ export default function GlobeCanvas({
     }
     return { arcs: list, tracks };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, state.wave, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
+  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, state.wave, tierColor, holding, heldHop, chainAltitude, reducedMotion, speed]);
 
   const involved = useMemo(() => {
     const ids = new Set<string>();
