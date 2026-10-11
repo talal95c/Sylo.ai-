@@ -798,6 +798,8 @@ class Orchestrator:
             # Runtime custom payees extend the shared account registry; the spec file stays unchanged.
             ACCOUNTS[account_id] = account
             self._custom_accounts[account_id] = account
+        else:
+            sender_domain = sender_domain or LEGIT_ORDER.documents.sender_domain
 
         order = LEGIT_ORDER.model_copy(
             update={

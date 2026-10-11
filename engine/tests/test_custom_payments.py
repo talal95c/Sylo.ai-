@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from sylo_spec.models import Tier
-from sylo_spec.scenarios import ACCOUNTS
+from sylo_spec.scenarios import ACCOUNTS, LEGIT_ORDER
 
 from sylo.main import create_app
 
@@ -63,6 +63,7 @@ async def test_custom_verified_account_completes():
     assert run.hold is None
     assert run.order.creditor_account_id == "acc-ssx-nominated"
     assert run.order.documents.invoice_ref == "SSE-VER-120"
+    assert run.order.documents.sender_domain == LEGIT_ORDER.documents.sender_domain
     await orchestrator.reset()
 
 

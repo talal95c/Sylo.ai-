@@ -63,7 +63,7 @@ function parseAmount(text: string) {
 
 function maskAccountNumber(value: string) {
   const normalized = value.replace(/[^A-Za-z0-9]/g, "");
-  return normalized ? `•••• ${normalized.slice(-4)}` : "Account number";
+  return normalized ? `GH•• •••• ${normalized.slice(-4)}` : "Account number";
 }
 
 function validInvoiceReference(value: string) {
