@@ -23,6 +23,9 @@ from .models import (
 PaymentIdLike = Union[bytes, str]
 """A bytes32 payment id, as 32 raw bytes or a 0x-prefixed hex string."""
 
+CorridorIdLike = Union[bytes, str]
+"""A bytes32 corridor id (``corridor_id_of("FR-GH")``), as 32 raw bytes or a 0x-prefixed hex string."""
+
 
 @runtime_checkable
 class RiskPort(Protocol):
@@ -64,3 +67,13 @@ class ChainPort(Protocol):
     def status(self, payment_id: PaymentIdLike) -> Status: ...
 
     def intent_hash(self, payment_id: PaymentIdLike) -> bytes: ...
+
+    def freeze(self, payment_id: PaymentIdLike) -> TxRef:
+        """Freezes the escrow hold (analyst or guardian): release then reverts ``PaymentNotReleasable``;
+        refund still works. ``NoHold`` if nothing is escrowed."""
+        ...
+
+    def pause_corridor(self, corridor_id: CorridorIdLike) -> TxRef:
+        """Pauses a corridor (guardian): every release on it reverts ``PaymentNotReleasable`` until an
+        admin unpauses it. Never pause a real corridor in a test: unpausing needs the deployer key."""
+        ...

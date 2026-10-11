@@ -31,7 +31,7 @@ from sylo_spec.models import (
     TxRef,
     VerificationAttestation,
 )
-from sylo_spec.ports import ChainReverted, PaymentIdLike
+from sylo_spec.ports import ChainReverted, CorridorIdLike, PaymentIdLike
 from web3 import HTTPProvider, Web3
 from web3.contract import Contract
 from web3.exceptions import (
@@ -400,10 +400,10 @@ class FujiChain:
             self._read(lambda w3, block: self._registry(w3).functions.intentOf(pid).call(block_identifier=block))
         )
 
-    # --- guardian and analyst controls (ChainPort additions proposed in C1.0) -------------------
+    # --- guardian and analyst controls ---------------------------------------------------------
 
     def freeze(self, payment_id: PaymentIdLike, caller: str = "analyst") -> TxRef:
         return self._transact(caller, "escrow", "freeze", self._pid(payment_id))
 
-    def pause_corridor(self, corridor_id: str, caller: str = "guardian") -> TxRef:
+    def pause_corridor(self, corridor_id: CorridorIdLike, caller: str = "guardian") -> TxRef:
         return self._transact(caller, "escrow", "pauseCorridor", to_bytes32(corridor_id))
