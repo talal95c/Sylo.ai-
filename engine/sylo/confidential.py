@@ -69,7 +69,7 @@ class EercServiceLeg:
 
     mode = "eerc"
 
-    def __init__(self, base_url: str, explorer_base_url: str, timeout: float = 120.0) -> None:
+    def __init__(self, base_url: str, explorer_base_url: str, timeout: float = 25.0) -> None:
         if not base_url.startswith(("http://", "https://")):
             raise ConfidentialUnavailable("EERC_URL must be an http(s) URL")
         self._base_url = base_url.rstrip("/")

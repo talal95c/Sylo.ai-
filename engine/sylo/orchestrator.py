@@ -314,6 +314,7 @@ class Orchestrator:
         self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
         if settings.cluster_mode == "auto" and self.cluster_stub and "clusters" not in self.degraded:
             self.degraded.append("clusters")
+        self._startup_degraded = list(self.degraded)
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
         self._clock_offset = timedelta(0)
@@ -528,8 +529,16 @@ class Orchestrator:
         self.breakers.reset()
         self._window.clear()
         self._announced_breakers.clear()
+        self.incidents.clear()
+        # A dependency that failed while running gets another chance; one missing since start-up stays degraded.
+        runtime_degraded = self.degraded != self._startup_degraded
+        self.degraded = list(self._startup_degraded)
+        if isinstance(self.risk, CombinedRisk):
+            self.risk.failed = False
         self.bus.clear()
         self.bus.publish("session.reset", {})
+        if runtime_degraded:
+            self.bus.publish("system.mode", self.mode())
 
     def _legs(self, payment_id: str) -> list[dict[str, Any]]:
         """Status leg by leg, from the events of the payment (pacs.002-style)."""
@@ -1418,8 +1427,19 @@ class Orchestrator:
                 run.status = "stopped"
                 self._emit(run, "payment.stopped", {"headline": texts.CHAIN_DOWN_HEADLINE, "detail": detail})
         except Exception:
+            # Fail safe: say so on the stream, keep any hold, and never leave the screen on "in transit".
             log.exception("scenario %s failed", run.scenario)
-            run.status = "stopped"
+            self._degrade("engine")
+            if run.hold is not None:
+                run.status = "held"
+                self._alert(
+                    run, "analyst", texts.ANALYST, "IN_APP", texts.ENGINE_ERROR_HELD, headline=texts.ENGINE_ERROR_HEADLINE
+                )
+            else:
+                detail = texts.ENGINE_ERROR_DETAIL.format(status=run.status)
+                run.status = "stopped"
+                self._alert(run, "analyst", texts.ANALYST, "IN_APP", detail, headline=texts.ENGINE_ERROR_HEADLINE)
+                self._emit(run, "payment.stopped", {"headline": texts.ENGINE_ERROR_HEADLINE, "detail": detail})
 
     def _payment_created(self, order: PaymentOrder) -> dict[str, Any]:
         account = ACCOUNTS[order.creditor_account_id]
@@ -1876,6 +1896,10 @@ class Orchestrator:
             log.warning("case file not ready in time (%s); using the one built from the rules", type(err).__name__)
             self._degrade("llm")
             case = rules_case_file(run.order, run.risk, events, situation)
+        if self.case.requested == "live" and case.llm != "live":
+            # Mistral did not answer and the writer fell back to cached text or the rules: say so on the banner.
+            # (In cached mode the template for a scene without cached text is expected, not a failure.)
+            self._degrade("llm")
         self._case_ready(run, case)
 
     def _case_ready(self, run: PaymentRun, case: CaseFile) -> None:
@@ -2255,7 +2279,8 @@ class Orchestrator:
     # --- attacks -----------------------------------------------------------------------------
 
     def _attack_started(self, run: PaymentRun, name: str) -> None:
-        self._current_pacer = run.pacer
+        if self._current_pacer is None:
+            self._current_pacer = run.pacer
         self._emit(
             run,
             "attack.attempted",
@@ -2397,9 +2422,22 @@ def build_orchestrator(
 ) -> Orchestrator:
     env = os.environ if env is None else env
     settings = settings or Settings.from_env(env)
-    signer = Signer(env)
+    keys_missing = False
+    if settings.chain_mode == "fuji":
+        # The public dev keys are fine on a simulated chain, never on a real one: without the real keys, use the mock chain.
+        try:
+            signer = Signer(env, allow_dev_keys=False)
+        except RuntimeError as err:
+            log.warning("CHAIN_MODE=fuji but %s; using the mock chain", err)
+            settings = dataclasses.replace(settings, chain_mode="mock")
+            signer = Signer(env)
+            keys_missing = True
+    else:
+        signer = Signer(env)
     holder: dict[str, Orchestrator] = {}
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
+    if keys_missing:
+        degraded.append("chain")
     if chain.mode != "mock":
         # The registry outlives this process and keeps every nonce: start from this session's own base
         # (microseconds since the epoch), so no message repeats a nonce of an earlier session.

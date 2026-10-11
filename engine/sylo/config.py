@@ -32,6 +32,14 @@ def _get(env: Mapping[str, str], name: str, default: str) -> str:
     return default if value is None or not value.strip() else value.strip()
 
 
+def _choice(env: Mapping[str, str], name: str, default: str, allowed: tuple[str, ...]) -> str:
+    """A flag with a fixed set of values: a typo stops the engine at start-up instead of silently running another mode."""
+    value = _get(env, name, default).lower()
+    if value not in allowed:
+        raise ValueError(f"{name} must be one of {', '.join(repr(a) for a in allowed)}, not {value!r}")
+    return value
+
+
 def _journal_path(env: Mapping[str, str]) -> str | None:
     """The decision log is written by default when the engine runs from the environment; "off" disables it."""
     value = _get(env, "JOURNAL_PATH", str(ENGINE_DIR / "data" / "log.jsonl"))
@@ -83,13 +91,11 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         env = os.environ if env is None else env
         origins = _get(env, "CORS_ORIGINS", ",".join(cls.cors_origins))
-        telecom_mode = _get(env, "TELECOM_MODE", "mock").lower()
-        if telecom_mode not in {"mock", "orange-playground"}:
-            raise ValueError("TELECOM_MODE must be 'mock' or 'orange-playground'")
+        telecom_mode = _choice(env, "TELECOM_MODE", "mock", ("mock", "orange-playground"))
         return cls(
-            risk_mode=_get(env, "RISK_MODE", "rules").lower(),
-            chain_mode=_get(env, "CHAIN_MODE", "mock").lower(),
-            llm_mode=_get(env, "LLM_MODE", "off").lower(),
+            risk_mode=_choice(env, "RISK_MODE", "rules", ("rules", "model")),
+            chain_mode=_choice(env, "CHAIN_MODE", "mock", ("mock", "fuji")),
+            llm_mode=_choice(env, "LLM_MODE", "off", ("off", "cached", "live")),
             telecom_mode=telecom_mode,
             demo_speed=float(_get(env, "DEMO_SPEED", "1")),
             engine_port=int(_get(env, "ENGINE_PORT", "8000")),
