@@ -100,6 +100,19 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return entities[character];
+  });
+}
+
 function angularDistanceDegrees(a: GeoPoint, b: GeoPoint) {
   const radians = Math.PI / 180;
   const latitudeDelta = (b.lat - a.lat) * radians;
@@ -385,6 +398,24 @@ export default function GlobeCanvas({
       );
     };
 
+    for (const [index, sample] of (state.wave?.samples ?? []).entries()) {
+      const sampleId = `${sample.paymentId || "traffic"}-${index}`;
+      dots(`wave-${sampleId}-track`, sample.from, sample.to, null, {
+        color: DANGER_COLOR,
+        opacity: 0.85,
+        radius: DOT_RADIUS_STRONG,
+      });
+      push(`wave-${sampleId}-comet`, sample.from, sample.to, `wave-comet-${sampleId}`, {
+        color: [rgba(DANGER_COLOR, 0), DANGER_COLOR],
+        altitude: null,
+        stroke: 0.9,
+        dashLength: 0.45,
+        dashGap: 1,
+        dashInitialGap: 1,
+        animateTime: reducedMotion ? 0 : 1500,
+      });
+    }
+
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
         const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
@@ -401,7 +432,7 @@ export default function GlobeCanvas({
         });
       }
       if (state.routes.length > 0) {
-        dots("corridor", "payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx", null, {
+        dots("corridor", "payer_rhone", (state.scenario === "diverted" || state.scenario === "mule_wave") ? "mule_bank" : "supplier_ssx", null, {
           color: "#0a0a0a",
           opacity: 0.22,
           radius: DOT_RADIUS * 0.85,
@@ -472,10 +503,17 @@ export default function GlobeCanvas({
     }
     return { arcs: list, tracks };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
+  }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, state.wave, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
 
   const involved = useMemo(() => {
     const ids = new Set<string>();
+    for (const sample of state.wave?.samples ?? []) {
+      ids.add(sample.from);
+      ids.add(sample.to);
+    }
+    for (const institution of state.wave?.cluster?.institutions ?? []) {
+      ids.add(institution);
+    }
     if (state.selectedRouteId) {
       state.hops.forEach((hop) => {
         ids.add(hop.from);
@@ -483,13 +521,13 @@ export default function GlobeCanvas({
       });
     } else if (state.routes.length) {
       ids.add("payer_rhone");
-      ids.add(state.scenario === "diverted" ? "mule_bank" : "supplier_ssx");
+      ids.add((state.scenario === "diverted" || state.scenario === "mule_wave") ? "mule_bank" : "supplier_ssx");
     } else {
       ids.add("payer_rhone");
       ids.add("supplier_ssx");
     }
     return ids;
-  }, [state.hops, state.routes, state.scenario, state.selectedRouteId]);
+  }, [state.hops, state.routes, state.scenario, state.selectedRouteId, state.wave]);
 
   const points = useMemo<PointDatum[]>(() => {
     if (!institutions) return [];
@@ -514,25 +552,31 @@ export default function GlobeCanvas({
       state.hops.find((hop) => hop.state === "active") ??
       [...state.hops].reverse().find((hop) => hop.state !== "pending") ??
       state.hops[0];
+    const muleScenario = state.scenario === "mule_wave" || state.scenario === "diverted";
     const fallbackLabelIds = state.payment
-      ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
+      ? ["payer_rhone", muleScenario ? "mule_bank" : "supplier_ssx"]
       : state.routes.length
-        ? ["payer_rhone", state.scenario === "diverted" ? "mule_bank" : "supplier_ssx"]
-        : ["payer_rhone", "supplier_ssx"];
+        ? ["payer_rhone", "bank_fr", "corr_uk", "casp_eu", "vasp_gh", muleScenario ? "mule_bank" : "supplier_ssx"]
+        : state.scenario === "mule_wave"
+          ? ["payer_rhone", "bank_fr", "mule_bank"]
+          : ["payer_rhone", "supplier_ssx"];
     const payerFocused = ["scenario.started", "route.selected", "payment.stopped"].includes(
       state.lastEvent?.type ?? "",
     );
     const supplierFocused = state.lastEvent?.type === "verification.requested";
-    const labelIds = focusedHop
-      ? [
-          ...new Set([
-            focusedHop.to,
-            focusedHop.from,
-            ...(payerFocused ? ["payer_rhone"] : []),
-            ...(supplierFocused ? ["supplier_ssx"] : []),
-          ]),
-        ]
-      : fallbackLabelIds;
+    const labelIds = [
+      ...new Set([
+        ...(focusedHop
+          ? [
+              focusedHop.to,
+              focusedHop.from,
+              ...(payerFocused ? ["payer_rhone"] : []),
+              ...(supplierFocused ? ["supplier_ssx"] : []),
+            ]
+          : fallbackLabelIds),
+        ...(state.scenario === "mule_wave" && state.wave ? ["mule_bank"] : []),
+      ]),
+    ];
     const liveTarget =
       state.payment?.status === "in_transit"
         ? state.hops.find((hop) => hop.state === "active")?.to
@@ -551,6 +595,27 @@ export default function GlobeCanvas({
           className: "globe-label",
           preferredSide,
           html: `<span class="globe-label-anchor"></span><span class="globe-label-connector"></span><span class="globe-label-pill"><span class="globe-label-name">${SHORT_NAME[id] ?? institution.name}</span><span class="globe-label-city">${institution.city}</span>${isLive ? '<span class="globe-live"><span class="globe-live-dot"></span><span>LIVE</span></span>' : ""}</span>`,
+        })),
+      );
+    }
+
+    if (state.wave?.breaker && state.wave.cluster) {
+      const centroid = state.wave.cluster.centroid;
+      const regionName =
+        state.wave.breaker.scope.regionName ??
+        state.wave.cluster.regionName ??
+        state.wave.cluster.region;
+      const region = regionName.replace(/\s+Region$/, "");
+      const label = `Circuit breaker · ${region} · 24 h`;
+      list.push(
+        stable("wave-breaker", label, () => ({
+          id: "wave-breaker",
+          lat: centroid.lat,
+          lng: centroid.lng,
+          altitude: 0.015,
+          className: "globe-label globe-label-breaker",
+          preferredSide: "below",
+          html: `<span class="globe-label-connector"></span><span class="globe-label-pill globe-label-breaker-pill"><span class="globe-label-name globe-label-breaker-name">${escapeHtml(label)}</span></span>`,
         })),
       );
     }
@@ -613,7 +678,7 @@ export default function GlobeCanvas({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.lastEvent, state.held, state.incident, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
+  }, [institutions, involved, state.hops, state.payment?.status, state.selectedRouteId, state.routes.length, state.scenario, state.wave, state.lastEvent, state.held, state.incident, state.revoked, state.released, state.refunded, state.attack.reverted, lockPoint, chainHop, chainAltitude]);
 
   const handleGlobeZoom = useCallback(
     (pov: { lat: number; lng: number; altitude: number }) => {
@@ -792,28 +857,36 @@ export default function GlobeCanvas({
     if (!institutions) return [];
     const ring = (id: string, lat: number, lng: number, altitude: number, color: string, maxRadius = 3) =>
       stable(`ring-${id}`, color, () => ({ id, lat, lng, altitude, color, maxRadius }));
+    const waveRings: RingDatum[] = [];
+    if (state.scenario === "mule_wave" && state.wave?.cluster) {
+      const { lat, lng } = state.wave.cluster.centroid;
+      if (state.wave.breaker) {
+        waveRings.push(ring("wave-breaker", lat, lng, 0.004, TIER_COLORS.MEDIUM, 12));
+      }
+      waveRings.push(ring("wave-cluster", lat, lng, 0.006, DANGER_COLOR, 4));
+    }
     if (state.attack.attempted && lockPoint) {
-      return [ring("attack", lockPoint.lat, lockPoint.lng, chainAltitude, DANGER_COLOR, 6)];
+      return [...waveRings, ring("attack", lockPoint.lat, lockPoint.lng, chainAltitude, DANGER_COLOR, 6)];
     }
     if (state.refunded) {
       const payer = at("payer_rhone");
-      return payer ? [ring("refund", payer.lat, payer.lng, 0.005, REFUND_COLOR, 4)] : [];
+      return payer ? [...waveRings, ring("refund", payer.lat, payer.lng, 0.005, REFUND_COLOR, 4)] : waveRings;
     }
     if (holding && lockPoint) {
-      return [ring("held", lockPoint.lat, lockPoint.lng, chainAltitude, TIER_COLORS.MEDIUM, 5)];
+      return [...waveRings, ring("held", lockPoint.lat, lockPoint.lng, chainAltitude, TIER_COLORS.MEDIUM, 5)];
     }
     if (state.credited) {
       const target = at(state.credited.at);
-      return target ? [ring("credited", target.lat, target.lng, 0.005, TIER_COLORS.LOW, 4)] : [];
+      return target ? [...waveRings, ring("credited", target.lat, target.lng, 0.005, TIER_COLORS.LOW, 4)] : waveRings;
     }
     const settled = [...state.hops].reverse().find((hop) => hop.state === "settled");
     if (settled) {
       const target = at(settled.to);
-      return target ? [ring(`settled-${settled.index}`, target.lat, target.lng, 0.005, tierColor, 2.5)] : [];
+      return target ? [...waveRings, ring(`settled-${settled.index}`, target.lat, target.lng, 0.005, tierColor, 2.5)] : waveRings;
     }
-    return [];
+    return waveRings;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [institutions, state.attack.attempted, state.refunded, state.credited, state.hops, holding, lockPoint, tierColor]);
+  }, [institutions, state.attack.attempted, state.refunded, state.credited, state.hops, state.wave, state.scenario, holding, lockPoint, tierColor]);
 
   const lastEvent = state.lastEvent;
   useEffect(() => {
@@ -855,8 +928,31 @@ export default function GlobeCanvas({
     const data = lastEvent.data as Record<string, unknown>;
     switch (lastEvent.type) {
       case "scenario.started":
+        if (data.scenario === "mule_wave") {
+          const from = pointAt("bank_fr");
+          const to = pointAt("mule_bank");
+          if (from && to) globe.pointOfView(hopView(from, to, chainAltitude), ms(1600));
+          break;
+        }
         focus(pointAt("payer_rhone"), 1.15, 1600);
         break;
+      case "traffic.sample": {
+        const sample =
+          state.wave?.samples.length === 1
+            ? (data.arcs as { from: string; to: string }[] | undefined)?.[0]
+            : undefined;
+        const from = sample ? pointAt(sample.from) : undefined;
+        const to = sample ? pointAt(sample.to) : undefined;
+        if (from && to) globe.pointOfView(hopView(from, to, chainAltitude), ms(1400));
+        break;
+      }
+      case "cluster.detected": {
+        const centroid = data.centroid as GeoPoint | undefined;
+        if (centroid) {
+          globe.pointOfView({ ...centroid, altitude: 1.2 }, ms(1200));
+        }
+        break;
+      }
       case "norms.checked":
         globe.pointOfView(CORRIDOR_VIEW, ms(1400));
         break;
@@ -932,7 +1028,7 @@ export default function GlobeCanvas({
     return () => {
       timers.forEach(clearTimeout);
     };
-  }, [lastEvent, state.scenario, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
+  }, [lastEvent, state.scenario, state.wave, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
 
   // Panel-aware framing: measure the occluders, then tween a camera view
   // offset so pointOfView targets land in the centre of the free area.
@@ -1004,6 +1100,7 @@ export default function GlobeCanvas({
   function onReady() {
     const globe = globeRef.current;
     if (!globe) return;
+    globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     const controls = globe.controls() as unknown as {
       autoRotate: boolean;
       autoRotateSpeed: number;

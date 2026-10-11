@@ -197,6 +197,15 @@ body {
   font-weight: 600;
   color: #0a0a0a;
 }
+.globe-label-breaker-pill {
+  max-width: none;
+}
+.globe-label-breaker-name {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
 .globe-label-city {
   flex: 0 0 auto;
   color: rgba(0, 0, 0, 0.5);

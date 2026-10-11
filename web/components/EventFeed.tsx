@@ -424,8 +424,12 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
                           )}
                         </span>
                       ) : null}
-                      {item.simulated ? <span className="font-mono uppercase">{" \u00b7 simulated"}</span> : null}
                     </p>
+                    {item.simulated ? (
+                      <span className="mt-1.5 inline-flex shrink-0 rounded-full border border-[var(--line-strong)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[8px] font-medium leading-none text-ink-2">
+                        Simulated
+                      </span>
+                    ) : null}
                     {item.type === "guardian.incident" && onOpenIncident ? (
                       <button type="button" onClick={onOpenIncident} className="mt-1.5 text-[10px] font-medium text-[var(--danger)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--danger)]">
                         Open DORA draft

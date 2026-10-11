@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import math
@@ -9,12 +10,13 @@ import time
 import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sse_starlette.sse import EventSourceResponse
 from sylo_spec.ports import ChainReverted
 
@@ -28,6 +30,7 @@ from .orchestrator import (
     ActionNotAllowed,
     AttackNotApplicable,
     ChainUnavailable,
+    CustomOrderLimit,
     NotWaiting,
     Orchestrator,
     ScenarioBusy,
@@ -54,13 +57,7 @@ class RunBody(BaseModel):
     @field_validator("invoiceText", mode="before")
     @classmethod
     def clean_invoice_text(cls, value: Any) -> Any:
-        if not isinstance(value, str):
-            return value
-        return "".join(
-            char
-            for char in value
-            if char in "\n\t" or unicodedata.category(char) != "Cc"
-        ).strip()
+        return _clean_control_chars(value)
 
 
 class AnswerBody(BaseModel):
@@ -88,9 +85,66 @@ class RailBody(BaseModel):
     reason: str | None = Field(default=None, max_length=200)
 
 
+def _clean_control_chars(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    return "".join(char for char in value if char in "\n\t" or unicodedata.category(char) != "Cc").strip()
+
+
+class CustomOrderBody(BaseModel):
+    amount: str = Field(pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
+    invoiceRef: str = Field(pattern=r"^[A-Za-z0-9-]{3,24}$")
+    account: Literal["verified", "new"]
+    accountNumber: str | None = Field(default=None, min_length=6, max_length=34, pattern=r"^[A-Za-z0-9 ]{6,34}$")
+    holderName: str | None = Field(default=None, max_length=60)
+    senderDomain: str | None = Field(
+        default=None,
+        max_length=253,
+        pattern=r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$",
+    )
+    invoiceText: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, value: str) -> str:
+        amount = Decimal(value)
+        if amount < Decimal("100") or amount > Decimal("1000000"):
+            raise ValueError("amount must be between €100 and €1,000,000")
+        return value
+
+    @field_validator("holderName", mode="before")
+    @classmethod
+    def clean_holder_name(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return "".join(char for char in value if unicodedata.category(char) != "Cc").strip()
+        return value
+
+    @field_validator("invoiceText", mode="before")
+    @classmethod
+    def clean_custom_invoice_text(cls, value: Any) -> Any:
+        return _clean_control_chars(value)
+
+    @model_validator(mode="after")
+    def require_new_account_details(self) -> "CustomOrderBody":
+        if self.account == "new" and (
+            self.accountNumber is None or self.holderName is None or not self.holderName
+        ):
+            raise ValueError("new bank details require accountNumber and holderName")
+        return self
+
+
 class QuoteBody(BaseModel):
-    order: Literal["legit", "diverted", "lagos-accra"]
+    order: Literal["legit", "diverted", "lagos-accra"] | None = None
     amount: str | None = Field(default=None, pattern=r"^[0-9]{1,12}(\.[0-9]{1,2})?$")
+    custom: CustomOrderBody | None = None
+
+    @model_validator(mode="after")
+    def require_one_quote_type(self) -> "QuoteBody":
+        if (self.order is None) == (self.custom is None):
+            raise ValueError("give exactly one of order and custom")
+        if self.custom is not None and self.amount is not None:
+            raise ValueError("amount is part of custom")
+        return self
 
 
 class PaymentBody(BaseModel):
@@ -194,8 +248,15 @@ def create_app(
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator
 
-    def operator_only() -> None:
-        if settings.demo_public:
+    def operator_only(x_sylo_operator: str | None = Header(default=None, alias="X-Sylo-Operator")) -> None:
+        authorized = (
+            settings.operator_token is not None
+            and x_sylo_operator is not None
+            and hmac.compare_digest(
+                x_sylo_operator.encode("utf-8"), settings.operator_token.encode("utf-8")
+            )
+        )
+        if settings.demo_public and not authorized:
             raise HTTPException(403, "this endpoint is closed on the public demo (DEMO_PUBLIC=1)")
 
     operator = [Depends(operator_only)]
@@ -330,6 +391,14 @@ def create_app(
 
     @app.post("/v1/quotes")
     async def quote(body: QuoteBody, request: Request) -> dict[str, Any]:
+        if body.custom is not None:
+            if body.custom.invoiceText is not None and not settings.live_invoice:
+                raise HTTPException(403, "live invoice is disabled (LIVE_INVOICE=off)")
+            try:
+                return orch(request).quote_custom(body.custom.model_dump())
+            except CustomOrderLimit:
+                raise HTTPException(429, "this engine has reached its limit of 200 custom orders") from None
+        assert body.order is not None
         return orch(request).quote(body.order, body.amount)
 
     @app.post("/v1/payments")
@@ -338,8 +407,22 @@ def create_app(
     ) -> dict[str, Any]:
         if (body.quoteId is None) == (body.order is None):
             raise HTTPException(422, "give exactly one of quoteId and order")
+        o = orch(request)
+        invoice_text = o.quote_invoice_text(body.quoteId)
+        if invoice_text is not None and not settings.live_invoice:
+            raise HTTPException(403, "live invoice is disabled (LIVE_INVOICE=off)")
+        if invoice_text is not None and not o.is_submission_replay(idempotency_key):
+            last_started = invoice_rate["last_started"]
+            if last_started is not None:
+                remaining = 30.0 - (monotonic() - last_started)
+                if remaining > 0:
+                    raise HTTPException(
+                        429,
+                        "one invoice run is allowed every 30 seconds",
+                        headers={"Retry-After": str(max(1, math.ceil(remaining)))},
+                    )
         try:
-            return orch(request).submit(
+            result = o.submit(
                 quote_id=body.quoteId,
                 order_name=body.order,
                 speed=body.speed or settings.demo_speed,
@@ -347,6 +430,9 @@ def create_app(
                 auto_answer=body.autoAnswer,
                 idempotency_key=idempotency_key,
             )
+            if invoice_text is not None and not result.get("replayed"):
+                invoice_rate["last_started"] = monotonic()
+            return result
         except UnknownQuote:
             raise HTTPException(404, f"unknown quote {body.quoteId!r}") from None
         except ActionNotAllowed as err:
@@ -433,6 +519,10 @@ def create_app(
     async def reset(request: Request) -> dict[str, bool]:
         await orch(request).reset()
         return {"ok": True}
+
+    @app.get("/v1/payments")
+    async def payments(request: Request) -> dict[str, Any]:
+        return {"payments": orch(request).public_payments()}
 
     @app.get("/v1/payments/{payment_id}")
     async def payment(payment_id: str, request: Request) -> dict[str, Any]:

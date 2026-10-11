@@ -32,6 +32,7 @@ from sylo_spec.canonical import corridor_id_of, hash_record, keccak_text, offcha
 from sylo_spec.devkeys import dev_address
 from sylo_spec.eip712 import Message, digest, primary_type, typed_data
 from sylo_spec.models import (
+    Account,
     CaseFile,
     Payer,
     PayerSession,
@@ -50,7 +51,7 @@ from sylo_spec.models import (
     WindowPayment,
 )
 from sylo_spec.ports import ChainPort, ChainReverted, RiskPort
-from sylo_spec.scenarios import ACCOUNTS, CORRIDOR, ORDERS, PAYEES, PAYER, build_risk_context
+from sylo_spec.scenarios import ACCOUNTS, CORRIDOR, DIVERTED_ORDER, LEGIT_ORDER, MULE_ACCOUNT, ORDERS, PAYEES, PAYER, build_risk_context
 
 from . import texts
 from .approvals import ApprovalSession, required_approvers
@@ -208,6 +209,10 @@ class UnknownPayee(Exception):
     pass
 
 
+class CustomOrderLimit(Exception):
+    pass
+
+
 @dataclass
 class Quote:
     id: str
@@ -215,6 +220,7 @@ class Quote:
     order: PaymentOrder
     valid_until: datetime
     executable: bool
+    invoice_text: str | None = None
 
 
 class ChainUnavailable(Exception):
@@ -320,6 +326,11 @@ class Orchestrator:
         self._clock_offset = timedelta(0)
         self._quotes: dict[str, Quote] = {}
         self._submitted: dict[str, dict[str, Any]] = {}
+        self._custom_orders: dict[str, PaymentOrder] = {}
+        self._custom_scenarios: dict[str, ScenarioDef] = {}
+        self._custom_accounts: dict[str, Account] = {}
+        self._custom_order_count = 0
+        self._next_custom_order = 1001
         self._payee_checks: dict[str, dict[str, Any]] = {}
         self._injected_sim_swap: float | None = None
         self._window: list[WindowPayment] = []
@@ -412,7 +423,7 @@ class Orchestrator:
         invoice_text: str | None = None,
     ) -> str:
         """Start a scenario in the background and return its payment id."""
-        if name not in SCENARIOS:
+        if self._scenario(name) is None:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
@@ -430,7 +441,7 @@ class Orchestrator:
         invoice_text: str | None = None,
     ) -> PaymentRun:
         """Run a scenario in the foreground (tests and the fixture recorder)."""
-        if name not in SCENARIOS:
+        if self._scenario(name) is None:
             raise UnknownScenario(name)
         if self.running:
             raise ScenarioBusy()
@@ -520,6 +531,12 @@ class Orchestrator:
         self._clock_offset = timedelta(0)
         self._quotes.clear()
         self._submitted.clear()
+        for account_id, account in self._custom_accounts.items():
+            if ACCOUNTS.get(account_id) is account:
+                ACCOUNTS.pop(account_id, None)
+        self._custom_accounts.clear()
+        self._custom_orders.clear()
+        self._custom_scenarios.clear()
         self._payee_checks.clear()
         self._injected_sim_swap = None
         self.telecom.clear()
@@ -726,8 +743,8 @@ class Orchestrator:
         payer = PAYER
         if order_name in CORRIDOR_DEMOS:
             engine, payer, order = corridor_demo(order_name)  # another corridor: priced, never executed here
-        elif order_name in ORDERS:
-            order = self._verified_order(ORDERS[order_name])
+        elif (recorded_order := self._order(order_name)) is not None:
+            order = self._verified_order(recorded_order)
         else:
             raise UnknownScenario(order_name)
         if amount is not None:
@@ -743,6 +760,90 @@ class Orchestrator:
         decision = self._decision(order, engine=engine, payer=payer)
         decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
         return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": quote.executable, **decision}
+
+    def quote_custom(self, custom: Mapping[str, Any]) -> dict[str, Any]:
+        if self._custom_order_count >= 200:
+            raise CustomOrderLimit()
+
+        order_id = f"PAY-2026-{self._next_custom_order:04d}"
+        account_kind = custom["account"]
+        invoice_ref = custom["invoiceRef"]
+        amount = str(custom["amount"])
+        invoice_text = custom.get("invoiceText")
+        sender_domain = custom.get("senderDomain")
+
+        account_id = LEGIT_ORDER.creditor_account_id
+        account = ACCOUNTS[account_id]
+        creditor = LEGIT_ORDER.creditor
+        provenance = dict(LEGIT_ORDER.provenance)
+        if account_kind == "new":
+            account_id = f"acc-custom-{self._next_custom_order:04d}"
+            account_number_index = self._next_custom_order
+            while account_id in ACCOUNTS:
+                account_number_index += 1
+                account_id = f"acc-custom-{account_number_index:04d}"
+            account_number = "".join(str(custom["accountNumber"]).split())
+            account = MULE_ACCOUNT.model_copy(
+                update={
+                    "id": account_id,
+                    "holder_name": custom["holderName"],
+                    "account_masked": f"GH•• •••• {account_number[-4:]}",
+                    "first_seen": self.now().date().isoformat(),
+                    "successful_payments": 0,
+                }
+            )
+            sender_domain = sender_domain or "savannashea-exports.co"
+            creditor = creditor.model_copy(update={"institution_id": account.institution_id})
+            provenance = dict(DIVERTED_ORDER.provenance)
+            # Runtime custom payees extend the shared account registry; the spec file stays unchanged.
+            ACCOUNTS[account_id] = account
+            self._custom_accounts[account_id] = account
+        else:
+            sender_domain = sender_domain or LEGIT_ORDER.documents.sender_domain
+
+        order = LEGIT_ORDER.model_copy(
+            update={
+                "id": order_id,
+                "uetr": str(uuid.uuid4()),
+                "creditor": creditor,
+                "creditor_account_id": account_id,
+                "amount": LEGIT_ORDER.amount.model_copy(update={"value": amount}),
+                "documents": LEGIT_ORDER.documents.model_copy(
+                    update={"invoice_ref": invoice_ref, "sender_domain": sender_domain}
+                ),
+                "provenance": provenance,
+            }
+        )
+        self._custom_orders[order_id] = order
+        self._custom_scenarios[order_id] = ScenarioDef(order=order_id)
+        self._custom_order_count += 1
+        self._next_custom_order += 1
+
+        quote = Quote(
+            id=f"Q-{len(self._quotes) + 1:04d}",
+            order_name=order_id,
+            order=order,
+            valid_until=self.now() + timedelta(seconds=QUOTE_VALIDITY_S),
+            executable=True,
+            invoice_text=invoice_text,
+        )
+        self._quotes[quote.id] = quote
+        decision = self._decision(order)
+        decision["route"]["quoteValidUntil"] = iso_ms(quote.valid_until)
+        return {"quoteId": quote.id, "validUntil": iso_ms(quote.valid_until), "executable": True, **decision}
+
+    def quote_invoice_text(self, quote_id: str | None) -> str | None:
+        quote = self._quotes.get(quote_id or "")
+        return quote.invoice_text if quote is not None else None
+
+    def is_submission_replay(self, idempotency_key: str | None) -> bool:
+        return bool(idempotency_key and idempotency_key in self._submitted)
+
+    def public_payments(self) -> list[dict[str, str]]:
+        return [
+            {"paymentId": run.order.id, "chainPaymentId": to_hex(run.chain_pid)}
+            for run in self._runs.values()
+        ]
 
     def submit(
         self,
@@ -767,10 +868,17 @@ class Orchestrator:
             if self.now() > quote.valid_until:
                 raise ActionNotAllowed(f"quote {quote_id} expired at {iso_ms(quote.valid_until)}: ask for a new one")
             order_name = quote.order_name
-        if order_name not in ORDERS:
+        order = self._order(order_name)
+        if order is None:
             raise UnknownScenario(str(order_name))
-        decision = self._decision(self._verified_order(ORDERS[order_name]))
-        payment_id = self.start(order_name, speed=speed, auto=auto, auto_answer=auto_answer)
+        decision = self._decision(self._verified_order(order))
+        payment_id = self.start(
+            order_name,
+            speed=speed,
+            auto=auto,
+            auto_answer=auto_answer,
+            invoice_text=quote.invoice_text if quote_id is not None else None,
+        )
         answer = {"paymentId": payment_id, "quoteId": quote_id, "status": "deciding", "replayed": False, "decision": decision}
         if idempotency_key:
             self._submitted[idempotency_key] = answer
@@ -1250,10 +1358,12 @@ class Orchestrator:
     def _new_run(
         self, name: str, speed: float, auto: bool, auto_answer: str, invoice_text: str | None = None
     ) -> PaymentRun:
-        scenario = SCENARIOS.get(name)
+        scenario = self._scenario(name)
         if scenario is None:
             raise UnknownScenario(name)
-        order = ORDERS[scenario.order]
+        order = self._order(scenario.order)
+        if order is None:
+            raise UnknownScenario(scenario.order)
         index = self._run_counts.get(order.id, 0) + 1  # checked against the registry when the run starts
         self._run_counts[order.id] = index
         run = PaymentRun(
@@ -1268,6 +1378,16 @@ class Orchestrator:
         )
         self._runs[order.id] = run
         return run
+
+    def _order(self, name: str | None) -> PaymentOrder | None:
+        if name is None:
+            return None
+        return self._custom_orders.get(name) or ORDERS.get(name)
+
+    def _scenario(self, name: str | None) -> ScenarioDef | None:
+        if name is None:
+            return None
+        return self._custom_scenarios.get(name) or SCENARIOS.get(name)
 
     @staticmethod
     def _chain_label(order_id: str, index: int) -> str:
@@ -1591,7 +1711,8 @@ class Orchestrator:
 
     async def _script(self, run: PaymentRun) -> None:
         pacer, order = run.pacer, run.order
-        scenario = SCENARIOS[run.scenario]
+        scenario = self._scenario(run.scenario)
+        assert scenario is not None
         self.telecom.clear()
         swap_hours = scenario.sim_swap_hours_ago if scenario.sim_swap_hours_ago is not None else self._injected_sim_swap
         self._injected_sim_swap = None
@@ -1948,7 +2069,8 @@ class Orchestrator:
             await run.pacer.wait(SUPPLIER_AUTO_MS)
             await self._case_written(run)
             if not (run.answer.done() or run.analyst.done() or run.escalation.done()):
-                if SCENARIOS[run.scenario].supplier_silent:
+                scenario = self._scenario(run.scenario)
+                if scenario is not None and scenario.supplier_silent:
                     # Nobody answers: the demo clock jumps to the hold's expiry instead of waiting a day.
                     self.advance_clock(self.settings.escrow_hold_seconds / 3600)
                 else:
@@ -2109,7 +2231,7 @@ class Orchestrator:
                 "answerText": texts.ANSWER_CONFIRM if result == VerificationResult.CONFIRMED else texts.ANSWER_DENY,
                 **self._tx_fields(tx),
             },
-            simulated=True,
+            simulated=tx.simulated,
         )
 
         if result == VerificationResult.DENIED:

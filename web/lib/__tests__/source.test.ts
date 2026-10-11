@@ -53,6 +53,61 @@ describe("replay scenes", () => {
     );
   });
 });
+describe("live engine errors", () => {
+  it("uses a FastAPI detail string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({ detail: "a payment is already running" }, { status: 409 }),
+      ),
+    );
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused: a payment is already running",
+    );
+  });
+
+  it("uses the first FastAPI validation message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            detail: [
+              { loc: ["body", "speed"], msg: "Input should be greater than 0" },
+              { loc: ["body", "auto"], msg: "Input should be a valid boolean" },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused: Input should be greater than 0",
+    );
+  });
+
+  it("falls back to the status when there is no useful response body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 409 })));
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused (409)",
+    );
+  });
+
+  it("explains unreachable engines", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine unreachable: check the connection or switch to Replay",
+    );
+  });
+});
 
 describe("jury invoice source controls", () => {
   it("keeps the invoice composer out of Replay", () => {
@@ -115,7 +170,7 @@ describe("jury invoice source controls", () => {
       source.runScenario("diverted", { speed: 1, invoiceText: "jury invoice" }),
     ).rejects.toMatchObject<Partial<EngineRequestError>>({
       status: 429,
-      message: "one invoice run is allowed every 30 seconds",
+      message: "Engine refused: one invoice run is allowed every 30 seconds",
       retryAfter: "25",
     });
   });

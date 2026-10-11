@@ -233,6 +233,63 @@ export interface PaymentStoppedData {
   detail: string;
 }
 
+export interface TrafficSampleData {
+  arcs: { from: InstitutionId; to: InstitutionId; kind: HopKind }[];
+  wave?: boolean;
+  payer: { id: string; name: string };
+  beneficiary: {
+    payeeName: string;
+    accountHolder: string;
+    accountMasked: string;
+    institutionId: InstitutionId;
+  };
+  amount: { value: string; currency: string };
+  text: string;
+}
+
+export interface ClusterDetectedData {
+  clusterId: string;
+  accounts: number;
+  agents: number;
+  region: string;
+  regionName?: string;
+  institutions?: InstitutionId[];
+  centroid: { lat: number; lng: number };
+  points: { lat: number; lng: number; weight: number }[];
+  linkedPayments: string[];
+  detector?: string;
+  proposedBreaker?: {
+    breakerId: string;
+    scope: BreakerScope;
+    thresholdsDelta: number;
+    hours?: number;
+    text?: string;
+  };
+}
+
+export interface BreakerScope {
+  region: string;
+  regionName?: string;
+  corridor: string;
+  institutions?: InstitutionId[];
+}
+
+export interface BreakerOnData {
+  breakerId: string;
+  clusterId?: string;
+  scope: BreakerScope;
+  thresholdsDelta: number;
+  expiresAt: string;
+  confirmedBy: string;
+  text?: string;
+}
+
+export interface BreakerOffData {
+  breakerId: string;
+  reason: "LIFTED" | "EXPIRED";
+  by?: string;
+}
+
 export interface AttackAttemptedData {
   attack: "release_revoked" | "swap_beneficiary" | "replay";
   description: string;
@@ -338,6 +395,10 @@ export type SyloEvent =
   | EventEnvelope<"intent.executed", ChainTransactionData>
   | EventEnvelope<"payment.credited", PaymentCreditedData>
   | EventEnvelope<"payment.stopped", PaymentStoppedData>
+  | EventEnvelope<"traffic.sample", TrafficSampleData>
+  | EventEnvelope<"cluster.detected", ClusterDetectedData>
+  | EventEnvelope<"breaker.on", BreakerOnData>
+  | EventEnvelope<"breaker.off", BreakerOffData>
   | EventEnvelope<"attack.attempted", AttackAttemptedData>
   | EventEnvelope<"leg.rejected", LegRejectedData>
   | EventEnvelope<"tx.reverted", TransactionRevertedData>

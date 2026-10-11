@@ -7,9 +7,16 @@ import { useEffect, useState } from "react";
 import { HOP_COLORS, TIER_COLORS } from "@/lib/colors";
 import { loadGeo, type Institution } from "@/lib/geo";
 import {
+  accountDiffersFromVerified,
+  orderForMatchedPayment,
+  submitIntake,
+  type IntakeResponse,
+} from "@/lib/intake";
+import {
   EngineError,
   fetchQuote,
   INVOICE_AMOUNT,
+  INVOICE_REFERENCE,
   submitPayment,
   type OrderName,
   type Quote,
@@ -18,6 +25,7 @@ import {
 import { Check, cx, ease, euros, Spinner } from "./ui";
 
 const STEPS = ["Recipient", "Amount", "Route", "Review"] as const;
+type RecipientChoice = OrderName | "new";
 
 const RECIPIENTS: { order: OrderName; account: string; holder: string; source: string; tag: string; tagTone: string }[] = [
   {
@@ -56,7 +64,20 @@ const slide = {
 
 function parseAmount(text: string) {
   const value = Number(text.replace(/[^\d.]/g, ""));
-  return Number.isFinite(value) && value > 0 && value <= 10_000_000 ? Math.round(value * 100) / 100 : null;
+  return Number.isFinite(value) && value >= 100 && value <= 1_000_000 ? Math.round(value * 100) / 100 : null;
+}
+
+function maskAccountNumber(value: string) {
+  const normalized = value.replace(/[^A-Za-z0-9]/g, "");
+  return normalized ? `GH•• •••• ${normalized.slice(-4)}` : "Account number";
+}
+
+function validInvoiceReference(value: string) {
+  return /^[A-Za-z0-9-]{3,24}$/.test(value);
+}
+
+function validAccountNumber(value: string) {
+  return /^[A-Za-z0-9 ]{6,34}$/.test(value);
 }
 
 function formatInput(text: string) {
@@ -149,21 +170,68 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default function TestTransaction() {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [order, setOrder] = useState<OrderName | null>(null);
+  const [selection, setSelection] = useState<RecipientChoice | null>(null);
   const [amountText, setAmountText] = useState("85,000");
+  const [invoiceRef, setInvoiceRef] = useState(INVOICE_REFERENCE);
+  const [accountNumber, setAccountNumber] = useState("");
+  const [holderName, setHolderName] = useState("");
+  const [senderDomain, setSenderDomain] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [institutions, setInstitutions] = useState<Record<string, Institution> | null>(null);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceText, setInvoiceText] = useState("");
+  const [invoiceReading, setInvoiceReading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  const [invoiceResult, setInvoiceResult] = useState<IntakeResponse | null>(null);
 
   const amount = parseAmount(amountText);
-  const atInvoiceAmount = amount === INVOICE_AMOUNT;
-  const recipient = RECIPIENTS.find((item) => item.order === order) ?? null;
+  const newAccountSelected = selection === "new";
+  const order: OrderName | null = newAccountSelected ? "legit" : selection;
+  const customTerms = amount !== INVOICE_AMOUNT || invoiceRef !== INVOICE_REFERENCE;
+  const enteredBankDetailsSelected =
+    newAccountSelected || (selection === "diverted" && customTerms);
+  const recipient = enteredBankDetailsSelected
+    ? { account: maskAccountNumber(accountNumber), holder: holderName.trim() || "Account holder" }
+    : RECIPIENTS.find((item) => item.order === order) ?? null;
+  const accountDetailsValid =
+    validAccountNumber(accountNumber) && holderName.trim().length > 0 && holderName.trim().length <= 60;
+  const invoiceRefValid = validInvoiceReference(invoiceRef);
   const chosen = quote?.routes.find((route) => route.routeId === quote.route.chosen) ?? null;
   const chosenCost = quote && chosen ? costOf(quote, chosen.routeId) : null;
   const swiftCost = quote ? costOf(quote, "R1") : null;
+
+  function clearQuoteForChange() {
+    setQuote(null);
+    setQuoteError(null);
+    setQuoting(false);
+  }
+
+  async function readInvoice() {
+    setInvoiceReading(true);
+    setInvoiceError(null);
+    setInvoiceResult(null);
+    try {
+      const result = await submitIntake(invoiceText);
+      const matched = orderForMatchedPayment(result.matchedOrder);
+      setInvoiceResult(result);
+      setSelection(matched);
+      clearQuoteForChange();
+    } catch (error) {
+      setInvoiceError(
+        error instanceof Error && error.message.startsWith("Engine unreachable")
+          ? "Reading an invoice needs the live engine."
+          : error instanceof Error
+            ? error.message
+            : "The engine could not read this document.",
+      );
+    } finally {
+      setInvoiceReading(false);
+    }
+  }
 
   useEffect(() => {
     loadGeo()
@@ -172,12 +240,25 @@ export default function TestTransaction() {
   }, []);
 
   useEffect(() => {
-    if (!order || amount === null) return;
+    if (
+      !order ||
+      amount === null ||
+      !invoiceRefValid ||
+      (enteredBankDetailsSelected && !accountDetailsValid)
+    ) {
+      return;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setQuoting(true);
       setQuoteError(null);
-      fetchQuote(order, amount, controller.signal)
+      fetchQuote(order, amount, controller.signal, {
+        invoiceRef,
+        account: selection === "diverted" || newAccountSelected ? "new" : "verified",
+        newAccountSelected,
+        ...(enteredBankDetailsSelected ? { accountNumber, holderName: holderName.trim() } : {}),
+        ...(senderDomain.trim() ? { senderDomain: senderDomain.trim() } : {}),
+      })
         .then((next) => {
           if (!controller.signal.aborted) setQuote(next);
         })
@@ -198,13 +279,25 @@ export default function TestTransaction() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [order, amount]);
+  }, [
+    order,
+    amount,
+    invoiceRef,
+    invoiceRefValid,
+    selection,
+    newAccountSelected,
+    enteredBankDetailsSelected,
+    accountDetailsValid,
+    accountNumber,
+    holderName,
+    senderDomain,
+  ]);
 
   async function send() {
     if (!quote || !order) return;
     setSendError(null);
     if (quote.recorded || !quote.quoteId) {
-      router.push(`/demo?scene=${order}`);
+      router.push(`/demo?scene=${newAccountSelected ? "diverted" : order}`);
       return;
     }
     setSending(true);
@@ -222,7 +315,13 @@ export default function TestTransaction() {
   }
 
   const canContinue =
-    step === 0 ? Boolean(order) : step === 1 ? Boolean(quote) && !quoting && amount !== null : step === 2 ? Boolean(quote) : false;
+    step === 0
+      ? Boolean(selection) && (!enteredBankDetailsSelected || accountDetailsValid)
+      : step === 1
+        ? Boolean(quote) && !quoting && amount !== null && invoiceRefValid
+        : step === 2
+          ? Boolean(quote)
+          : false;
 
   return (
     <main className="h-dvh w-full overflow-y-auto bg-white">
@@ -273,15 +372,15 @@ export default function TestTransaction() {
                 <p className="mt-2 text-[13.5px] text-ink-2">Rhône Cosmétiques SAS · invoice SSE-2026-118</p>
                 <div className="mt-7 flex flex-col gap-2.5">
                   {RECIPIENTS.map((item) => {
-                    const active = order === item.order;
+                    const active = selection === item.order;
                     return (
                       <motion.button
                         key={item.order}
                         type="button"
                         whileTap={{ scale: 0.99 }}
                         onClick={() => {
-                          setOrder(item.order);
-                          setQuote(null);
+                          setSelection(item.order);
+                          clearQuoteForChange();
                         }}
                         className={cx(
                           "flex items-center gap-4 rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow] duration-200",
@@ -310,6 +409,203 @@ export default function TestTransaction() {
                       </motion.button>
                     );
                   })}
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => {
+                      setSelection("new");
+                      clearQuoteForChange();
+                    }}
+                    className={cx(
+                      "flex items-center gap-4 rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow] duration-200",
+                      newAccountSelected
+                        ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]"
+                        : "border-[var(--line-strong)] hover:border-[rgba(0,0,0,0.3)]",
+                    )}
+                  >
+                    <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[13px] font-medium">SS</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-[14px] font-medium tracking-[-0.02em]">Savanna Shea Exports Ltd</span>
+                        <span className="shrink-0 rounded-full bg-[rgba(217,119,6,0.08)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--medium)]">
+                          New bank details
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block font-mono text-[11.5px] text-ink-2">
+                        {maskAccountNumber(accountNumber)} · {holderName.trim() || "Account holder"}
+                      </span>
+                      <span className="mt-0.5 block text-[11.5px] text-ink-3">Enter the details from an emailed invoice</span>
+                    </span>
+                    <span
+                      className={cx(
+                        "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
+                        newAccountSelected ? "border-ink bg-ink" : "border-[var(--line-strong)]",
+                      )}
+                    >
+                      {newAccountSelected ? <Check size={11} color="#fff" /> : null}
+                    </span>
+                  </motion.button>
+                </div>
+                {enteredBankDetailsSelected ? (
+                  <div className="mt-3 grid gap-2.5 rounded-2xl border border-[var(--line)] p-4">
+                    <label className="grid gap-1 text-[12px] text-ink-2">
+                      Account number
+                      <input
+                        aria-label="Account number"
+                        type="password"
+                        autoComplete="off"
+                        maxLength={34}
+                        value={accountNumber}
+                        onChange={(event) => {
+                          clearQuoteForChange();
+                          setAccountNumber(event.target.value);
+                        }}
+                        className="h-10 rounded-lg border border-[var(--line-strong)] bg-white px-3 font-mono text-[13px] text-ink outline-none focus:border-ink"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-[12px] text-ink-2">
+                      Account holder
+                      <input
+                        aria-label="Account holder"
+                        autoComplete="off"
+                        maxLength={60}
+                        value={holderName}
+                        onChange={(event) => {
+                          clearQuoteForChange();
+                          setHolderName(event.target.value);
+                        }}
+                        className="h-10 rounded-lg border border-[var(--line-strong)] bg-white px-3 text-[13px] text-ink outline-none focus:border-ink"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-[12px] text-ink-2">
+                      Sender domain <span className="text-ink-3">Optional</span>
+                      <input
+                        aria-label="Sender domain (optional)"
+                        autoComplete="off"
+                        maxLength={253}
+                        placeholder="savannashea-exports.co"
+                        value={senderDomain}
+                        onChange={(event) => {
+                          clearQuoteForChange();
+                          setSenderDomain(event.target.value);
+                        }}
+                        className="h-10 rounded-lg border border-[var(--line-strong)] bg-white px-3 text-[13px] text-ink outline-none focus:border-ink"
+                      />
+                    </label>
+                    {(accountNumber.length > 0 && !validAccountNumber(accountNumber)) ||
+                    (holderName.length > 0 && !accountDetailsValid) ? (
+                      <p className="text-[11.5px] text-[var(--danger)]">
+                        Enter a valid account number and account holder to continue.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="mt-4 border-t border-[var(--line)] pt-4">
+                  <button
+                    type="button"
+                    aria-expanded={invoiceOpen}
+                    onClick={() => setInvoiceOpen((open) => !open)}
+                    className="text-[12.5px] font-medium text-ink-2 underline-offset-2 transition-colors hover:text-ink"
+                  >
+                    {invoiceOpen ? "Hide invoice reader" : "Paste an invoice or e-mail"}
+                  </button>
+                  {invoiceOpen ? (
+                    <div className="mt-3 grid gap-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-[11.5px] text-ink-3">Synthetic test documents</span>
+                        <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[9.5px] font-medium tracking-[0.08em] text-ink-3">
+                          SYNTHETIC
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInvoiceText(
+                              [
+                                "From: payments@savanna-shea.com",
+                                "Invoice no: SSE-2026-118",
+                                "Amount due: EUR 85,000.00",
+                                "Beneficiary: Savanna Shea Exports Ltd",
+                                "Account: GH•• •••• 2207",
+                              ].join("\n"),
+                            )
+                          }
+                          className="text-[11.5px] text-ink-2 underline underline-offset-2 transition-colors hover:text-ink"
+                        >
+                          Use a legitimate invoice
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInvoiceText(
+                              [
+                                "From: accounts@savannashea-exports.com",
+                                "Invoice no: SSE-2026-118",
+                                "Amount due: EUR 85,000.00",
+                                "Beneficiary: K. MENSAH VENTURES",
+                                "Account: GH•• •••• 9083",
+                                "New bank details are included on this invoice.",
+                              ].join("\n"),
+                            )
+                          }
+                          className="text-[11.5px] text-ink-2 underline underline-offset-2 transition-colors hover:text-ink"
+                        >
+                          Use a diverted invoice
+                        </button>
+                      </div>
+                      <textarea
+                        aria-label="Invoice or e-mail"
+                        value={invoiceText}
+                        onChange={(event) => setInvoiceText(event.target.value)}
+                        rows={5}
+                        className="w-full resize-y rounded-xl border border-[var(--line-strong)] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-ink outline-none focus:border-ink"
+                      />
+                      <button
+                        type="button"
+                        disabled={invoiceReading || !invoiceText.trim()}
+                        onClick={readInvoice}
+                        className="h-9 justify-self-start rounded-full bg-ink px-4 text-[12px] font-medium text-white transition-colors hover:bg-[#222] disabled:cursor-not-allowed disabled:bg-[rgba(0,0,0,0.12)] disabled:text-ink-3"
+                      >
+                        {invoiceReading ? "Reading…" : "Read it"}
+                      </button>
+                      {invoiceError ? (
+                        <p role="alert" className="text-[12px] text-[var(--danger)]">
+                          {invoiceError}
+                        </p>
+                      ) : null}
+                      {invoiceResult ? (
+                        <div className="rounded-xl border border-[var(--line)] px-3.5">
+                          {!orderForMatchedPayment(invoiceResult.matchedOrder) ? (
+                            <p className="border-b border-[var(--line)] py-3 text-[12px] leading-relaxed text-[var(--danger)]">
+                              No recorded order matches this document: the PoC only executes the two recorded FR → GH orders.
+                            </p>
+                          ) : null}
+                          <Row label="Payee">
+                            {invoiceResult.intake.fields.accountHolder?.value ?? "—"}
+                          </Row>
+                          <Row label="Account">
+                            {invoiceResult.intake.fields.account?.value ?? "—"}
+                            {accountDiffersFromVerified(
+                              invoiceResult.intake.fields.account?.value ?? null,
+                              RECIPIENTS.find((item) => item.order === "legit")?.account ?? null,
+                            ) ? (
+                              <span className="ml-2 inline-block rounded-full bg-[rgba(217,119,6,0.08)] px-2 py-0.5 text-[10px] font-medium text-[var(--medium)]">
+                                New bank details
+                              </span>
+                            ) : null}
+                          </Row>
+                          <Row label="Amount">{invoiceResult.intake.fields.amount?.value ?? "—"}</Row>
+                          <Row label="Reference">{invoiceResult.intake.fields.invoiceRef?.value ?? "—"}</Row>
+                          {invoiceResult.decision ? (
+                            <Row label="Engine decision">
+                              {invoiceResult.decision.risk.tier} · {invoiceResult.decision.risk.score}/100
+                            </Row>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </motion.div>
             ) : null}
@@ -324,7 +620,10 @@ export default function TestTransaction() {
                     <input
                       inputMode="decimal"
                       value={amountText}
-                      onChange={(event) => setAmountText(formatInput(event.target.value))}
+                      onChange={(event) => {
+                        clearQuoteForChange();
+                        setAmountText(formatInput(event.target.value));
+                      }}
                       className="min-w-0 flex-1 bg-transparent text-[34px] font-medium tracking-[-0.04em] text-ink outline-none"
                       aria-label="Amount in euros"
                     />
@@ -334,6 +633,25 @@ export default function TestTransaction() {
                     </span>
                   </span>
                 </label>
+                <label className="mt-3 block rounded-xl border border-[var(--line)] px-4 py-3 focus-within:border-ink">
+                  <span className="text-[11.5px] text-ink-2">Invoice reference</span>
+                  <input
+                    aria-label="Invoice reference"
+                    value={invoiceRef}
+                    maxLength={24}
+                    onChange={(event) => {
+                      clearQuoteForChange();
+                      setInvoiceRef(event.target.value);
+                    }}
+                    className="mt-1 block w-full bg-transparent font-mono text-[14px] text-ink outline-none"
+                  />
+                </label>
+                {!invoiceRefValid ? (
+                  <p className="mt-2 text-[11.5px] text-[var(--danger)]">Use 3–24 letters, numbers or hyphens.</p>
+                ) : null}
+                {amount === null ? (
+                  <p className="mt-2 text-[11.5px] text-[var(--danger)]">Enter an amount from €100 to €1,000,000.</p>
+                ) : null}
 
                 <ol className="relative ml-[19px] mt-1 border-l-2 border-dotted border-[var(--line-strong)] py-2 pl-6">
                   {[
@@ -362,13 +680,15 @@ export default function TestTransaction() {
                   ))}
                 </ol>
 
+                {selection === "diverted" && enteredBankDetailsSelected && !accountDetailsValid ? (
+                  <p className="mt-2 text-[12.5px] text-[var(--danger)]">
+                    Return to the recipient step and enter the full bank details for a custom amount or reference.
+                  </p>
+                ) : null}
                 {quoteError ? <p className="mt-2 text-[12.5px] text-[var(--danger)]">{quoteError}</p> : null}
-                {!atInvoiceAmount && amount !== null ? (
+                {amount !== INVOICE_AMOUNT && amount !== null && quote ? (
                   <p className="mt-3 rounded-xl bg-[var(--surface-2)] px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-2">
-                    Estimate only: this proof of concept sends the invoice amount.{" "}
-                    <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => setAmountText("85,000")}>
-                      Use €85,000
-                    </button>
+                    This amount is priced by the live engine before payment.
                   </p>
                 ) : null}
               </motion.div>
@@ -436,6 +756,7 @@ export default function TestTransaction() {
                   <Row label="Amount">
                     <span className="font-mono">{amount !== null ? euros(amount) : "—"}</span>
                   </Row>
+                  <Row label="Invoice reference">{invoiceRef}</Row>
                   <Row label="Route">
                     {chosen?.name ?? "No route"}
                     <span className="block text-[11.5px] text-ink-3">
@@ -486,25 +807,17 @@ export default function TestTransaction() {
               {step === 1 && quoting ? <Spinner size={14} color="#fff" /> : null}
               Continue
             </motion.button>
-          ) : atInvoiceAmount ? (
+          ) : (
             <motion.button
               type="button"
               whileTap={{ scale: 0.98 }}
-              disabled={sending || !chosen}
+              disabled={sending || !chosen || amount === null}
               onClick={() => void send()}
               className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent text-[13px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-[#0023d6] disabled:opacity-60"
             >
               {sending ? <Spinner size={14} color="#fff" /> : null}
-              {chosen ? `Send ${euros(INVOICE_AMOUNT)}` : "No route available"}
+              {chosen && amount !== null ? `Send ${euros(amount)}` : "No route available"}
             </motion.button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAmountText("85,000")}
-              className="flex h-11 flex-1 items-center justify-center rounded-full bg-ink text-[13px] font-medium text-white"
-            >
-              Use the invoice amount (€85,000) to send
-            </button>
           )}
         </div>
       </section>

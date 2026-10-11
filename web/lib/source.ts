@@ -84,33 +84,52 @@ async function post(
   pathname: string,
   body?: Record<string, unknown>,
 ): Promise<void> {
-  const response = await fetch(`${engineUrl.replace(/\/$/, "")}${pathname}`, {
-    method: "POST",
-    ...(body
-      ? {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }
-      : {}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${engineUrl.replace(/\/$/, "")}${pathname}`, {
+      method: "POST",
+      ...(body
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        : {}),
+    });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Engine unreachable: check the connection or switch to Replay",
+      );
+    }
+    throw error;
+  }
   if (!response.ok) {
-    let message = `Engine request failed (${response.status})`;
+    let detail: string | undefined;
     try {
       const payload: unknown = await response.json();
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "detail" in payload &&
-        typeof payload.detail === "string"
-      ) {
-        message = payload.detail;
+      if (typeof payload === "object" && payload !== null && "detail" in payload) {
+        const value = payload.detail;
+        if (typeof value === "string" && value.trim()) {
+          detail = value;
+        } else if (Array.isArray(value)) {
+          const first = value[0];
+          if (
+            typeof first === "object" &&
+            first !== null &&
+            "msg" in first &&
+            typeof first.msg === "string" &&
+            first.msg.trim()
+          ) {
+            detail = first.msg;
+          }
+        }
       }
     } catch {
-      // Preserve the status message when the engine response is not JSON.
+      detail = undefined;
     }
     throw new EngineRequestError(
       response.status,
-      message,
+      detail ? `Engine refused: ${detail}` : `Engine refused (${response.status})`,
       response.headers.get("Retry-After"),
     );
   }
