@@ -109,11 +109,37 @@ export interface RouteSelectedData {
   name: string;
   settlement: Settlement;
   tier: Tier;
-  scores: { routeId: string; s: number | null; excludedBy: string | null }[];
+  scores: RouteScore[];
   reason: string;
   feesEur: number;
   etaLabel: string;
   priceOfSafetyEur: number;
+  cost?: RouteCostBreakdown;
+  etaMinutes?: number;
+  midRateEurGhs?: number;
+  recipientGetsGhs?: number;
+}
+
+export interface RouteScore {
+  routeId: string;
+  s: number | null;
+  excludedBy: string | null;
+  name?: string;
+  etaLabel?: string;
+  etaMinutes?: number;
+  feesEur?: number;
+  fxMarginEur?: number;
+  cashCostEur?: number;
+  recipientGetsGhs?: number;
+}
+
+export interface RouteCostBreakdown {
+  feesEur: number;
+  fxMarginEur: number;
+  timeCostEur: number;
+  failureCostEur: number;
+  cashCostEur: number;
+  totalCostEur: number;
 }
 
 export interface ApprovalGrantedData {
@@ -193,6 +219,13 @@ export interface PaymentCreditedData {
   routeCostEur: number;
   swiftRouteCostEur: number;
   elapsedLabel: string;
+  cashCostEur?: number;
+  swiftCashCostEur?: number | null;
+  fxMarginEur?: number;
+  recipientGetsGhs?: number;
+  etaMinutes?: number;
+  swiftEtaLabel?: string | null;
+  swiftEtaMinutes?: number | null;
 }
 
 export interface PaymentStoppedData {

@@ -4,6 +4,9 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
+import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
+import { MarketCompare } from "./MarketCompare";
+import { Savings } from "./RouteQuote";
 import { ease, euros, LockIcon, Spinner } from "./ui";
 
 const REF_LABEL: Record<string, string> = {
@@ -58,6 +61,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   const terminal = status === "credited" || status === "stopped";
   const showHeld = Boolean(held && state.alertOpen && !terminal);
   const showOutcome = terminal;
+  const receipt = buildQuote(state);
   const paymentId = state.payment?.paymentId;
   const detailsKey = `${state.feed[0]?.seq ?? 0}:${paymentId ?? "none"}:${held?.headline ?? "none"}`;
   const detailsOpen = detailsFor === detailsKey;
@@ -163,23 +167,46 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8.4 6.4 11.6 13 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : <LockIcon size={16} />}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[14.5px] font-medium">
-                {status === "credited" ? `Credited · ${euros(state.credited?.routeCostEur ?? 0)} all-in vs ${euros(state.credited?.swiftRouteCostEur ?? 0)} via SWIFT` : state.stopped?.headline}
+                {status === "credited" ? creditedHeadline(state) : state.stopped?.headline}
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
                 {status === "credited"
-                  ? `Saved ${euros((state.credited?.swiftRouteCostEur ?? 0) - (state.credited?.routeCostEur ?? 0))} · ${state.credited?.elapsedLabel ?? ""}`
+                  ? creditedDetail(state)
                   : state.attack.reverted
                     ? `The smart contract rejected ${state.attack.reason}.`
                     : state.stopped?.detail}
               </div>
+              {status === "credited" && receipt?.swift && receipt.savedEur !== undefined ? <Savings quote={receipt} compact /> : null}
+              {status === "credited" && receipt ? <MarketCompare quote={receipt} /> : null}
             </div>
           </motion.section>
         ) : null}
       </AnimatePresence>
     </div>
   );
+}
+
+function creditedHeadline(state: ViewState) {
+  const quote = buildQuote(state);
+  if (quote?.savedEur !== undefined && quote.savedEur > 0) {
+    return `Credited · saved ${euros(quote.savedEur)} vs SWIFT${quote.savedPct !== undefined ? ` (${pct(quote.savedPct)})` : ""}`;
+  }
+  const cost = state.credited?.cashCostEur ?? state.credited?.routeCostEur;
+  return cost !== undefined ? `Credited · ${euros(cost)} ${state.credited?.cashCostEur !== undefined ? "fees + FX" : "all-in"}` : "Credited";
+}
+
+function creditedDetail(state: ViewState) {
+  const quote = buildQuote(state);
+  const credited = state.credited;
+  const parts: string[] = [];
+  if (quote) parts.push(`${euros(quote.cost)} ${quote.basis === "cash" ? "fees + FX" : "all-in"}${quote.swift ? ` vs ${euros(quote.swift.cost)} via SWIFT` : ""}`);
+  if (credited?.elapsedLabel) parts.push(`arrives ${credited.elapsedLabel}${credited.swiftEtaLabel ? ` vs ${credited.swiftEtaLabel}` : ""}`);
+  const decided = secondsBetween(state.timing.createdTs, state.timing.committedTs);
+  if (decided !== undefined) parts.push(`decided in ${decided.toFixed(1)} s`);
+  if (quote && quote.priceOfSafetyEur > 0) parts.push(`price of safety ${euros(quote.priceOfSafetyEur)}`);
+  return parts.join(" · ");
 }
 
 function Verification({ state, nextStep }: { state: ViewState; nextStep: string }) {

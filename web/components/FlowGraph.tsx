@@ -15,6 +15,7 @@ import {
   type Lane,
   type NarrationTone,
 } from "@/lib/flow";
+import { buildQuote, pct } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { Check, cx, ease, euros, formatMoney, shortHash, Spinner } from "./ui";
 
@@ -275,6 +276,7 @@ export function FlowGraph({ state }: { state: ViewState }) {
   const statuses = flowStatuses(state);
   const lane = flowLane(state);
   const p = state.payment;
+  const quote = buildQuote(state);
   const reduced = useReducedMotion();
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -528,9 +530,10 @@ export function FlowGraph({ state }: { state: ViewState }) {
           >
             <Group>
               <Row label="Paid to" value={state.credited && p ? (state.credited.at === "supplier_ssx" ? p.payeeName : p.accountHolder) : null} />
-              <Row label="All-in cost" value={state.credited ? euros(state.credited.routeCostEur) : null} tone="var(--low)" />
-              <Row label="Via SWIFT" value={state.credited ? euros(state.credited.swiftRouteCostEur) : null} />
-              <Row label="Time" value={state.credited?.elapsedLabel} />
+              <Row label={quote?.basis === "cash" ? "Fees + FX" : "All-in cost"} value={state.credited && quote ? euros(quote.cost) : null} tone="var(--low)" />
+              <Row label="Via SWIFT" value={state.credited && quote?.swift ? euros(quote.swift.cost) : null} />
+              <Row label="Saved" value={state.credited && quote?.savedEur !== undefined ? `${euros(quote.savedEur)}${quote.savedPct !== undefined ? ` · ${pct(quote.savedPct)}` : ""}` : null} tone="var(--low)" />
+              <Row label="Arrives" value={state.credited?.elapsedLabel} />
             </Group>
           </FlowNode>
 
