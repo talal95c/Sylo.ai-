@@ -7,6 +7,14 @@ import type { GeoPoint, Institution } from "@/lib/geo";
 import { greatCircleMidpoint } from "@/lib/geo";
 import type { ViewState } from "@/lib/store";
 import { arcDotPositions } from "@/lib/arcDots";
+import {
+  CAMERA_VIEWS,
+  angularDistanceDegrees,
+  heldView,
+  hopView,
+  stoppedView,
+  verificationView,
+} from "@/lib/globeCamera";
 import { ACCENT, DANGER_COLOR, HOP_COLORS, REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 import {
   altitudeFactor,
@@ -94,7 +102,7 @@ interface PathDatum {
   color: string;
 }
 
-const CORRIDOR_VIEW = { lat: 26, lng: 3, altitude: 1.9 };
+const CORRIDOR_VIEW = CAMERA_VIEWS.corridor;
 const BASE_PARTICLE_SIZE = 1.8;
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -111,38 +119,6 @@ function escapeHtml(value: string) {
     };
     return entities[character];
   });
-}
-
-function angularDistanceDegrees(a: GeoPoint, b: GeoPoint) {
-  const radians = Math.PI / 180;
-  const latitudeDelta = (b.lat - a.lat) * radians;
-  const longitudeDelta = (b.lng - a.lng) * radians;
-  const latitudeA = a.lat * radians;
-  const latitudeB = b.lat * radians;
-  const haversine =
-    Math.sin(latitudeDelta / 2) ** 2 +
-    Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(longitudeDelta / 2) ** 2;
-  const bounded = clamp(haversine, 0, 1);
-  return (2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded))) / radians;
-}
-
-function hopView(
-  from: GeoPoint,
-  to: GeoPoint,
-  chainAltitude: number,
-  isChain = false,
-) {
-  const midpoint = greatCircleMidpoint(from, to);
-  const distance = angularDistanceDegrees(from, to);
-  const routeAltitude = clamp(0.8 + distance / 32, 1, 1.75);
-  const altitude = isChain
-    ? Math.max(routeAltitude, chainAltitude * 3.2)
-    : routeAltitude;
-  return {
-    lat: midpoint.lat,
-    lng: midpoint.lng,
-    altitude,
-  };
 }
 
 const SHORT_NAME: Record<string, string> = {
@@ -874,7 +850,11 @@ export default function GlobeCanvas({
     const controls = globe.controls() as unknown as { autoRotate: boolean; autoRotateSpeed: number };
     if (!lastEvent || lastEvent.type === "session.reset") {
       controls.autoRotate = false;
-      globe.pointOfView(CORRIDOR_VIEW, reducedMotion ? 0 : 1200);
+      const fit = altitudeFactor(freeRectRef.current, width, height);
+      globe.pointOfView(
+        { ...CAMERA_VIEWS.corridor, altitude: CAMERA_VIEWS.corridor.altitude * fit },
+        reducedMotion ? 0 : 1200,
+      );
       return;
     }
     if (!state.scenario) return;
@@ -899,7 +879,7 @@ export default function GlobeCanvas({
     };
     const pullBack = (delay: number) => {
       schedule(delay, () => {
-        globe.pointOfView(CORRIDOR_VIEW, ms(1800));
+        pov(CAMERA_VIEWS.corridor, ms(1800));
       });
     };
     const data = lastEvent.data as Record<string, unknown>;
@@ -911,7 +891,7 @@ export default function GlobeCanvas({
           if (from && to) globe.pointOfView(hopView(from, to, chainAltitude), ms(1600));
           break;
         }
-        focus(pointAt("payer_rhone"), 1.15, 1600);
+        focus(pointAt("payer_rhone"), CAMERA_VIEWS.payerAltitude, 1600);
         break;
       case "traffic.sample": {
         const sample =
@@ -931,10 +911,10 @@ export default function GlobeCanvas({
         break;
       }
       case "norms.checked":
-        globe.pointOfView(CORRIDOR_VIEW, ms(1400));
+        pov(CAMERA_VIEWS.corridor, ms(1400));
         break;
       case "route.selected":
-        focus(pointAt("payer_rhone"), 1.15, 1400);
+        focus(pointAt("payer_rhone"), CAMERA_VIEWS.payerAltitude, 1400);
         break;
       case "leg.sent": {
         const from = institutions?.[String(data.from)];
@@ -951,26 +931,17 @@ export default function GlobeCanvas({
         break;
       }
       case "payment.held": {
-        focusLock(1.4, 1200);
+        if (lockPoint) pov(heldView(lockPoint), ms(1200));
         break;
       }
       case "verification.requested": {
         const supplier = pointAt("supplier_ssx");
         if (!lockPoint || !supplier) break;
-        const midpoint = greatCircleMidpoint(lockPoint, supplier);
-        const routeAltitude = clamp(
-          0.8 + angularDistanceDegrees(lockPoint, supplier) / 32,
-          1,
-          1.75,
-        );
-        pov(
-          { lat: midpoint.lat, lng: midpoint.lng, altitude: Math.max(1.4, routeAltitude) },
-          ms(1400),
-        );
+        pov(verificationView(lockPoint, supplier), ms(1400));
         break;
       }
       case "intent.revoked":
-        focusLock(1.4, 1000);
+        focusLock(CAMERA_VIEWS.heldAltitude, 1000);
         break;
       case "escrow.refunded": {
         const payer = pointAt("payer_rhone");
@@ -979,33 +950,49 @@ export default function GlobeCanvas({
         }
         break;
       }
-      case "payment.stopped":
-        focus(pointAt("payer_rhone"), 1.15, 1400);
+      case "payment.stopped": {
+        const payer = pointAt("payer_rhone");
+        const route = state.routes.find((item) => item.routeId === state.selectedRouteId);
+        const beneficiaryId =
+          state.hops.at(-1)?.to ??
+          route?.hops.at(-1)?.to ??
+          (state.scenario === "diverted" ? "mule_bank" : "supplier_ssx");
+        const beneficiary = pointAt(beneficiaryId);
+        if (payer && beneficiary) {
+          pov(stoppedView(payer, beneficiary), ms(1400));
+        } else {
+          focus(payer, CAMERA_VIEWS.payerAltitude, 1400);
+        }
         pullBack(4000);
         break;
+      }
       case "escrow.released":
-        focusLock(1.4, 1000);
+        focusLock(CAMERA_VIEWS.heldAltitude, 1000);
         break;
       case "payment.credited":
-        focus(
-          typeof data.at === "string" ? pointAt(data.at) : undefined,
-          1.15,
-          1400,
-        );
-        pullBack(3500);
+        if (Object.keys(state.rails).length === 0 && state.scenario === "legit") {
+          pov(CAMERA_VIEWS.corridor, ms(1400));
+        } else {
+          focus(
+            typeof data.at === "string" ? pointAt(data.at) : undefined,
+            CAMERA_VIEWS.payerAltitude,
+            1400,
+          );
+          pullBack(3500);
+        }
         break;
       case "attack.attempted":
-        focusLock(1.35, 900);
+        focusLock(CAMERA_VIEWS.attackAltitude, 900);
         break;
       case "tx.reverted":
-        focusLock(1.35, 900);
+        focusLock(CAMERA_VIEWS.attackAltitude, 900);
         pullBack(4000);
         break;
     }
     return () => {
       timers.forEach(clearTimeout);
     };
-  }, [lastEvent, state.scenario, state.wave, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
+  }, [lastEvent, state.scenario, state.wave, state.rails, state.routes, state.selectedRouteId, state.hops, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
 
   // Panel-aware framing: measure the occluders, then tween a camera view
   // offset so pointOfView targets land in the centre of the free area.
