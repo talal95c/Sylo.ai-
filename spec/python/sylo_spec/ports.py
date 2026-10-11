@@ -11,6 +11,7 @@ from typing import Protocol, Union, runtime_checkable
 
 from .models import (
     CaseFile,
+    Cluster,
     Eip712Domain,
     Event,
     PaymentIntent,
@@ -21,6 +22,7 @@ from .models import (
     Status,
     TxRef,
     VerificationAttestation,
+    WindowPayment,
 )
 
 PaymentIdLike = Union[bytes, str]
@@ -45,6 +47,19 @@ class CasePort(Protocol):
     name: str
 
     def write(self, payment_id: str, events: list[Event]) -> CaseFile: ...
+
+
+@runtime_checkable
+class ClusterPort(Protocol):
+    """v2: finds mule clusters among recent payments (Lane B, ``sylo_risk.clusters``).
+
+    ``detect`` returns the clusters that at least three payments of ``window`` point to, with the
+    ids of those payments in ``linked_payments``. An empty list means nothing to report.
+    """
+
+    name: str
+
+    def detect(self, window: list[WindowPayment]) -> list[Cluster]: ...
 
 
 class ChainReverted(Exception):

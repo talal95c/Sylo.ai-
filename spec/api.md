@@ -1,7 +1,7 @@
-# Sylo.ai engine API (v1)
+# Sylo.ai engine API (v1 and v2)
 
 Base URL `http://localhost:8000`. JSON everywhere. CORS allows `http://localhost:3000` (env `CORS_ORIGINS`).
-Event payloads are defined in [`events.schema.json`](events.schema.json). Changes to this file follow the rules in [`README.md`](README.md): additive only. Rows marked **v1** were added by roadmap task A1.0.
+Event payloads are defined in [`events.schema.json`](events.schema.json). Changes to this file follow the rules in [`README.md`](README.md): additive only. Rows marked **v1** were added by roadmap task A1.0, rows marked **v2** by task A2.0.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
@@ -15,8 +15,15 @@ Event payloads are defined in [`events.schema.json`](events.schema.json). Change
 | POST | `/v1/reset` | — | `{ "ok": true }` — cancels the running scenario and emits `session.reset` | — |
 | GET | `/v1/payments/{paymentId}` | — | `{ "paymentId", "status", "tier", "routeId", "chainStatus", "lastSeq", "scenario", "pendingApprovers", "hold", "holdExpiresAt", "frozen", "caseReady" }` | 404 |
 | GET | `/v1/payments/{paymentId}/proof` **v1** | — | See "Proof" below | 404 |
+| POST | `/v1/sim/mule-wave` **v2** | `{ "speed"?: number, "auto"?: boolean = false }` | `{ "ok": true, "payments": ["PAY-2026-0101", …] }` | 409 a scenario is running |
+| POST | `/v1/breakers/{breakerId}/confirm` **v2** | — | `{ "ok": true, "breakerId", "expiresAt" }` | 404 unknown breaker; 409 not waiting for a confirmation |
+| POST | `/v1/breakers/{breakerId}/lift` **v2** | — | `{ "ok": true, "breakerId" }` | 404 unknown breaker; 409 the breaker is not on |
+| POST | `/v1/sim/rails/{routeId}/down` **v2** | `{ "reason"?: string }` | `{ "ok": true, "routeId", "available": false }` | 404 unknown route |
+| POST | `/v1/sim/rails/{routeId}/up` **v2** | — | `{ "ok": true, "routeId", "available": true }` | 404 unknown route |
+| POST | `/v1/guardian/incidents` **v2** | `{ "rule": string, "action"?: string, "txHash"?: hash, "explorerUrl"?, "paymentId"?, "incidentId"?, "simulated"?, + optional DORA fields }` | `{ "ok": true, "incidentId" }` | 422 invalid body |
+| GET | `/v1/metrics` **v2** | — | See "Metrics" below | — |
 
-- Scenario names: `legit` (PAY-2026-0001), `diverted` (PAY-2026-0002), and **v1** `diverted_simswap` (PAY-2026-0002 again, but the SIM behind the supplier's known number changed 5 hours ago).
+- Scenario names: `legit` (PAY-2026-0001), `diverted` (PAY-2026-0002), **v1** `diverted_simswap` (PAY-2026-0002 again, but the SIM behind the supplier's known number changed 5 hours ago), and **v2** `outage` (PAY-2026-0001 again, while the rail of R3 is down).
 - Attack names: `release_revoked` (only when the payment is revoked on-chain), and **v1** `swap_beneficiary` and `replay` (any payment whose intent is committed).
 - `status` in `GET /v1/payments/{id}` is one of `deciding`, `awaiting_approval`, `in_transit`, `held`, `awaiting_supplier`, `confirmed`, `awaiting_analyst`, `stopped`, `credited`; `chainStatus` is the registry status name (`NONE` … `EXECUTED`). `hold` is `"escrow"`, `"bank"` or `null`.
 
@@ -59,6 +66,32 @@ Additive fields on v0 events: `approval.granted.by[]` carries `id` and `at`; `le
 - **HIGH but resolvable out of band.** `risk.scored.oobResolvable` is true when only the beneficiary's identity is in doubt. A HIGH payment is then handled like a MEDIUM one: `route.selected.tier` and `intent.committed.tier` say `MEDIUM` (conditional settlement), while `risk.scored.tier` and `payment.held.tier` keep `HIGH`, and `payment.held.nextStep` says why. HIGH without it, and CRITICAL always, get no route.
 - **Attacks.** `swap_beneficiary` emits `attack.attempted`, `leg.rejected` (`INTENT_HASH_MISMATCH`, at the first pay-out hop), then `tx.reverted` (`deposit`, `CommitmentMismatch`). `replay` emits `attack.attempted`, then `tx.reverted` (`commit`, `InvalidTransition` or `NonceUsed`).
 - **Chain failure.** If the chain stops answering during a payment, the engine emits `system.mode` (with `chain` in `degraded`) and `alert.raised` for the analyst. Nothing is released: money already in escrow stays there (`status: "held"`); a payment that had not moved is stopped.
+
+## Network defence and incidents (v2)
+
+Events added in v2 (`paymentId` is `null` unless the event concerns one payment):
+
+| Type | Emitted when | `data` |
+|---|---|---|
+| `cluster.detected` | The cluster detector finds a mule cluster among the payments of the last hour | `{ clusterId, accounts: number, agents: number, region, regionName, institutions: InstitutionId[], centroid: { lat, lng }, points: [{ lat, lng, weight }], linkedPayments: string[], detector, proposedBreaker: { breakerId, scope, thresholdsDelta: -20, hours: 24, text } }` |
+| `breaker.on` | The analyst (or the engine, with `auto`) confirms the proposed breaker | `{ breakerId, clusterId, scope: { region, regionName, corridor, institutions }, thresholdsDelta: -20, expiresAt, confirmedBy, text }` |
+| `breaker.off` | A person lifts the breaker, or its 24 hours are over | `{ breakerId, reason: "LIFTED" \| "EXPIRED", by? }` |
+| `rail.down` | A rail stops (`/v1/sim/rails/{routeId}/down`, or scenario `outage`) | `{ routeId, name, reason }` |
+| `rail.up` | The rail is back | `{ routeId, name }` |
+| `killswitch.on` | Two legs changed or replayed on one adapter within 10 minutes | `{ adapter: routeId, name, reason, refusals, windowSeconds, revoked: paymentId[] }` |
+| `guardian.incident` | The guardian reports an on-chain incident | `{ incidentId, rule, txHash, explorerUrl, action, headline, dora: { clientsAffected, amountEur, durationMinutes, geographicSpread, criticality, thirdParties, major, draft: true } }` |
+| `traffic.sample` | Payments seen on the network that the engine does not route (here: the mule wave) | `{ arcs: [{ from, to, kind }], wave?: boolean, payer?, beneficiary?, amount?, text? }` |
+
+- **Scene 3, mule wave.** `POST /v1/sim/mule-wave` emits `scenario.started` (`scenario: "mule_wave"`), then three `traffic.sample` events (`paymentId` PAY-2026-0101 to 0103, `data.wave: true`, one arc each from the payer's bank to the cluster's bank, with `payer`, `beneficiary`, `amount` and a `text`). The engine does not route these payments: they are what the network sees, so they are not `payment.created`. The detector (`ClusterPort`; a stub that reads `fixtures/cluster-sample.json` until Lane B's `sylo_risk.clusters` is installed) reports the cluster once three payments of the last hour reach its accounts, counting the payments of the normal scenarios too. `cluster.detected` proposes a breaker; `POST /v1/breakers/{id}/confirm` switches it on (with `auto`, or `HUMAN_STEPS=auto`, the engine confirms after 1,500 ms).
+- **Circuit breaker (rule R-CB-01).** For 24 hours, a payment whose beneficiary's institution is in `scope.institutions` is at least MEDIUM, and the bands are read 20 points lower (a score of 64 is HIGH). The score itself and the route score do not change. `risk.scored.rulesFired` ends with `R-CB-01` and the reason is on the alert. Only `POST /v1/breakers/{id}/lift` ends it early.
+- **Scene 5, outage.** A rail that is down is not eligible: `route.selected.scores[]` shows it with `excludedBy: "RAIL_DOWN"` and the payment takes the best remaining route. An outage never changes the tier. A MEDIUM payment still needs a route that can hold the money: with R3 down it is held at the sending bank (`payment.held.at: "bank"`, no escrow events); with R1 down too it is not sent.
+- **Kill switch.** Each `leg.rejected` with `INTENT_HASH_MISMATCH` or `NONCE_USED` counts. At the second one within 10 minutes on the same adapter: `killswitch.on`, the adapter refuses everything (`leg.rejected.reason: "KILL_SWITCH"`, `excludedBy: "KILL_SWITCH"` in route scores), and a payment held on that route is revoked and refunded (`intent.revoked.reasonCode: "KILL_SWITCH"`, by "Kill switch (automatic)", no `case.action`). `POST /v1/sim/rails/{routeId}/up` restores the adapter (the keys were rotated); `POST /v1/reset` restores every rail and removes every breaker.
+- **Degraded mode (rule R-DG-01).** While `system.mode.degraded` is not empty, a payment to an account that is not on file for the payee is at least MEDIUM.
+- **Scene 4, guardian.** `POST /v1/guardian/incidents` is for Lane C's guardian. The engine emits `guardian.incident` with a DORA incident draft (also written to `engine/data/incidents/`), and when the action contains `FREEZE` it stops trying to release that payment.
+
+## Metrics (`GET /v1/metrics`)
+
+Lane B's `ml/reports/metrics.json` (schema: [`metrics.schema.json`](metrics.schema.json)) when it exists, otherwise the labelled sample with `"sample": true`. Two fields are added: `source` (which file was served) and `integrity` (the engine's `engine/reports/integrity.json`, written by `make integrity`: 300 changed or replayed payments run through the adapters and the chain). `metrics.diversionRate` is taken from that report.
 
 ## Proof (`GET /v1/payments/{paymentId}/proof`)
 
@@ -107,4 +140,11 @@ curl -X POST http://localhost:8000/v1/attacks/release_revoked -H 'content-type: 
 curl -X POST http://localhost:8000/v1/attacks/swap_beneficiary -H 'content-type: application/json' -d '{"paymentId": "PAY-2026-0002"}'
 curl -X POST http://localhost:8000/v1/attacks/replay -H 'content-type: application/json' -d '{"paymentId": "PAY-2026-0002"}'
 curl http://localhost:8000/v1/payments/PAY-2026-0002/proof
+# v2
+curl -X POST http://localhost:8000/v1/sim/mule-wave -H 'content-type: application/json' -d '{"speed": 2}'
+curl -X POST http://localhost:8000/v1/breakers/CB-CL-AFLAO-01/confirm
+curl -X POST http://localhost:8000/v1/sim/rails/R3/down
+curl -X POST http://localhost:8000/v1/scenarios/legit/run -H 'content-type: application/json' -d '{"auto": true}'
+curl -X POST http://localhost:8000/v1/sim/rails/R3/up
+curl http://localhost:8000/v1/metrics
 ```

@@ -33,6 +33,9 @@ def institution_ids(event: dict[str, Any]) -> list[str]:
                 ids += [hop.get("from"), hop.get("to")]
     elif kind in ("leg.sent", "leg.rejected"):
         ids += [data.get("from"), data.get("to")]
+    elif kind == "traffic.sample":
+        for arc in data.get("arcs", []):
+            ids += [arc.get("from"), arc.get("to")]
     elif kind in ("leg.settled", "payment.credited"):
         ids.append(data.get("at"))
     elif kind in ("escrow.refunded", "escrow.released"):

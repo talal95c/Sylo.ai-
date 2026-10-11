@@ -251,6 +251,45 @@ class CaseFile(SpecModel):
     model: str
 
 
+# --- Mule clusters (v2, detected by Lane B's ClusterPort) --------------------------------------
+
+
+class GeoPoint(SpecModel):
+    lat: float
+    lng: float
+
+
+class WeightedPoint(GeoPoint):
+    weight: float = 1.0
+
+
+class WindowPayment(SpecModel):
+    """One recent payment, as the cluster detector sees it. No names: ids, amounts and time only."""
+
+    payment_id: str
+    account_id: str
+    institution_id: str
+    amount_eur: float
+    at: str
+
+
+class Cluster(SpecModel):
+    """A group of accounts and cash-out agents that behave like one mule network.
+
+    ``centroid`` and ``points`` are coarse, region-level coordinates (never a precise location).
+    """
+
+    cluster_id: str
+    accounts: list[str]
+    agents: list[str] = Field(default_factory=list)
+    region: str
+    region_name: str | None = None
+    institutions: list[str] = Field(default_factory=list)
+    centroid: GeoPoint
+    points: list[WeightedPoint] = Field(default_factory=list)
+    linked_payments: list[str] = Field(default_factory=list)
+
+
 # --- EIP-712 structs (field order is binding, see eip712.py) --------------------------------
 
 
