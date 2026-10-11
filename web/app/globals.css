@@ -185,10 +185,10 @@ body {
   font-weight: 600;
   color: #0a0a0a;
 }
-.globe-label-breaker .globe-label-pill {
+.globe-label-breaker-pill {
   max-width: none;
 }
-.globe-label-breaker .globe-label-name {
+.globe-label-breaker-name {
   max-width: none;
   overflow: visible;
   text-overflow: clip;
