@@ -103,9 +103,9 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 
 The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
-- Engine window detector (`WindowClusterDetector`, main 5971aaa): ≥3 payments into young/thin accounts at a border bank; offline benchmark unchanged.
+The engine adapts its `WindowPayment` window into records for the same `NetworkXClusterDetector`; engine runtime behavior is not measured by this offline benchmark.
 
-The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. The engine's `WindowClusterDetector` is covered by the scene 3 engine test, not by this offline benchmark.
+The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates.
 
 ## Pass 6 — T1 evasion
 
