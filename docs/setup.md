@@ -154,6 +154,7 @@ Test this once in C0.5 with a throwaway contract, so verification is not discove
 |---|---|---|---|
 | `RISK_MODE`, `CHAIN_MODE`, `LLM_MODE`, `DEMO_SPEED` | Engine | Each person; A posts the demo values at each checkpoint | v0 |
 | `MISTRAL_API_KEY` | Engine (A1.7) | A | v1 |
+| `JEV_API_KEY`, `JEV_BASE_URL`, `JEV_MODEL`, `JEV_MODE`, `LIVE_INVOICE` | Engine (live jury invoice) | A | v1 |
 | `FUJI_RPC_URL`, `FUJI_RPC_URL_2`, `CHAIN_ID`, `EXPLORER_BASE_URL` | Engine, chain, contracts | C | v1 |
 | `REGISTRY_ADDRESS`, `ESCROW_ADDRESS`, `TOKEN_ADDRESS` | Engine, chain | C after C1.2 | v1 |
 | `RELAYER_PK`, `ROUTER_SIGNER_PK`, `VERIFIER_SIGNER_PK`, `ANALYST_SIGNER_PK` | Engine with `CHAIN_MODE=fuji` | C | v1 |
@@ -169,6 +170,8 @@ Who needs which keys: **A, C and the demo laptop** need the engine keys; **B and
 ## 9. LLM key (Lane A)
 
 - Mistral (`MISTRAL_API_KEY`), created in A0.2. Used only by the investigator agent (A1.7) when `LLM_MODE=live`.
+- `LIVE_INVOICE=on` enables the Live-only jury invoice flow; it defaults to `off` and requires both `MISTRAL_API_KEY` and `JEV_API_KEY`. The text is advisory evidence for the analyst dossier only and cannot change a risk score, route, intent or escrow decision.
+- The engine's `live-invoice` extra installs Jev's client (`cd engine && uv sync --extra model --extra live-invoice`); `make setup` and the Render image install all engine extras.
 - The demo runs with `LLM_MODE=cached` by default: the case file is pre-generated, labelled "cached", and the demo does not depend on the network or on rate limits.
 
 ## 10. Demo laptop (Lane D, by 09:00)

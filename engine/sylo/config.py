@@ -62,6 +62,7 @@ class Settings:
     dual_control_new_payee_eur: float = 5_000.0
     sim_swap_max_age_hours: int = 168
     journal_path: str | None = None
+    live_invoice: bool = False
     # Business rules of the playbook (PRD §12.3), configurable per institution
     time_lock_from_eur: float = 5_000.0
     time_lock_long_from_eur: float = 50_000.0
@@ -104,6 +105,7 @@ class Settings:
             dual_control_new_payee_eur=float(_get(env, "DUAL_CONTROL_NEW_PAYEE_EUR", "5000")),
             sim_swap_max_age_hours=int(_get(env, "SIM_SWAP_MAX_AGE_HOURS", "168")),
             journal_path=_journal_path(env),
+            live_invoice=_get(env, "LIVE_INVOICE", "off").lower() == "on",
             cluster_mode=_get(env, "CLUSTER_MODE", "auto").lower(),
             confidential_mode=_get(env, "CONFIDENTIAL_MODE", "off").lower(),
             eerc_url=_get(env, "EERC_URL", "http://127.0.0.1:8010"),

@@ -26,6 +26,14 @@ services:
         value: cached
       - key: JEV_MODE
         value: cached
+      - key: JEV_BASE_URL
+        value: https://api.codiv.ai
+      - key: JEV_MODEL
+        value: openjev-latest
+      - key: JEV_API_KEY
+        sync: false
+      - key: LIVE_INVOICE
+        value: off
       - key: CHAIN_MODE
         value: mock
       - key: DEMO_PUBLIC

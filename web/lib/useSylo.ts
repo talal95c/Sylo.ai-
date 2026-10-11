@@ -103,8 +103,11 @@ export function useSylo() {
   }, []);
 
   const runScenario = useCallback(
-    (name: ScenarioName) =>
-      sourceRef.current?.runScenario(name, { speed }) ?? Promise.resolve(),
+    (name: ScenarioName, invoiceText?: string) =>
+      sourceRef.current?.runScenario(name, {
+        speed,
+        ...(invoiceText === undefined ? {} : { invoiceText }),
+      }) ?? Promise.resolve(),
     [speed],
   );
   const supplierResponse = useCallback(
@@ -137,7 +140,7 @@ export function useSylo() {
     setSourceKind,
     actions: {
       runLegit: () => runScenario("legit"),
-      runDiverted: () => runScenario("diverted"),
+      runDiverted: (invoiceText?: string) => runScenario("diverted", invoiceText),
       runMuleWave: () => runScenario("muleWave"),
       runGuardian: () =>
         sourceKind === "live" ? attack("stolen_verifier_key") : runScenario("guardian"),

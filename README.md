@@ -32,6 +32,7 @@ Without a running engine, the page replays recorded events (`spec/fixtures`) and
 - The free service sleeps after 15 minutes idle; its first load after sleeping can take about a minute.
 - Visitors share one demo session and its in-memory state.
 - `MISTRAL_API_KEY` is optional; without it, the engine uses its cached LLM mode.
+- `LIVE_INVOICE=on` enables the Live-only jury invoice experiment; it defaults to `off` and requires both `MISTRAL_API_KEY` and `JEV_API_KEY`. The invoice can affect only the analyst dossier, never the payment decision.
 - For a split web/engine setup, `engine/Dockerfile` and `web/vercel.json` remain available.
 
 ### Engine v1 (Lane A)

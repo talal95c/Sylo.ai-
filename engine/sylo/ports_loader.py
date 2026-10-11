@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from sylo_spec.ports import ChainPort, RiskPort
@@ -70,25 +72,59 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
     return risk, chain, degraded
 
 
-def load_case_writer(settings: Settings, env: Mapping[str, str] | None = None) -> tuple[Any | None, bool]:
-    """Lane B's ``CasePort`` for ``LLM_MODE=cached|live``. Returns (writer or None, degraded).
+def load_case_writer(
+    settings: Settings, env: Mapping[str, str] | None = None
+) -> tuple[Any | None, bool, Any | None, bool]:
+    """Load the normal and optional jury-live case writers.
 
     The writer (``sylo_risk.CaseWriter``, the Mistral investigator) is optional: without it the
-    engine builds the case file from the rules and reports ``llm`` as degraded.
+    engine builds the case file from the rules and reports ``llm`` as degraded. Live invoice caches
+    stay in a private temporary directory rather than the shared Lane B cache.
     """
-    if settings.llm_mode == "off":
-        return None, False
     env = os.environ if env is None else env
+    if settings.llm_mode == "off" and not settings.live_invoice:
+        return None, False, None, False
     try:
         try:
             from sylo_risk import CaseWriter
+            from sylo_risk import TextScreen
         except ImportError:
             from sylo_risk.case import CaseWriter
+            from sylo_risk.case import TextScreen
 
         api_key = env.get("MISTRAL_API_KEY") or None
+        writer = None
+        degraded = False
+        if settings.llm_mode != "off":
+            writer = CaseWriter(mode=settings.llm_mode, api_key=api_key, model=env.get("MISTRAL_MODEL") or None)
         if settings.llm_mode == "live" and not api_key:
             log.warning("LLM_MODE=live but MISTRAL_API_KEY is not set; the case writer falls back to cached, then template")
-        return CaseWriter(mode=settings.llm_mode, api_key=api_key, model=env.get("MISTRAL_MODEL") or None), False
+        live_writer = None
+        live_writer_ready = False
+        if settings.live_invoice:
+            cache_root = tempfile.TemporaryDirectory(prefix="sylo-live-invoice-")
+            cache_dir = Path(cache_root.name)
+            try:
+                live_writer = CaseWriter(
+                    mode="live",
+                    api_key=api_key,
+                    model=env.get("MISTRAL_MODEL") or None,
+                    cache_dir=cache_dir / "sylo-mistral",
+                    text_screen=TextScreen(mode="live", cache_dir=cache_dir / "sylo-jev-jury"),
+                )
+                live_writer._sylo_cache_tempdir = cache_root
+                live_writer_ready = bool(api_key and env.get("JEV_API_KEY"))
+            except Exception:
+                cache_root.cleanup()
+                raise
+        return writer, degraded, live_writer, live_writer_ready
     except Exception as err:
-        log.warning("LLM_MODE=%s but the case writer is unavailable (%s); case files come from the rules", settings.llm_mode, err)
-        return None, True
+        if settings.llm_mode != "off":
+            log.warning(
+                "LLM_MODE=%s but the case writer is unavailable (%s); case files come from the rules",
+                settings.llm_mode,
+                type(err).__name__,
+            )
+            return None, True, None, False
+        log.warning("live invoice writer is unavailable (%s)", type(err).__name__)
+        return None, False, None, False

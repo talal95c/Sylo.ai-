@@ -80,7 +80,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.45, ease }}
-            className="card pointer-events-auto w-[min(560px,100%)] overflow-hidden rounded-[20px]"
+            className="card pointer-events-auto max-h-[calc(100dvh-196px)] w-[min(560px,100%)] overflow-y-auto overscroll-contain rounded-[20px]"
           >
             <div className="h-1 w-full" style={{ background: state.incident ? "var(--danger)" : state.revoked ? "var(--danger)" : state.released ? "var(--low)" : TIER_COLORS[held.tier] }} />
             <div className="px-4 pb-4 pt-3.5">
@@ -239,6 +239,8 @@ function Verification({ state, nextStep }: { state: ViewState; nextStep: string 
   return <div className="text-ink-3">{nextStep}</div>;
 }
 
+const isInvoiceScreen = (refs: string[]) => refs.some((ref) => ref.startsWith("TX-"));
+
 function CaseFile({ state }: { state: ViewState }) {
   const file = state.caseFile;
   if (!file) return null;
@@ -251,11 +253,16 @@ function CaseFile({ state }: { state: ViewState }) {
       <div className="mt-2 inline-flex rounded-full bg-[var(--surface-2)] px-2 py-1 text-[10px] text-ink-2">{ACTION_LABEL[file.recommendedAction] ?? file.recommendedAction}</div>
       {file.sentences?.length ? (
         <ul className="mt-3 space-y-1.5">
-          {file.sentences.map((sentence) => (
+          {[...file.sentences]
+            .sort((a, b) => Number(isInvoiceScreen(b.refs)) - Number(isInvoiceScreen(a.refs)))
+            .map((sentence) => (
             <li key={`${sentence.text}-${sentence.refs.join("-")}`} className="leading-snug text-ink-2">
+              {isInvoiceScreen(sentence.refs) ? (
+                <span className="mr-1.5 rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-ink">Invoice screen</span>
+              ) : null}
               {sentence.text} <span className="font-mono text-[10px] text-ink-3">{sentence.refs.join(" · ")}</span>
             </li>
-          ))}
+            ))}
         </ul>
       ) : <p className="mt-3 leading-snug text-ink-2">{file.explanation}</p>}
       {file.citations.length ? (

@@ -37,7 +37,19 @@ Rules:
 2. Do not state any fact, number, name or date that is not in <events>.
 3. recommendedAction must be one of ESCALATE_AML, CONFIRM_REVOCATION, RELEASE_AFTER_CONFIRMATION, NO_ACTION. Never recommend releasing money unless the events contain a confirmed out-of-band verification; prefer the stricter action when unsure.
 4. explanation: plain English for a bank analyst, at most 120 words, no speculation.
-5. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommendedAction, explanation, citations[{ref, source}]."""
+5. For each distinct sentence ref, include one citation. Use event:<id> for event ids, rule:<id> for rule ids, and reason:<ref> for reasons or TX-* text-screen refs.
+6. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommendedAction, explanation, citations[{ref, source}]."""
+
+
+def _safe_exception_message(error: Exception, document: str | None, api_key: str | None) -> str:
+    message = str(error)
+    sensitive = [api_key]
+    if document:
+        sensitive.extend((document, re.sub(r"\s", "ˆ", document)))
+        sensitive.extend(line for line in document.splitlines() if line)
+    for value in sorted((item for item in sensitive if item), key=len, reverse=True):
+        message = message.replace(value, "[redacted]")
+    return message
 
 
 def _placeholder_events(events: list[Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -131,6 +143,58 @@ def _allowed_refs(
             if ref in TEXT_SCREEN_REFS
         )
     return sorted(refs)
+
+
+def _canonicalize_citations(
+    output: dict[str, Any], events: list[Any], template: CaseFile
+) -> dict[str, Any]:
+    allowed = set(_allowed_refs([event_dict(event) for event in events], template))
+    sentences = output.get("sentences")
+    if isinstance(sentences, list):
+        for sentence in sentences:
+            if not isinstance(sentence, Mapping):
+                continue
+            refs = sentence.get("refs")
+            if not isinstance(refs, list):
+                continue
+            if any(not isinstance(ref, str) or ref not in allowed for ref in refs):
+                raise ValueError("Mistral output cited an unknown reference")
+
+    citations = output.get("citations")
+    if not isinstance(citations, list):
+        return output
+    normalized = [event_dict(event) for event in events]
+    event_ids = {str(event.get("id")) for event in normalized if event.get("id")}
+    risk_data = next(
+        (event.get("data", {}) for event in normalized if event.get("type") == "risk.scored"),
+        {},
+    )
+    rules = {str(rule) for rule in risk_data.get("rulesFired", [])}
+    repaired = []
+    corrected_sources = 0
+    for citation in citations:
+        if not isinstance(citation, Mapping) or not isinstance(citation.get("ref"), str):
+            continue
+        ref = citation["ref"]
+        if ref not in allowed:
+            raise ValueError("Mistral output cited an unknown reference")
+        source = (
+            f"event:{ref}"
+            if ref in event_ids
+            else f"rule:{ref}"
+            if ref in rules
+            else f"reason:{ref}"
+        )
+        corrected_sources += citation.get("source") != source
+        repaired.append({**citation, "source": source})
+    if len(repaired) == len(citations):
+        output["citations"] = repaired
+    log.info(
+        "Mistral citation normalization: citations=%d corrected_sources=%d",
+        len(repaired),
+        corrected_sources,
+    )
+    return output
 
 
 def _allowed_citation_sources(events: list[dict[str, Any]], refs: list[str]) -> list[str]:
@@ -445,6 +509,10 @@ class CaseWriter:
                     "model": self.model,
                 }
             )
+            try:
+                output = _canonicalize_citations(output, pseudonymized, template)
+            except ValueError as error:
+                raise _CaseWriterFailure(f"invalid:{error}") from error
             reason = explain_invalid_case(output, pseudonymized, template)
             if reason is not None:
                 raise _CaseWriterFailure(f"invalid:{reason}")
@@ -523,5 +591,6 @@ class CaseWriter:
         except _CaseWriterFailure as error:
             return self._fallback(template, error.reason)
         except Exception as error:
-            log.warning("CaseWriter fallback to template: request_error (%s)", type(error).__name__)
-            return self._fallback(template, "parse_error")
+            message = _safe_exception_message(error, document, self.api_key)
+            log.warning("CaseWriter live generation failed: %s; using the template", message)
+            return self._fallback(template, "request_error")

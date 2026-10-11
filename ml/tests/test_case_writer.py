@@ -13,6 +13,7 @@ from sylo_risk.case import (
     CaseWriter,
     TemplateCaseWriter,
     TextScreen,
+    TextSignals,
     explain_invalid_case,
     validate_case,
 )
@@ -434,3 +435,57 @@ def test_scene2_cache_survives_earlier_scenes_in_the_session():
 def test_scene2_cache_falls_back_when_a_cited_event_is_missing():
     events = [event for event in scene2_events() if event["type"] not in {"case.ready", "payment.held"}]
     assert CaseWriter(mode="cached").write("PAY-2026-0002", events).llm == "off"
+
+
+def test_recorded_mistral_tx_citation_source_is_normalized(monkeypatch):
+    events = scene2_events()
+    payment_id = "PAY-2026-0002"
+    document = "Synthetic invoice text"
+
+    class FixedTextScreen:
+        mode = "off"
+
+        def screen(self, _document):
+            return TextSignals(1.0, 1.0, 1.0, "jev-live", "jev-text-v1")
+
+    screen = FixedTextScreen()
+    template = TemplateCaseWriter(
+        documents={payment_id: document},
+        text_screen=screen,
+    ).write(payment_id, events)
+    response = template.model_dump(by_alias=True, mode="json")
+    citation = next(citation for citation in response["citations"] if citation["ref"] == "TX-CHANGE")
+    citation["source"] = "text:TX-CHANGE"
+    requests = _install_responses(monkeypatch, [response])
+
+    case = CaseWriter(
+        mode="live",
+        api_key="test-key",
+        documents={payment_id: document},
+        text_screen=screen,
+    ).write(payment_id, events)
+
+    assert case.llm == "live"
+    assert next(c.source for c in case.citations if c.ref == "TX-CHANGE") == "reason:TX-CHANGE"
+    assert len(requests) == 1
+
+
+def test_unexpected_live_writer_warning_redacts_document_and_key(monkeypatch, caplog):
+    payment_id = "PAY-2026-0002"
+    document = "PRIVATE-INVOICE-CONTENT"
+    api_key = "PRIVATE-MISTRAL-KEY"
+
+    def fail(_url, **_kwargs):
+        raise RuntimeError(f"request failed for {document} with {api_key}")
+
+    monkeypatch.setattr("sylo_risk.case.writer.httpx.post", fail)
+    CaseWriter(
+        mode="live",
+        api_key=api_key,
+        documents={payment_id: document},
+        text_screen=TextScreen(mode="off"),
+    ).write(payment_id, scene2_events())
+
+    assert document not in caplog.text
+    assert api_key not in caplog.text
+    assert "[redacted]" in caplog.text
