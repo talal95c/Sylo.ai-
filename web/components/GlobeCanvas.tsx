@@ -27,6 +27,7 @@ import {
 } from "@/lib/globeFrame";
 import { isOnVisibleHemisphere } from "@/lib/globeVisibility";
 import { resolveLabelOverlap } from "@/lib/labelPlacement";
+import { particleSizeBucket, particleSizeForBucket, type ParticleSizeBucket } from "@/lib/globeZoom";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -222,11 +223,11 @@ export default function GlobeCanvas({
   const [landDots, setLandDots] = useState<LandDot[]>([]);
   const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
   const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
+  const particleSizeBucketRef = useRef<ParticleSizeBucket | null>(null);
   const [cache] = useState(() => new Map<string, object>());
   const speedRef = useRef(speed);
   const cameraTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   const processedCameraSeqRef = useRef<number | null>(null);
-  const lastZoomUpdateRef = useRef(0);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -672,11 +673,10 @@ export default function GlobeCanvas({
 
   const handleGlobeZoom = useCallback(
     (pov: { lat: number; lng: number; altitude: number }) => {
-      const now = performance.now();
-      if (now - lastZoomUpdateRef.current < 100) return;
-      lastZoomUpdateRef.current = now;
-      const nextSize = BASE_PARTICLE_SIZE * clamp(1.9 / pov.altitude, 1, 1.7);
-      setParticleSize((current) => (Math.abs(current - nextSize) < 0.01 ? current : nextSize));
+      const bucket = particleSizeBucket(pov.altitude);
+      if (particleSizeBucketRef.current === bucket) return;
+      particleSizeBucketRef.current = bucket;
+      setParticleSize(particleSizeForBucket(bucket, BASE_PARTICLE_SIZE));
     },
     [],
   );
