@@ -538,8 +538,8 @@ export function availableActions(
     confirm: awaitingSupplier,
     deny: awaitingSupplier,
     attack: state.revoked && !state.attack.attempted,
-    swapAttack: state.scenario === "diverted" && Boolean(state.payment?.intentHash) && !state.attack.attempted,
-    replayAttack: state.scenario === "diverted" && Boolean(state.payment?.intentHash) && !state.attack.attempted,
+    swapAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
+    replayAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
     reset: true,
   };
 }
