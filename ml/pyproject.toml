@@ -17,7 +17,7 @@ dependencies = [
 jev = ["typesafe-sdk>=0.7.4"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "hypothesis>=6.100"]
 
 [tool.uv.sources]
 sylo-spec = { path = "../spec/python", editable = true }

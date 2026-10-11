@@ -46,5 +46,13 @@ class Signer:
         self._nonces[role] += 1
         return self._nonces[role]
 
+    def start_nonces_at(self, base: int) -> None:
+        """Number this session's signed messages from ``base``.
+
+        The registry remembers every nonce of a signer for ever. On a chain that outlives the engine a
+        new session must therefore not start again at 1: its first commit, verification or revocation
+        would revert ``NonceUsed``. Nonces only have to be unique per signer, not consecutive."""
+        self._nonces = dict.fromkeys(ROLE_ENV, base)
+
     def sign(self, role: str, message: Message, domain: Eip712Domain) -> bytes:
         return eip712.sign(message, domain, self._keys[role])

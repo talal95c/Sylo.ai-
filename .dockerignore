@@ -1,7 +1,6 @@
 .git
 .github
 **/node_modules
-web
 contracts/*
 !contracts/deployments
 **/.venv
@@ -11,6 +10,8 @@ contracts/*
 **/.ruff_cache
 **/.next
 **/out
+web/public/spec
+web/tsconfig.tsbuildinfo
 .env*
 **/.env*
 engine/data

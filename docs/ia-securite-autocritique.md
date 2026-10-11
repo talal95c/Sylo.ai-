@@ -6,11 +6,29 @@ Ce document recense ce que nos chiffres ne prouvent pas, ce qui manque, et ce qu
 
 **1.1 Évaluation circulaire.** Nous avons écrit le simulateur, les typologies et le modèle. La seed C est décalée, mais elle sort du même générateur. Une AUC de 0,998 mesure surtout notre capacité à apprendre nos propres règles de génération. *Impact :* aucun chiffre n'est transposable à une vraie banque. *Parade :* le dire sur la slide. L'étape suivante serait un jeu public (Feedzai BAF, IBM AML-Data) ou un pilote sur des données réelles pseudonymisées.
 
-**1.2 La prévalence irréaliste gonfle la précision.** Il y a 1 500 fraudes pour 150 000 paiements, soit 1 %. La précision dépend de la prévalence. À taux de détection et de faux positifs égaux, nos 89,9 % de précision en HIGH tomberaient à environ 47 % pour une prévalence de 0,1 %, et à environ 8 % pour 0,01 %. Le même calcul vaut pour les retenues MEDIUM+ (98 % de rappel, 6,72 % de faux positifs). À 1 %, environ 13 % des retenues sont des fraudes ; à 0,1 %, environ 1,4 %, soit à peu près 68 paiements légitimes retenus par fraude. *Impact :* la charge analyste réelle serait bien plus lourde que ce que suggère le pitch. *Parade :* présenter le résultat comme « coût par fraude stoppée » à plusieurs prévalences, et non comme une précision brute.
+**1.2 La prévalence irréaliste gonfle la précision.** Pour seed B, la précision et les retenues légitimes par fraude attrapée varient ainsi selon la prévalence :
+
+| Prévalence | Précision MEDIUM+ | Retenues légitimes / fraude attrapée MEDIUM+ | Précision HIGH+ | Retenues légitimes / fraude attrapée HIGH+ |
+|---:|---:|---:|---:|---:|
+| 1 % | 12,85 % | 6,78 | 89,86 % | 0,11 |
+| 0,1 % | 1,44 % | 68,44 | 46,76 % | 1,14 |
+| 0,01 % | 0,15 % | 684,97 | 8,07 % | 11,39 |
+
+MEDIUM+ utilise un TPR de 98,13 % et un FPR de 6,72 %. HIGH+ utilise un TPR de 73,87 % et un FPR légitime de 0,0842 %, recalculé en rejouant seed B dans `_score_engine` avec le modèle gelé, sans ré-entraînement (125 HIGH+ légitimes sur 148 500). Ces extrapolations partent de données synthétiques et ne prédisent pas les performances d'une banque. *Impact :* à faible prévalence, la charge analyste dépasse largement le nombre de fraudes attrapées. *Parade :* présenter le « coût par fraude attrapée » à plusieurs prévalences, et non une précision brute.
+<!-- MEDIUM+: ml/reports/evasion.json#/prevalence_table/medium_plus/rows; TPR/FPR: ml/reports/metrics.json#/metrics/recallAll, #/metrics/fprMediumPlus. HIGH+: ml/reports/evasion.json#/prevalence_table/high_plus/tpr, #/prevalence_table/high_plus/fpr, #/prevalence_table/high_plus/rows; method: #/prevalence_table/high_plus/method. -->
 
 **1.3 Pas de boucle de labels.** En réalité, une fraude est confirmée des jours ou des semaines plus tard, et le modèle dérive. Nous n'avons ni labels retardés, ni suivi de dérive, ni procédure de ré-entraînement ou de rollback. *Parade (à faire) :* suivi de la population par feature (PSI), score mesuré sur une fenêtre glissante, seuils re-gelés après validation humaine.
 
-**1.4 Rappel T1 à 100 % : circulaire.** Le simulateur donne à chaque T1, même « évasif », une provenance non fiable et un nouveau compte : la règle de garantie R-PV-01 les attrape par construction (la baseline rules_only fait aussi 100 % sur T1). Ce chiffre prouve que la garantie est câblée, pas que le modèle détecte le faux fournisseur. *Parade :* générer des T1 vers un compte déjà payé ou avec une provenance fiable (mule « vieillie », registre fournisseur compromis) et mesurer. <!-- metrics.json: /byTypology/0/recall, /baselines/2/recallT1 -->
+**1.4 Rappel T1 à 100 % : circulaire.** La baseline `rules_only` attrape 100 % des T1, ce qui montre d'abord que R-PV-01 est câblée, pas que le modèle reconnaît le faux fournisseur. J'ai donc échantillonné avec remise 2 000 lignes par niveau à partir des 450 T1 synthétiques de seed B; les historiques sont définis par les agrégats observés, pas simulés comme des événements.
+
+| Niveau | Signaux retirés / modifiés | Rappel MEDIUM+ | Rappel HIGH+ | Séquestre HIGH + OOB | Action bloquante | Modèle seul MEDIUM+ |
+|---|---|---:|---:|---:|---:|---:|
+| E0 | T1 courant | 100,00 % | 76,45 % | 19,85 % | 56,60 % | 92,95 % |
+| E1 | Provenance `verified_registry` | 92,95 % | 76,45 % | 19,85 % | 56,60 % | 92,95 % |
+| E2 | Compte ≥90 jours, ≥3 paiements réussis agrégés, non détenu par le fournisseur; compte précédent conservé, `history_count` ≥1 | 92,65 % | 75,30 % | 19,85 % | 55,45 % | 92,65 % |
+| E3 | Le fournisseur détient le compte et l'historique agrégé indique ce même compte | 75,50 % | 51,50 % | 13,75 % | 37,75 % | 67,35 % |
+
+E3 n'est pas proche de zéro : le moteur attrape encore 75,50 % à MEDIUM+ et 51,50 % à HIGH+ dans cet échantillon synthétique, mais le rappel baisse nettement par rapport à E0. Le rappel MEDIUM+ d'E0 à 100 % ne survit donc pas à une provenance fiable; la combinaison E3 contourne aussi les signaux d'ancienneté, de détention et de changement de compte. Ces chiffres mesurent uniquement le simulateur seed B, pas une efficacité réelle. <!-- metrics.json#/baselines/2/recallT1; evasion.json#/levels/0, #/levels/1, #/levels/2, #/levels/3, #/sampling/source_t1_count -->
 
 ## 2. Cibles du PRD manquées
 
