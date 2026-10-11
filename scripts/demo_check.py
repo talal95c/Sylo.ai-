@@ -5,8 +5,9 @@
     cd engine && uv run python ../scripts/demo_check.py --url http://localhost:8000 --speed 20
 
 It runs, with ``auto: true``: the legitimate payment; the diverted invoice with the supplier's denial;
-the three attacks on the revoked payment; the diverted invoice with a confirmation; the SIM-swap
-variant. It then reads the proof of the last payment. Exit code 0 when everything matches.
+the three attacks on the revoked payment; the proof; the diverted invoice with a confirmation; the
+SIM-swap variant; then the v2 scenes: rail outage and reroute, mule wave and circuit breaker, kill
+switch, metrics. Exit code 0 when everything matches.
 
 The same checks pass in every mode (rules or model, mock or Fuji, with or without a case writer):
 only the event types and the facts that must not change are asserted.
@@ -38,7 +39,7 @@ DENIED = HELD + ["verification.recorded"] + REVOKED
 CONFIRMED = HELD + ["verification.recorded", "escrow.released", "intent.executed", "leg.settled", "leg.sent", "leg.settled", "payment.credited"]
 SIM_SWAPPED = HELD + REVOKED
 # Not part of the story line: asked more than once, told to people, or written by a (possibly slow) case writer.
-SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset"}
+SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up"}
 
 
 class CheckFailed(Exception):
@@ -189,6 +190,68 @@ def check_proof(engine: Engine, payment_id: str) -> str:
     return f"{len(kinds)} signed messages, {len(proof['transactions'])} transactions, {len(proof['log'])} log entries"
 
 
+def last(events: list[dict[str, Any]], type_: str) -> dict[str, Any]:
+    found = next((e["data"] for e in reversed(events) if e["type"] == type_), None)
+    if found is None:
+        raise CheckFailed(f"no {type_} event")
+    return found
+
+
+def check_outage(engine: Engine, speed: float) -> str:
+    events = run_scenario(engine, "outage", speed, "rail.up")
+    kinds = [e["type"] for e in events if e["type"] not in ("system.mode", "session.reset")]
+    expect(kinds[:2] == ["scenario.started", "rail.down"], "the rail did not go down before the payment")
+    down, selected = first(events, "rail.down"), first(events, "route.selected")
+    expect(selected["routeId"] != down["routeId"], f"the payment was not rerouted away from {down['routeId']}")
+    expect(any(s["routeId"] == down["routeId"] and s["excludedBy"] == "RAIL_DOWN" for s in selected["scores"]), "the down rail is not marked RAIL_DOWN")
+    expect(first(events, "risk.scored")["tier"] == "LOW", "an outage changed the tier")
+    expect(story(events)[-1] == "payment.credited", "the rerouted payment was not credited")
+    return f"{down['routeId']} down, payment rerouted to {selected['routeId']} and credited, {down['routeId']} back"
+
+
+def check_wave(engine: Engine, speed: float) -> str:
+    engine.post("/v1/reset")
+    engine.post("/v1/sim/mule-wave", {"speed": speed, "auto": True})
+    events = engine.events_until("breaker.on")
+    detected = first(events, "cluster.detected")
+    expect(len(detected["linkedPayments"]) >= 3, "a cluster needs at least three linked payments")
+    breaker = first(events, "breaker.on")
+    expect(breaker["breakerId"] == detected["proposedBreaker"]["breakerId"], "the breaker switched on is not the proposed one")
+    expect(breaker["thresholdsDelta"] == -20, "the breaker does not lower the thresholds by 20 points")
+    engine.post("/v1/scenarios/diverted/run", {"speed": speed, "auto": True, "autoAnswer": "deny"})
+    events = engine.events_until("payment.stopped")
+    scored = first(events, "risk.scored")
+    expect("R-CB-01" in scored["rulesFired"], "the payment into the region does not carry rule R-CB-01")
+    expect(scored["tier"] != "LOW", "a payment into a region under a breaker is LOW")
+    expect(not any(e["type"] == "payment.credited" for e in events), "the payment into the region was paid")
+    return f"cluster {detected['clusterId']} ({len(detected['linkedPayments'])} payments), breaker on, next payment {scored['tier']} with R-CB-01"
+
+
+def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:
+    run_scenario(engine, "diverted", speed, "payment.stopped", "deny")
+    engine.post("/v1/attacks/swap_beneficiary", {"paymentId": payment_id})
+    engine.post("/v1/attacks/swap_beneficiary", {"paymentId": payment_id})
+    cut = first(engine.events_until("killswitch.on"), "killswitch.on")
+    expect(cut["refusals"] >= 2, "the kill switch fired before two refusals")
+    engine.post("/v1/scenarios/legit/run", {"speed": speed, "auto": True})
+    events = engine.events_until("payment.credited")
+    selected = last(events, "route.selected")
+    expect(selected["routeId"] != cut["adapter"], f"a payment still went through {cut['adapter']} after the kill switch")
+    engine.post(f"/v1/sim/rails/{cut['adapter']}/up")
+    return f"adapter {cut['adapter']} cut after {cut['refusals']} refusals, next payment through {selected['routeId']}"
+
+
+def check_metrics(engine: Engine) -> str:
+    metrics = engine.get("/v1/metrics")
+    expect(isinstance(metrics.get("sample"), bool), "metrics do not say whether they are a sample")
+    integrity = metrics.get("integrity")
+    if integrity is not None:
+        expect(integrity["diverted"] == 0, f"{integrity['diverted']} changed or replayed payments got through")
+    label = "SAMPLE numbers" if metrics["sample"] else f"measured, model {metrics.get('modelVersion')}"
+    cases = f"{integrity['cases']} integrity cases, 0 diverted" if integrity else "no integrity report (run `make integrity`)"
+    return f"{label} from {metrics.get('source')}; {cases}"
+
+
 def reachable(url: str) -> bool:
     try:
         with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as response:
@@ -250,6 +313,10 @@ def main(argv: list[str] | None = None) -> int:
             ("Proof    typed data, signatures, log", lambda: check_proof(engine, diverted)),
             ("Scene 2  diverted, supplier confirms", lambda: check_confirmed(engine, args.speed)),
             ("Scene 2  SIM swap on the known contact", lambda: check_sim_swap(engine, args.speed)),
+            ("Scene 5  rail outage and reroute", lambda: check_outage(engine, args.speed)),
+            ("Scene 3  mule wave and circuit breaker", lambda: check_wave(engine, args.speed)),
+            ("Kill switch on a rail adapter", lambda: check_kill_switch(engine, args.speed, diverted)),
+            ("Metrics and integrity report", lambda: check_metrics(engine)),
         ]
         failures = 0
         for label, step in steps:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import logging
 import os
 import random
@@ -20,6 +21,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, TypeVar
 
 from eth_utils import to_checksum_address
@@ -41,14 +43,17 @@ from sylo_spec.models import (
     VerificationAttestation,
     VerificationMethod,
     VerificationResult,
+    WindowPayment,
 )
 from sylo_spec.ports import ChainPort, ChainReverted, RiskPort
-from sylo_spec.scenarios import ACCOUNTS, ORDERS, PAYEES, PAYER, build_risk_context
+from sylo_spec.scenarios import ACCOUNTS, CORRIDOR, ORDERS, PAYEES, PAYER, build_risk_context
 
 from . import texts
 from .approvals import ApprovalSession, required_approvers
+from .breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from .bus import EventBus
 from .case import CaseService, rules_case_file
+from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .config import Settings
 from .journal import Journal
 from .norms import NormsEngine, NormsResult
@@ -70,6 +75,10 @@ APPROVAL_STEP_MS = 600
 SUPPLIER_AUTO_MS = 3000
 ANALYST_AUTO_MS = 1500
 CASE_TIMEOUT_S = 10.0
+KILL_REFUSALS = 2
+KILL_WINDOW_S = 600.0
+CLUSTER_WINDOW_MINUTES = 60
+WAVE_STEP_MS = 1300
 T = TypeVar("T")
 
 
@@ -98,12 +107,15 @@ class ScenarioDef:
     order: str
     sim_swap_hours_ago: float | None = None
     """When set, the SIM behind the supplier's known number changed that many hours before the run."""
+    rail_down: str | None = None
+    """When set, that route's rail goes down before the payment and comes back after it (Scene 5)."""
 
 
 SCENARIOS: dict[str, ScenarioDef] = {
     "legit": ScenarioDef("legit"),
     "diverted": ScenarioDef("diverted"),
     "diverted_simswap": ScenarioDef("diverted", sim_swap_hours_ago=5.0),
+    "outage": ScenarioDef("legit", rail_down="R3"),
 }
 ATTACKS = ("release_revoked", "swap_beneficiary", "replay")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
@@ -135,6 +147,14 @@ class AttackNotApplicable(Exception):
 
 
 class UnknownAction(Exception):
+    pass
+
+
+class UnknownRoute(Exception):
+    pass
+
+
+class UnknownBreaker(Exception):
     pass
 
 
@@ -221,6 +241,11 @@ class Orchestrator:
         self.chain_simulated = chain.mode != "fuji"
         self.telecom = SimSwapMock(clock=self.now)
         self.rails = Rails(norms.pack, chain, clock=lambda: self.now().timestamp())
+        self.breakers = Breakers()
+        self.cluster_port, self.cluster_stub = load_cluster_port()
+        self.incidents: list[dict[str, Any]] = []
+        self._window: list[WindowPayment] = []
+        self._announced_breakers: set[str] = set()
         self._rng = random.Random(settings.seed)
         self._runs: dict[str, PaymentRun] = {}
         self._run_counts: dict[str, int] = {}
@@ -365,6 +390,10 @@ class Orchestrator:
         self._runs.clear()
         self._current_pacer = None
         self.telecom.clear()
+        self.rails.reset()
+        self.breakers.reset()
+        self._window.clear()
+        self._announced_breakers.clear()
         self.bus.clear()
         self.bus.publish("session.reset", {})
 
@@ -411,6 +440,238 @@ class Orchestrator:
             "log": self.journal.for_payment(payment_id),
             "logHead": self.journal.head,
         }
+
+    # --- network defence and incidents (v2) --------------------------------------------------
+
+    def _publish(self, type_: str, data: dict[str, Any], *, payment_id: str | None = None, simulated: bool = True) -> None:
+        """An event that belongs to the session rather than to one payment's run."""
+        self.bus.publish(type_, data, payment_id=payment_id, simulated=simulated, ts=self.now())
+
+    def rail_down(self, route_id: str, reason: str | None = None) -> dict[str, Any]:
+        """Simulated outage: the rail cannot be used, so payments are rerouted. It never changes a tier."""
+        adapter = self.rails.get(route_id)
+        if adapter is None:
+            raise UnknownRoute(route_id)
+        adapter.down_reason = reason or texts.RAIL_DOWN_REASON
+        self._publish("rail.down", {"routeId": adapter.id, "name": adapter.name, "reason": adapter.down_reason})
+        return {"ok": True, "routeId": adapter.id, "available": adapter.available}
+
+    def rail_up(self, route_id: str) -> dict[str, Any]:
+        """The rail is back. This also restores an adapter cut by the kill switch (its keys were rotated)."""
+        adapter = self.rails.get(route_id)
+        if adapter is None:
+            raise UnknownRoute(route_id)
+        adapter.restore()
+        self._publish("rail.up", {"routeId": adapter.id, "name": adapter.name})
+        return {"ok": True, "routeId": adapter.id, "available": adapter.available}
+
+    def start_wave(self, *, speed: float = 1.0, auto: bool = False) -> dict[str, Any]:
+        """Scene 3: three payments from other payers reach accounts of one mule cluster."""
+        if self.running:
+            raise ScenarioBusy()
+        self._task = asyncio.create_task(self._wave(self.pacer_factory(speed), auto))
+        return {"ok": True, "payments": [payment["paymentId"] for payment in wave_payments()]}
+
+    async def run_wave(self, *, speed: float = 1.0, auto: bool = True) -> None:
+        """The mule wave in the foreground (tests and the fixture recorder)."""
+        if self.running:
+            raise ScenarioBusy()
+        await self._wave(self.pacer_factory(speed), auto)
+
+    def confirm_breaker(self, breaker_id: str, by: str | None = None) -> dict[str, Any]:
+        """The analyst switches a proposed circuit breaker on, for 24 hours."""
+        try:
+            breaker = self.breakers.confirm(breaker_id, by or texts.ANALYST, self.now())
+        except KeyError:
+            raise UnknownBreaker(breaker_id) from None
+        except BreakerError as err:
+            raise ActionNotAllowed(str(err)) from None
+        self._publish("breaker.on", breaker.on_event())
+        return {"ok": True, "breakerId": breaker.id, "expiresAt": breaker.on_event()["expiresAt"]}
+
+    def lift_breaker(self, breaker_id: str, by: str | None = None) -> dict[str, Any]:
+        """Only a person lifts a breaker before its 24 hours are over."""
+        try:
+            breaker = self.breakers.lift(breaker_id)
+        except KeyError:
+            raise UnknownBreaker(breaker_id) from None
+        except BreakerError as err:
+            raise ActionNotAllowed(str(err)) from None
+        self._publish("breaker.off", {"breakerId": breaker.id, "reason": "LIFTED", "by": by or texts.ANALYST})
+        return {"ok": True, "breakerId": breaker.id}
+
+    def guardian_incident(self, report: dict[str, Any]) -> dict[str, Any]:
+        """An on-chain incident reported by the guardian (Lane C): show it and draft the DORA incident report."""
+        payment_id = report.get("paymentId")
+        run = self._runs.get(payment_id) if isinstance(payment_id, str) else None
+        incident_id = str(report.get("incidentId") or f"INC-{self.now():%Y%m%d}-{len(self.incidents) + 1:03d}")
+        action = str(report.get("action") or "NONE")
+        dora = {
+            "clientsAffected": int(report.get("clientsAffected", 1 if run else 0)),
+            "amountEur": float(report.get("amountEur", run.order.amount.as_float if run else 0.0)),
+            "durationMinutes": float(report.get("durationMinutes", 0.0)),
+            "geographicSpread": list(report.get("geographicSpread") or (["FR", "GH"] if run else [])),
+            "criticality": str(report.get("criticality") or texts.DORA_CRITICALITY),
+            "thirdParties": list(report.get("thirdParties") or ["Avalanche RPC providers"]),
+            "major": bool(report.get("major", False)),
+            "draft": True,
+        }
+        rule = str(report.get("rule") or "UNKNOWN")
+        data = {
+            "incidentId": incident_id,
+            "rule": rule,
+            "txHash": report.get("txHash"),
+            "explorerUrl": report.get("explorerUrl"),
+            "action": action,
+            "headline": texts.GUARDIAN_HEADLINE.format(rule=rule),
+            "dora": dora,
+        }
+        if run is not None and run.hold is not None and "FREEZE" in action.upper():
+            run.frozen = True  # the guardian froze the hold on-chain: the engine must not try to release it
+        self._publish(
+            "guardian.incident",
+            data,
+            payment_id=run.order.id if run else None,
+            simulated=bool(report.get("simulated", self.chain_simulated)),
+        )
+        draft = {**data, "paymentId": run.order.id if run else None, "receivedAt": iso_ms(self.now()), "status": "DRAFT, not filed"}
+        self.incidents.append(draft)
+        if self.settings.journal_path:
+            folder = Path(self.settings.journal_path).parent / "incidents"
+            folder.mkdir(parents=True, exist_ok=True)
+            safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in incident_id)
+            (folder / f"{safe}.json").write_text(json.dumps(draft, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return {"ok": True, "incidentId": incident_id}
+
+    async def _wave(self, pacer: Pacer, auto: bool) -> None:
+        self._current_pacer = pacer
+        try:
+            self._publish("scenario.started", {"scenario": "mule_wave", "speed": pacer.speed, "auto": auto}, simulated=False)
+            institution = cluster_sample()["institutions"][0]
+            for payment in wave_payments():
+                await pacer.wait(WAVE_STEP_MS)
+                # Seen on the network, not routed by this engine: traffic, not a payment.created of ours.
+                self._publish(
+                    "traffic.sample",
+                    {
+                        "arcs": [{"from": PAYER.bank_institution_id, "to": institution, "kind": "bank"}],
+                        "wave": True,
+                        "uetr": payment["uetr"],
+                        "payer": {"id": payment["payer"]["id"], "name": payment["payer"]["name"]},
+                        "beneficiary": {
+                            "payeeName": payment["payeeName"],
+                            "accountHolder": payment["accountHolder"],
+                            "accountMasked": payment["accountMasked"],
+                            "institutionId": institution,
+                        },
+                        "amount": {"value": payment["amount"], "currency": "EUR"},
+                        "text": texts.WAVE_PAYMENT.format(
+                            payer=payment["payer"]["name"], amount=texts.eur(float(payment["amount"])), holder=payment["accountHolder"]
+                        ),
+                    },
+                    payment_id=payment["paymentId"],
+                )
+                self._observe(payment["paymentId"], payment["accountId"], institution, float(payment["amount"]))
+                await self._detect_clusters(pacer, auto or self.settings.human_steps != "manual")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("mule wave failed")
+
+    def _observe(self, payment_id: str, account_id: str, institution_id: str, amount_eur: float) -> None:
+        """Remember a payment for the cluster detector (last hour; a re-run of the same payment counts once)."""
+        now = self.now()
+        cutoff = now - timedelta(minutes=CLUSTER_WINDOW_MINUTES)
+        self._window = [
+            payment
+            for payment in self._window
+            if payment.payment_id != payment_id and datetime.fromisoformat(payment.at.replace("Z", "+00:00")) >= cutoff
+        ]
+        self._window.append(
+            WindowPayment(
+                payment_id=payment_id, account_id=account_id, institution_id=institution_id, amount_eur=amount_eur, at=iso_ms(now)
+            )
+        )
+
+    async def _detect_clusters(self, pacer: Pacer, auto_confirm: bool) -> None:
+        """Ask the cluster detector; a new cluster proposes a circuit breaker that the analyst confirms."""
+        try:
+            clusters = await asyncio.to_thread(self.cluster_port.detect, list(self._window))
+        except Exception as err:
+            log.warning("cluster detector failed (%s); no breaker proposed", err)
+            return
+        for cluster in clusters:
+            breaker = self.breakers.propose(cluster, CORRIDOR)
+            if breaker.status != "proposed" or breaker.id in self._announced_breakers:
+                continue
+            self._announced_breakers.add(breaker.id)
+            await pacer.wait(700)
+            self._publish(
+                "cluster.detected",
+                {
+                    "clusterId": cluster.cluster_id,
+                    "accounts": len(cluster.accounts),
+                    "agents": len(cluster.agents),
+                    "region": cluster.region,
+                    "regionName": cluster.region_name or cluster.region,
+                    "institutions": list(cluster.institutions),
+                    "centroid": cluster.centroid.to_json_dict(),
+                    "points": [point.to_json_dict() for point in cluster.points],
+                    "linkedPayments": list(cluster.linked_payments),
+                    "detector": getattr(self.cluster_port, "name", "unknown"),
+                    "proposedBreaker": breaker.proposal(),
+                },
+            )
+            if auto_confirm:
+                await pacer.wait(ANALYST_AUTO_MS)
+                if breaker.status == "proposed":
+                    self.confirm_breaker(breaker.id, texts.REVOKED_BY)
+
+    def _overlays(self, order: PaymentOrder, risk: RiskResult) -> RiskResult:
+        """Circuit breaker and degraded mode. They can only make the decision stricter."""
+        for expired in self.breakers.expire(self.now()):
+            self._publish("breaker.off", {"breakerId": expired.id, "reason": "EXPIRED"})
+        account = ACCOUNTS.get(order.creditor_account_id)
+        payee = PAYEES.get(order.payee_id)
+        institution = account.institution_id if account else order.creditor.institution_id
+        breaker = self.breakers.active_for(institution, order.corridor)
+        if breaker is not None:
+            risk = apply_breaker(risk, breaker)
+        return apply_degraded(risk, self.degraded, bool(account and payee and payee.owns(account.id)))
+
+    def _check_kill_switch(self, adapter: RailAdapter) -> None:
+        """Two legs changed or replayed on one adapter within ten minutes cut that adapter (roadmap A2.3)."""
+        if adapter.killed_reason is not None:
+            return
+        refusals = adapter.integrity_refusals(KILL_WINDOW_S)
+        if refusals < KILL_REFUSALS:
+            return
+        adapter.killed_reason = texts.KILL_SWITCH_REASON.format(refusals=refusals, minutes=KILL_WINDOW_S / 60)
+        affected = [
+            run
+            for run in self._runs.values()
+            if run.decision is not None
+            and run.decision.route is not None
+            and run.decision.route.id == adapter.id
+            and run.hold is not None
+            and run.analyst is not None
+            and not run.analyst.done()
+        ]
+        self._publish(
+            "killswitch.on",
+            {
+                "adapter": adapter.id,
+                "name": adapter.name,
+                "reason": adapter.killed_reason,
+                "refusals": refusals,
+                "windowSeconds": KILL_WINDOW_S,
+                "revoked": [run.order.id for run in affected],
+            },
+        )
+        for run in affected:
+            # The run's own script revokes and refunds: it is waiting on this decision.
+            run.analyst_by = texts.KILL_SWITCH_BY
+            run.analyst.set_result("KILL_SWITCH")
 
     # --- internals ---------------------------------------------------------------------------
 
@@ -695,15 +956,21 @@ class Orchestrator:
             self.telecom.declare_swap(contact.msisdn_masked, hours_ago=scenario.sim_swap_hours_ago)
 
         self._emit(run, "scenario.started", {"scenario": run.scenario, "speed": pacer.speed, "auto": run.auto})
+        if scenario.rail_down is not None:
+            await pacer.wait(600)
+            self.rail_down(scenario.rail_down)
         await pacer.wait(400)
         self._emit(run, "payment.created", self._payment_created(order))
+        creditor_account = ACCOUNTS[order.creditor_account_id]
+        self._observe(order.id, creditor_account.id, creditor_account.institution_id, order.amount.as_float)
+        await self._detect_clusters(pacer, self._auto_humans(run))
 
         await pacer.wait(900)
         norms = self.norms.evaluate(order)
         self._emit(run, "norms.checked", norms.to_event_data())
 
         await pacer.wait(900)
-        risk = self.risk.score(order, build_risk_context(order, norms.signal_codes))
+        risk = self._overlays(order, self.risk.score(order, build_risk_context(order, norms.signal_codes)))
         run.risk = risk
         self._emit(
             run,
@@ -798,6 +1065,9 @@ class Orchestrator:
             },
             simulated=True,
         )
+        if scenario.rail_down is not None:
+            await pacer.wait(1500)
+            self.rail_up(scenario.rail_down)
 
     # --- rails -------------------------------------------------------------------------------
 
@@ -816,6 +1086,7 @@ class Orchestrator:
             },
             simulated=True,
         )
+        self._check_kill_switch(self.rails.adapter(leg.rail))
 
     async def _send_leg(self, run: PaymentRun, adapter: RailAdapter, leg: LegMessage, duration: float) -> bool:
         """Hand one leg to its rail adapter. Returns False (and stops the payment) when the adapter refuses it."""
@@ -990,8 +1261,7 @@ class Orchestrator:
             who, answer = await self._await_supplier_or_analyst(run)
 
         if who == "analyst":
-            detail = texts.STOPPED_DETAIL_ANALYST if mode == "escrow" else texts.STOPPED_DETAIL_ANALYST_BANK.format(bank=bank_name)
-            await self._revoke_and_refund(run, intent, RevocationReason.ANALYST_DECISION, mode, detail, texts.ALERT_STOPPED_ANALYST)
+            await self._stop_held(run, intent, mode, answer, RevocationReason.ANALYST_DECISION)
             return False
 
         await pacer.wait(800)
@@ -1023,9 +1293,7 @@ class Orchestrator:
         )
 
         if result == VerificationResult.DENIED:
-            await self._await_analyst(run)
-            detail = texts.STOPPED_DETAIL if mode == "escrow" else texts.STOPPED_DETAIL_BANK.format(bank=bank_name)
-            await self._revoke_and_refund(run, intent, RevocationReason.SUPPLIER_DENIED, mode, detail, texts.ALERT_STOPPED)
+            await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.SUPPLIER_DENIED)
             return False
 
         run.status = "confirmed"
@@ -1036,10 +1304,7 @@ class Orchestrator:
             except ChainReverted as err:
                 # Frozen by the analyst, paused corridor or expired hold: the money stays in escrow.
                 self._reverted(run, err, "release")
-                await self._await_analyst(run)
-                await self._revoke_and_refund(
-                    run, intent, RevocationReason.ANALYST_DECISION, mode, texts.STOPPED_DETAIL_ANALYST, texts.ALERT_STOPPED_ANALYST
-                )
+                await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
                 return False
             run.hold = None
             run.status = "in_transit"
@@ -1053,28 +1318,38 @@ class Orchestrator:
             self._emit(run, "intent.executed", self._tx_fields(tx), simulated=tx.simulated)
             return True
         if run.frozen:
-            await self._await_analyst(run)
-            await self._revoke_and_refund(
-                run,
-                intent,
-                RevocationReason.ANALYST_DECISION,
-                mode,
-                texts.STOPPED_DETAIL_ANALYST_BANK.format(bank=bank_name),
-                texts.ALERT_STOPPED_ANALYST,
-            )
+            await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
             return False
         run.hold = None
         run.status = "in_transit"
         return True
 
+    async def _stop_held(
+        self, run: PaymentRun, intent: PaymentIntent, mode: str, action: str, reason: RevocationReason
+    ) -> None:
+        """Stop a held payment after the analyst's decision, or after the kill switch cut its route."""
+        bank_name = "Banque Hexagone"
+        if action == "KILL_SWITCH":
+            reason = RevocationReason.KILL_SWITCH
+            detail = texts.STOPPED_DETAIL_KILL if mode == "escrow" else texts.STOPPED_DETAIL_KILL_BANK.format(bank=bank_name)
+            alert = texts.ALERT_STOPPED_KILL
+        elif reason == RevocationReason.SUPPLIER_DENIED:
+            detail = texts.STOPPED_DETAIL if mode == "escrow" else texts.STOPPED_DETAIL_BANK.format(bank=bank_name)
+            alert = texts.ALERT_STOPPED
+        else:
+            detail = texts.STOPPED_DETAIL_ANALYST if mode == "escrow" else texts.STOPPED_DETAIL_ANALYST_BANK.format(bank=bank_name)
+            alert = texts.ALERT_STOPPED_ANALYST
+        await self._revoke_and_refund(run, intent, reason, mode, detail, alert)
+
     async def _revoke_and_refund(
         self, run: PaymentRun, intent: PaymentIntent, reason: RevocationReason, mode: str, detail: str, payer_alert: str
     ) -> None:
-        """The analyst's decision is applied: revoke in the registry, give the money back, tell who must know."""
+        """Revoke in the registry, give the money back, tell who must know (analyst decision or kill switch)."""
         pacer, order, risk = run.pacer, run.order, run.risk
         assert risk is not None
         account = ACCOUNTS[order.creditor_account_id]
-        self._emit(run, "case.action", {"action": "CONFIRM_REVOCATION", "by": run.analyst_by}, simulated=True)
+        if reason != RevocationReason.KILL_SWITCH:
+            self._emit(run, "case.action", {"action": "CONFIRM_REVOCATION", "by": run.analyst_by}, simulated=True)
 
         await pacer.wait(300)
         revocation = Revocation(

@@ -17,6 +17,9 @@ FIXTURES = [
     "scene2b-swap-beneficiary",
     "scene2b-replay",
     "samples-v1",
+    "samples-scene3-mule-wave",
+    "samples-scene4-guardian",
+    "samples-scene5-outage",
 ]
 V1_TYPES = {"approval.required", "leg.rejected", "case.ready", "case.action", "alert.raised"}
 
@@ -119,3 +122,40 @@ def test_schema_accepts_unknown_extra_fields():
         "futureEnvelopeField": True,
     }
     assert not list(VALIDATOR.iter_errors(event))
+
+
+def types_of(name: str) -> list[str]:
+    return [event["type"] for event in load(name)]
+
+
+def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_held_payment():
+    kinds = types_of("samples-scene3-mule-wave")
+    assert kinds[:6] == ["scenario.started", "traffic.sample", "traffic.sample", "traffic.sample", "cluster.detected", "breaker.on"]
+    assert "payment.held" in kinds[6:] and kinds[-1] == "payment.stopped"
+    scored = next(e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "risk.scored")
+    assert scored["rulesFired"][-1] == "R-CB-01"
+    stamps = [e["ts"] for e in load("samples-scene3-mule-wave")]
+    assert stamps == sorted(stamps), "one timeline, even with two scenarios in the file"
+
+
+def test_scene_4_sample_shows_the_incident_then_the_refused_release():
+    kinds = types_of("samples-scene4-guardian")
+    assert kinds.index("payment.held") < kinds.index("guardian.incident") < kinds.index("tx.reverted")
+    assert "escrow.released" not in kinds and kinds[-1] == "payment.stopped"
+
+
+def test_scene_5_sample_reroutes_then_restores_the_rail():
+    events = load("samples-scene5-outage")
+    kinds = [e["type"] for e in events]
+    assert kinds[1] == "rail.down" and kinds[-1] == "rail.up"
+    assert next(e["data"]["routeId"] for e in events if e["type"] == "route.selected") == "R1"
+
+
+def test_the_cluster_sample_is_a_valid_cluster_with_coarse_points():
+    from sylo_spec.models import Cluster
+
+    raw = json.loads((SPEC_DIR / "fixtures" / "cluster-sample.json").read_text(encoding="utf-8"))
+    cluster = Cluster.model_validate(raw)
+    assert len(cluster.accounts) == 6 and len(cluster.agents) == 3 and len(raw["wave"]) == 3
+    assert all(abs(point.lat - cluster.centroid.lat) < 0.5 and abs(point.lng - cluster.centroid.lng) < 0.5 for point in cluster.points)
+    assert all(round(point.lat, 2) == point.lat and round(point.lng, 2) == point.lng for point in cluster.points)

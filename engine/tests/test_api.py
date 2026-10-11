@@ -192,3 +192,35 @@ def test_with_auto_the_whole_scenario_runs_even_when_human_steps_are_manual(manu
     assert post(manual_url, "/v1/scenarios/diverted_simswap/run", body).status_code == 200
     events = read_stream_until(manual_url, "payment.stopped")
     assert [e["data"]["channel"] for e in events if e["type"] == "verification.requested"] == ["ANALYST"]
+
+
+def test_v2_endpoints_wave_breaker_rails_guardian_and_metrics(manual_url):
+    post(manual_url, "/v1/reset")
+    wave = post(manual_url, "/v1/sim/mule-wave", {"speed": 100})
+    assert wave.status_code == 200 and wave.json()["payments"] == ["PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"]
+    proposal = read_stream_until(manual_url, "cluster.detected")[-1]["data"]["proposedBreaker"]
+    assert post(manual_url, "/v1/breakers/CB-nope/confirm").status_code == 404
+    confirmed = post(manual_url, f"/v1/breakers/{proposal['breakerId']}/confirm")
+    assert confirmed.status_code == 200 and confirmed.json()["breakerId"] == "CB-CL-AFLAO-01"
+    assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/confirm").status_code == 409
+    assert read_stream_until(manual_url, "breaker.on")[-1]["data"]["confirmedBy"] == "Julien (fraud analyst)"
+    assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/lift").json() == {"ok": True, "breakerId": "CB-CL-AFLAO-01"}
+    assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/lift").status_code == 409
+
+    assert post(manual_url, "/v1/sim/rails/R3/down", {"reason": "maintenance"}).json() == {"ok": True, "routeId": "R3", "available": False}
+    assert post(manual_url, "/v1/sim/rails/R9/down").status_code == 404
+    assert post(manual_url, "/v1/sim/rails/R3/sideways").status_code == 422
+    assert post(manual_url, "/v1/sim/rails/R3/up").json()["available"] is True
+    post(manual_url, "/v1/reset")
+    assert post(manual_url, "/v1/scenarios/outage/run", {"speed": 100, "auto": True}).status_code == 200
+    events = read_stream_until(manual_url, "rail.up")
+    assert [e["data"]["routeId"] for e in events if e["type"] == "route.selected"] == ["R1"]
+
+    incident = post(manual_url, "/v1/guardian/incidents", {"rule": "RELEASE_WITHOUT_INTENT", "action": "PAUSE_CORRIDOR", "txHash": "0x" + "cd" * 32})
+    assert incident.status_code == 200 and incident.json()["incidentId"].startswith("INC-")
+    assert post(manual_url, "/v1/guardian/incidents", {"rule": "X", "txHash": "not-a-hash"}).status_code == 422
+    assert read_stream_until(manual_url, "guardian.incident")[-1]["data"]["dora"]["draft"] is True
+
+    metrics = httpx.get(f"{manual_url}/v1/metrics").json()
+    assert metrics["source"] in ("spec/metrics.sample.json", "ml/reports/metrics.json")
+    assert metrics["integrity"]["diversionRate"] == 0.0 and metrics["metrics"]["diversionRate"] == 0.0

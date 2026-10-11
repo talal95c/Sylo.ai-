@@ -210,6 +210,12 @@ class RailAdapter:
         cutoff = self._clock() - within_seconds
         return sum(1 for at, reason in self._refusals if at >= cutoff and reason in INTEGRITY_REASONS)
 
+    def restore(self) -> None:
+        """The rail is back and the adapter is trusted again (after an outage, or after the keys were rotated)."""
+        self.down_reason = None
+        self.killed_reason = None
+        self._refusals.clear()
+
 
 class Rails:
     """The adapters of one corridor pack."""
@@ -219,6 +225,14 @@ class Rails:
 
     def adapter(self, route_id: str) -> RailAdapter:
         return self._adapters[route_id]
+
+    def get(self, route_id: str) -> RailAdapter | None:
+        return self._adapters.get(route_id)
+
+    def reset(self) -> None:
+        """A new demo session: every rail is up and every adapter trusted. Executed legs stay executed."""
+        for adapter in self:
+            adapter.restore()
 
     def __iter__(self):
         return iter(self._adapters.values())

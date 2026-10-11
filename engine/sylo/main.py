@@ -15,6 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from .approvals import ApprovalError
 from .config import Settings
+from .metrics import load_metrics
 from .orchestrator import (
     ATTACKS,
     SCENARIOS,
@@ -25,7 +26,9 @@ from .orchestrator import (
     Orchestrator,
     ScenarioBusy,
     UnknownAttack,
+    UnknownBreaker,
     UnknownPayment,
+    UnknownRoute,
     UnknownScenario,
     build_orchestrator,
 )
@@ -53,6 +56,34 @@ class ApproveBody(BaseModel):
 
 class CaseActionBody(BaseModel):
     action: Literal["CONFIRM_REVOCATION", "RELEASE", "FREEZE"]
+
+
+class WaveBody(BaseModel):
+    speed: float | None = Field(default=None, gt=0, le=100)
+    auto: bool = False
+
+
+class RailBody(BaseModel):
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class IncidentBody(BaseModel):
+    """What the guardian (Lane C) reports. Unknown fields are kept out; DORA fields are optional overrides."""
+
+    rule: str = Field(min_length=1, max_length=120)
+    action: str = Field(default="NONE", max_length=60)
+    txHash: str | None = Field(default=None, pattern=r"^0x[0-9a-fA-F]{64}$")
+    explorerUrl: str | None = Field(default=None, max_length=300)
+    incidentId: str | None = Field(default=None, max_length=60)
+    paymentId: str | None = Field(default=None, max_length=60)
+    simulated: bool | None = None
+    clientsAffected: int | None = Field(default=None, ge=0)
+    amountEur: float | None = Field(default=None, ge=0)
+    durationMinutes: float | None = Field(default=None, ge=0)
+    geographicSpread: list[str] | None = None
+    criticality: str | None = Field(default=None, max_length=120)
+    thirdParties: list[str] | None = None
+    major: bool | None = None
 
 
 def _names(values: object) -> str:
@@ -172,6 +203,42 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
             raise HTTPException(409, str(err)) from None
         except ChainUnavailable as err:
             raise HTTPException(503, f"the chain did not answer during {err.step}") from None
+
+    @app.post("/v1/sim/mule-wave")
+    async def mule_wave(request: Request, body: WaveBody | None = None) -> dict[str, Any]:
+        body = body or WaveBody()
+        try:
+            return orch(request).start_wave(speed=body.speed or settings.demo_speed, auto=body.auto)
+        except ScenarioBusy:
+            raise HTTPException(409, "a scenario is running; wait for it to finish or POST /v1/reset") from None
+
+    @app.post("/v1/sim/rails/{route_id}/{state}")
+    async def rail_state(route_id: str, state: Literal["down", "up"], request: Request, body: RailBody | None = None) -> dict[str, Any]:
+        try:
+            if state == "down":
+                return orch(request).rail_down(route_id, body.reason if body else None)
+            return orch(request).rail_up(route_id)
+        except UnknownRoute:
+            raise HTTPException(404, f"unknown route {route_id!r}; expected R1, R2, R3 or R4") from None
+
+    @app.post("/v1/breakers/{breaker_id}/{decision}")
+    async def breaker(breaker_id: str, decision: Literal["confirm", "lift"], request: Request) -> dict[str, Any]:
+        try:
+            if decision == "confirm":
+                return orch(request).confirm_breaker(breaker_id)
+            return orch(request).lift_breaker(breaker_id)
+        except UnknownBreaker:
+            raise HTTPException(404, f"unknown circuit breaker {breaker_id!r}") from None
+        except ActionNotAllowed as err:
+            raise HTTPException(409, str(err)) from None
+
+    @app.post("/v1/guardian/incidents")
+    async def guardian_incident(body: IncidentBody, request: Request) -> dict[str, Any]:
+        return orch(request).guardian_incident(body.model_dump(exclude_none=True))
+
+    @app.get("/v1/metrics")
+    async def metrics() -> dict[str, Any]:
+        return load_metrics()
 
     @app.post("/v1/reset")
     async def reset(request: Request) -> dict[str, bool]:

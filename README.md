@@ -36,9 +36,17 @@ The engine now also runs the human steps and the integrity checks of v1 ([`spec/
 - **Case file** for the analyst (`case.ready`), **alerts** in the app or by SMS, never by e-mail (`alert.raised`).
 - **Decision log** chained by hash in `engine/data/log.jsonl` and `GET /v1/payments/{id}/proof`.
 
+And the network defence of v2:
+
+- **Mule wave and circuit breaker** (`POST /v1/sim/mule-wave`): three linked payments reveal a cluster near Aflao; once the analyst confirms, payments into that region are at least MEDIUM for 24 hours.
+- **Rail outage** (scenario `outage`, or `POST /v1/sim/rails/R3/down`): the payment takes the best remaining route; an outage never changes the tier.
+- **Kill switch**: two legs changed or replayed on one adapter cut it, and a payment held on that route is revoked and refunded.
+- **Guardian incidents** with a DORA incident draft, and `GET /v1/metrics`.
+
 ```bash
-make demo-check   # scenes 1, 2, 2b and the proof against the running engine (or a temporary one)
+make demo-check   # scenes 1, 2, 2b, 3, 5, the kill switch and the proof against the running engine (or a temporary one)
 make verify-log   # recompute the hash chain of the decision log; an edited line makes it fail
+make integrity    # 300 changed or replayed payments through the adapters: 0 must get through
 ```
 
 ## Tests

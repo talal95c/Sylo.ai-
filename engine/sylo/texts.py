@@ -208,6 +208,32 @@ LEG_REJECTED = {
 LEG_REJECTED_HEADLINE = "Payment stopped: a rail refused a leg"
 LEG_REJECTED_DETAIL = "{rail} refused hop {hop} ({reason}). Nothing was sent on this leg."
 
+# --- Network defence and incidents (v2) -------------------------------------------------------
+
+BREAKER_PROPOSED = (
+    "Proposed circuit breaker: for {hours} h, payments to {region} are at least MEDIUM and thresholds drop by 20 points."
+)
+BREAKER_ON = (
+    "Circuit breaker on {region}: payments there are at least MEDIUM and thresholds are {points} points lower for {hours} h."
+)
+REASON_BREAKER = (
+    "A circuit breaker is active on {region} after a wave of linked payments: at least MEDIUM, thresholds {points} points lower."
+)
+REASON_DEGRADED = "A dependency is down ({what}): a payment to an account that is not on file is at least MEDIUM."
+RAIL_DOWN_REASON = "Off-ramp unavailable (simulated outage)"
+WAVE_PAYMENT = "Seen on the network: {payer} pays EUR {amount} to a new account held by {holder}."
+KILL_SWITCH_REASON = "{refusals} legs changed or replayed on this adapter within {minutes:.0f} minutes"
+KILL_SWITCH_BY = "Kill switch (automatic)"
+STOPPED_DETAIL_KILL = (
+    "The adapter of this route was cut by the kill switch. The payment was revoked on-chain and refunded from escrow."
+)
+STOPPED_DETAIL_KILL_BANK = (
+    "The adapter of this route was cut by the kill switch. The payment was revoked and the money never left {bank}."
+)
+ALERT_STOPPED_KILL = "Payment stopped for safety: the route it was using was cut. Funds returned."
+GUARDIAN_HEADLINE = "On-chain incident: {rule}"
+DORA_CRITICALITY = "Payment execution (critical function)"
+
 # --- Case file built from the rules (used when no case writer is available) -----------------
 
 CASE_OPENING = "{payment}: EUR {amount} to {payee} is rated {tier} (score {score}/100)"

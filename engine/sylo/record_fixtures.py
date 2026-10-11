@@ -5,7 +5,8 @@
 
 Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, default settings and dev keys (the
 environment is ignored so the files do not depend on the machine). The scenes run with ``auto``;
-``samples-v1`` is the diverted scenario with every human step done by hand.
+``samples-v1`` is the diverted scenario with every human step done by hand, and the three
+``samples-scene*`` files are the v2 scenes (mule wave and breaker, guardian incident, rail outage).
 """
 
 from __future__ import annotations
@@ -37,12 +38,26 @@ NAMES = (
     "scene2b-swap-beneficiary",
     "scene2b-replay",
     "samples-v1",
+    "samples-scene3-mule-wave",
+    "samples-scene4-guardian",
+    "samples-scene5-outage",
 )
 
 
-def _orchestrator(**settings: Any) -> Orchestrator:
+class _Timeline:
+    """Pacer factory whose clocks follow one another, for files that hold more than one scenario."""
+
+    def __init__(self) -> None:
+        self._last: VirtualPacer | None = None
+
+    def __call__(self, speed: float) -> VirtualPacer:
+        self._last = VirtualPacer(self._last.now() if self._last else START, speed)
+        return self._last
+
+
+def _orchestrator(timeline: _Timeline | None = None, **settings: Any) -> Orchestrator:
     return build_orchestrator(
-        Settings(seed=SEED, **settings), env={}, pacer_factory=lambda speed: VirtualPacer(START, speed)
+        Settings(seed=SEED, **settings), env={}, pacer_factory=timeline or (lambda speed: VirtualPacer(START, speed))
     )
 
 
@@ -89,6 +104,37 @@ async def _manual_sample() -> list[dict[str, Any]]:
     return orchestrator.bus.events
 
 
+async def _mule_wave_sample() -> list[dict[str, Any]]:
+    """Scene 3: the wave, the breaker confirmed, then the diverted payment into the same region."""
+    orchestrator = _orchestrator(_Timeline())
+    await orchestrator.run_wave(auto=True)
+    await orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    return orchestrator.bus.events
+
+
+async def _guardian_sample() -> list[dict[str, Any]]:
+    """Scene 4: while the payment is held, the guardian freezes it and reports; the release then reverts."""
+    orchestrator = _orchestrator()
+    payment_id = orchestrator.start("diverted", auto=False)
+    run = await _until(orchestrator, payment_id, "awaiting_supplier")
+    await run.pacer.wait(2500)
+    tx = orchestrator.chain.freeze(run.chain_pid)  # the guardian acts on-chain with its own key
+    orchestrator.guardian_incident(
+        {
+            "rule": "CONFIRMED_WITHOUT_OOB_RECORD",
+            "action": "FREEZE_AND_PAUSE",
+            "txHash": tx.tx_hash,
+            "paymentId": payment_id,
+            "durationMinutes": 1,
+        }
+    )
+    await run.pacer.wait(2500)
+    orchestrator.supplier_response(payment_id, "confirm")
+    assert orchestrator._task is not None
+    await orchestrator._task
+    return orchestrator.bus.events
+
+
 async def record() -> dict[str, list[dict[str, Any]]]:
     legit = _orchestrator()
     await legit.run_to_end("legit", auto=True)
@@ -119,6 +165,11 @@ async def record() -> dict[str, list[dict[str, Any]]]:
             raise RuntimeError("the diverted + deny scenario is not deterministic")
         recorded[name] = attack_events
     recorded["samples-v1"] = await _manual_sample()
+    recorded["samples-scene3-mule-wave"] = await _mule_wave_sample()
+    recorded["samples-scene4-guardian"] = await _guardian_sample()
+    outage = _orchestrator()
+    await outage.run_to_end("outage", auto=True)
+    recorded["samples-scene5-outage"] = outage.bus.events
     return recorded
 
 
