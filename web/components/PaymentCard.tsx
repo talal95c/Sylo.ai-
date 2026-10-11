@@ -12,16 +12,21 @@ const STATUS: Record<PaymentStatus, { label: string; color: string; busy?: boole
   held: { label: "Held in escrow", color: "var(--medium)" },
   awaiting_supplier: { label: "Awaiting supplier", color: "var(--medium)", busy: true },
   frozen: { label: "Frozen by the guardian", color: "var(--danger)" },
-  stopped: { label: "Stopped and refunded", color: "var(--danger)" },
+  stopped: { label: "Stopped", color: "var(--danger)" },
   credited: { label: "Supplier credited", color: "var(--low)" },
 };
 
-export function StatusPill({ status }: { status: PaymentStatus }) {
+function statusMeta(status: PaymentStatus, refunded: boolean) {
   const meta = STATUS[status];
+  return status === "stopped" && refunded ? { ...meta, label: "Stopped and refunded" } : meta;
+}
+
+export function StatusPill({ status, refunded = false }: { status: PaymentStatus; refunded?: boolean }) {
+  const meta = statusMeta(status, refunded);
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
-        key={status}
+        key={meta.label}
         initial={{ opacity: 0, y: 3 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -3 }}
@@ -38,13 +43,13 @@ export function StatusPill({ status }: { status: PaymentStatus }) {
 
 export function PaymentCard({ state }: { state: ViewState }) {
   const payment = state.payment;
-  const status = STATUS[payment?.status ?? "idle"];
+  const status = statusMeta(payment?.status ?? "idle", state.refunded);
 
   return (
     <motion.section layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.1 }} className="card shrink-0 overflow-clip rounded-[18px]" aria-label="Payment">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[18px] bg-white px-4 pb-2 pt-4">
         <Tag index="01">Payment</Tag>
-        <StatusPill status={payment?.status ?? "idle"} />
+        <StatusPill status={payment?.status ?? "idle"} refunded={state.refunded} />
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
