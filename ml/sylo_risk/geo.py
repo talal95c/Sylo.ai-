@@ -18,6 +18,18 @@ GH_REGIONS = (
     "Savannah",
 )
 BORDER_REGIONS = frozenset({"Upper East", "Volta"})
+GH_REGION_ISO = {
+    "Ashanti": "GH-AH",
+    "Bono": "GH-BO",
+    "Central": "GH-CP",
+    "Eastern": "GH-EP",
+    "Greater Accra": "GH-AA",
+    "Northern": "GH-NP",
+    "Upper East": "GH-UE",
+    "Volta": "GH-TV",
+    "Western": "GH-WP",
+    "Savannah": "GH-SV",
+}
 _REGION_CODES = {f"{index:02d}": region for index, region in enumerate(GH_REGIONS)}
 
 GH_REGION_CENTROIDS = {
