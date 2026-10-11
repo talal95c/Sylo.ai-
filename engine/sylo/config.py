@@ -62,6 +62,18 @@ class Settings:
     dual_control_new_payee_eur: float = 5_000.0
     sim_swap_max_age_hours: int = 168
     journal_path: str | None = None
+    # Business rules of the playbook (PRD §12.3), configurable per institution
+    time_lock_from_eur: float = 5_000.0
+    time_lock_long_from_eur: float = 50_000.0
+    time_lock_hours: float = 4.0
+    time_lock_long_hours: float = 24.0
+    reroute_max_fees_eur: float = 500.0
+    reroute_max_days: float = 3.0
+    # P1: the chain leg of a payment that needs no hold as an eERC confidential transfer (off | simulated | eerc)
+    confidential_mode: str = "off"
+    eerc_url: str = "http://127.0.0.1:8010"
+    # v2: "auto" uses Lane B's cluster detector when it is installed, "sample" always uses the sample cluster
+    cluster_mode: str = "auto"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -89,4 +101,13 @@ class Settings:
             dual_control_new_payee_eur=float(_get(env, "DUAL_CONTROL_NEW_PAYEE_EUR", "5000")),
             sim_swap_max_age_hours=int(_get(env, "SIM_SWAP_MAX_AGE_HOURS", "168")),
             journal_path=_journal_path(env),
+            cluster_mode=_get(env, "CLUSTER_MODE", "auto").lower(),
+            confidential_mode=_get(env, "CONFIDENTIAL_MODE", "off").lower(),
+            eerc_url=_get(env, "EERC_URL", "http://127.0.0.1:8010"),
+            time_lock_from_eur=float(_get(env, "TIME_LOCK_FROM_EUR", "5000")),
+            time_lock_long_from_eur=float(_get(env, "TIME_LOCK_LONG_FROM_EUR", "50000")),
+            time_lock_hours=float(_get(env, "TIME_LOCK_HOURS", "4")),
+            time_lock_long_hours=float(_get(env, "TIME_LOCK_LONG_HOURS", "24")),
+            reroute_max_fees_eur=float(_get(env, "REROUTE_MAX_FEES_EUR", "500")),
+            reroute_max_days=float(_get(env, "REROUTE_MAX_DAYS", "3")),
         )

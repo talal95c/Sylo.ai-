@@ -200,7 +200,7 @@ export interface PaymentStoppedData {
 }
 
 export interface AttackAttemptedData {
-  attack: "release_revoked";
+  attack: "release_revoked" | "swap_beneficiary" | "replay";
   description: string;
   by: "attacker";
 }
@@ -210,6 +210,61 @@ export interface TransactionRevertedData {
   reason: string;
   txHash: string | null;
   explorerUrl: string | null;
+}
+
+export interface LegRejectedData {
+  hop: number;
+  rail: string;
+  reason:
+    | "INTENT_HASH_MISMATCH"
+    | "NONCE_USED"
+    | "REVOKED"
+    | "EXPIRED"
+    | "NOT_CONFIRMED"
+    | "RAIL_DOWN"
+    | "KILL_SWITCH";
+  from?: InstitutionId;
+  to?: InstitutionId;
+  text?: string;
+}
+
+export interface RailDownData {
+  routeId: string;
+  name?: string;
+  reason: string;
+}
+
+export interface RailUpData {
+  routeId: string;
+  name?: string;
+}
+
+export interface KillSwitchData {
+  adapter: string;
+  name?: string;
+  reason: string;
+  refusals: number;
+  windowSeconds?: number;
+  revoked?: string[];
+}
+
+export interface DoraIncidentDraft {
+  clientsAffected: number;
+  amountEur: number;
+  durationMinutes: number;
+  geographicSpread: string[];
+  criticality: string;
+  thirdParties: string[];
+  major?: boolean;
+  draft?: true;
+}
+
+export interface GuardianIncidentData extends ChainTransactionData {
+  incidentId: string;
+  rule: string;
+  action: string;
+  headline?: string;
+  dora: DoraIncidentDraft;
 }
 
 export interface EventEnvelope<T extends string, D> {
@@ -228,7 +283,7 @@ export type SyloEvent =
   | EventEnvelope<"system.mode", SystemModeData>
   | EventEnvelope<
       "scenario.started",
-      { scenario: "legit" | "diverted"; speed: number; auto: boolean }
+      { scenario: "legit" | "diverted" | "mule_wave" | "outage"; speed: number; auto: boolean }
     >
   | EventEnvelope<"payment.created", PaymentCreatedData>
   | EventEnvelope<"norms.checked", NormsCheckedData>
@@ -250,5 +305,10 @@ export type SyloEvent =
   | EventEnvelope<"payment.credited", PaymentCreditedData>
   | EventEnvelope<"payment.stopped", PaymentStoppedData>
   | EventEnvelope<"attack.attempted", AttackAttemptedData>
+  | EventEnvelope<"leg.rejected", LegRejectedData>
   | EventEnvelope<"tx.reverted", TransactionRevertedData>
+  | EventEnvelope<"rail.down", RailDownData>
+  | EventEnvelope<"rail.up", RailUpData>
+  | EventEnvelope<"killswitch.on", KillSwitchData>
+  | EventEnvelope<"guardian.incident", GuardianIncidentData>
   | EventEnvelope<string, Record<string, unknown>>;

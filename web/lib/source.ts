@@ -1,7 +1,8 @@
 import type { SyloEvent } from "./events";
 
 export type SourceKind = "live" | "replay";
-export type ScenarioName = "legit" | "diverted";
+export type ScenarioName = "legit" | "diverted" | "muleWave" | "guardian" | "outage";
+export type AttackName = "release_revoked" | "swap_beneficiary" | "replay";
 
 export interface SourceCallbacks {
   onEvent(event: SyloEvent): void;
@@ -21,7 +22,7 @@ export interface Source {
     paymentId: string,
     answer: "confirm" | "deny",
   ): Promise<void>;
-  attack(paymentId: string): Promise<void>;
+  attack(paymentId: string, name: AttackName): Promise<void>;
   reset(): Promise<void>;
 }
 
@@ -93,9 +94,18 @@ export function createLiveSource(engineUrl: string): Source {
       callbacks = null;
     },
     runScenario(name, opts) {
+      if (name === "muleWave") {
+        return post(engineUrl, "/v1/sim/mule-wave", {
+          speed: opts.speed,
+          auto: true,
+        });
+      }
+      if (name === "guardian") {
+        return Promise.reject(new Error("Guardian incidents are reported by the guardian service; use Replay for the recorded scene."));
+      }
       return post(engineUrl, `/v1/scenarios/${name}/run`, {
         speed: opts.speed,
-        auto: false,
+        auto: name === "outage",
       });
     },
     supplierResponse(paymentId, answer) {
@@ -105,8 +115,8 @@ export function createLiveSource(engineUrl: string): Source {
         { answer },
       );
     },
-    attack(paymentId) {
-      return post(engineUrl, "/v1/attacks/release_revoked", { paymentId });
+    attack(paymentId, name) {
+      return post(engineUrl, `/v1/attacks/${name}`, { paymentId });
     },
     reset() {
       return post(engineUrl, "/v1/reset");
@@ -120,6 +130,11 @@ const fixtureFiles = {
   deny: "scene2-deny.jsonl",
   confirm: "scene2-confirm.jsonl",
   attack: "scene2b-release-revoked.jsonl",
+  swap: "scene2b-swap-beneficiary.jsonl",
+  replayAttack: "scene2b-replay.jsonl",
+  muleWave: "samples-scene3-mule-wave.jsonl",
+  guardian: "samples-scene4-guardian.jsonl",
+  outage: "samples-scene5-outage.jsonl",
 } as const;
 
 async function loadFixture(file: string): Promise<SyloEvent[]> {
@@ -228,9 +243,14 @@ export function createReplaySource(): Source {
         800,
       );
     },
-    attack(paymentId) {
+    attack(paymentId, name) {
       if (!paymentId) return Promise.resolve();
-      return playFixture(fixtureFiles.attack, false);
+      const file = name === "swap_beneficiary"
+        ? fixtureFiles.swap
+        : name === "replay"
+          ? fixtureFiles.replayAttack
+          : fixtureFiles.attack;
+      return playFixture(file, false);
     },
     async reset() {
       cancelPending();

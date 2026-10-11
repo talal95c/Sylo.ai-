@@ -1,0 +1,11 @@
+# Country profile: Nigeria (payer side of the Lagos -> Accra corridor, PRD Appendix A).
+# The rule set is the PoC's reading of Appendix A; references are to verify before any real use.
+id: NG
+name: Nigeria
+currency: NGN
+supervisor: Central Bank of Nigeria (CBN)
+fiu: Nigerian Financial Intelligence Unit (NFIU)
+rules: [NG_VASP_REGISTERED, NG_BVN_WATCHLIST]
+notes:
+  - "Suspicious transactions are reported to the NFIU within 24 hours (to verify)."
+  - "Personal data falls under the Nigeria Data Protection Act 2023: only ids, amounts and times leave the institution."

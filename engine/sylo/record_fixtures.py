@@ -3,11 +3,12 @@
     python -m sylo.record_fixtures          # write the files
     python -m sylo.record_fixtures --check  # exit 1 if re-recording would change them
 
-Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, and explicit model/cached/mock modes.
-The environment is cleared to exclude keys, so recording uses local model and case caches only.
-The scenes run with ``auto``; ``samples-v1`` is the diverted scenario with every human step done by
-hand, and the three ``samples-scene*`` files are the v2 scenes (mule wave and breaker, guardian
-incident, rail outage).
+Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, and explicit model/cached/mock modes
+with Lane B's cluster detector. The environment is cleared to exclude keys, so recording uses local
+model and case caches only. The scenes run with ``auto``; ``samples-v1`` is the diverted scenario
+with every human step done by hand, and the three ``samples-scene*`` files are the v2 scenes (mule
+wave and breaker, stolen verifier key and guardian, rail outage). ``samples-hold-expiry`` and
+``samples-time-lock`` show the demo clock.
 """
 
 from __future__ import annotations
@@ -24,13 +25,15 @@ from unittest.mock import patch
 
 from . import REPO_DIR
 from .config import Settings
-from .orchestrator import ATTACKS, Orchestrator, PaymentRun, build_orchestrator
+from .orchestrator import Orchestrator, PaymentRun, build_orchestrator
 from .pacer import VirtualPacer
 
 FIXTURES_DIR = REPO_DIR / "spec" / "fixtures"
 START = datetime(2026, 10, 11, 9, 0, 0, tzinfo=timezone.utc)
 SEED = 42
 DIVERTED = "PAY-2026-0002"
+AFTER_REVOCATION = ("release_revoked", "swap_beneficiary", "replay")
+"""The attacks of Scene 2b, tried on a payment that was revoked. Scene 4 has its own file."""
 NAMES = (
     "scene1-legit",
     "scene2-diverted",
@@ -44,6 +47,9 @@ NAMES = (
     "samples-scene3-mule-wave",
     "samples-scene4-guardian",
     "samples-scene5-outage",
+    "samples-hold-expiry",
+    "samples-time-lock",
+    "samples-confidential",
 )
 FIXTURE_ENV = {
     "RISK_MODE": "model",
@@ -71,11 +77,16 @@ def _orchestrator(timeline: _Timeline | None = None, **settings: Any) -> Orchest
             risk_mode="model",
             llm_mode="cached",
             chain_mode="mock",
+            cluster_mode="auto",
             **settings,
         ),
         env=FIXTURE_ENV,
         pacer_factory=timeline or (lambda speed: VirtualPacer(START, speed)),
     )
+    if orchestrator.cluster_stub:
+        raise RuntimeError(
+            "fixture recording requires Lane B's cluster detector; install engine extras with `uv sync --all-extras`"
+        )
     if "risk" in orchestrator.degraded or type(orchestrator.risk).__name__ != "CombinedRisk":
         raise RuntimeError(
             "fixture recording requires the sylo-risk model extra; install engine extras with `uv sync --all-extras`"
@@ -140,7 +151,7 @@ async def _manual_sample() -> list[dict[str, Any]]:
     await orchestrator.case_action(payment_id, "CONFIRM_REVOCATION")
     assert orchestrator._task is not None
     await orchestrator._task
-    for attack in ATTACKS:
+    for attack in AFTER_REVOCATION:
         await run.pacer.wait(1500)
         await orchestrator.attack(attack, payment_id)
     return orchestrator.bus.events
@@ -155,24 +166,14 @@ async def _mule_wave_sample() -> list[dict[str, Any]]:
 
 
 async def _guardian_sample() -> list[dict[str, Any]]:
-    """Scene 4: while the payment is held, the guardian freezes it and reports; the release then reverts."""
+    """Scene 4: a stolen verifier key confirms the held payment; the guardian freezes it and pauses the
+    corridor, the thief's release reverts, the analyst revokes and the payer is refunded."""
     orchestrator = _orchestrator()
     payment_id = orchestrator.start("diverted", auto=False)
     run = await _until(orchestrator, payment_id, "awaiting_supplier")
     await _await_case_ready(run)
     await run.pacer.wait(2500)
-    tx = orchestrator.chain.freeze(run.chain_pid)  # the guardian acts on-chain with its own key
-    orchestrator.guardian_incident(
-        {
-            "rule": "CONFIRMED_WITHOUT_OOB_RECORD",
-            "action": "FREEZE_AND_PAUSE",
-            "txHash": tx.tx_hash,
-            "paymentId": payment_id,
-            "durationMinutes": 1,
-        }
-    )
-    await run.pacer.wait(2500)
-    orchestrator.supplier_response(payment_id, "confirm")
+    await orchestrator.attack("stolen_verifier_key", payment_id)
     assert orchestrator._task is not None
     await orchestrator._task
     return orchestrator.bus.events
@@ -217,6 +218,18 @@ async def _record() -> dict[str, list[dict[str, Any]]]:
     outage = _orchestrator()
     await outage.run_to_end("outage", auto=True)
     recorded["samples-scene5-outage"] = outage.bus.events
+    # Demo clock: nobody answers and the hold expires; then a confirmed first payment to a new account,
+    # held at the bank because the escrow route is down, waits for its 24-hour time-lock.
+    expiry = _orchestrator()
+    await expiry.run_to_end("diverted_expiry", auto=True)
+    recorded["samples-hold-expiry"] = expiry.bus.events
+    locked = _orchestrator()
+    await locked.run_to_end("diverted_timelock", auto=True, auto_answer="confirm")
+    recorded["samples-time-lock"] = locked.bus.events
+    # eERC (simulated here): the legitimate payment needs no hold, so its chain leg is confidential.
+    confidential = _orchestrator(confidential_mode="simulated")
+    await confidential.run_to_end("legit", auto=True)
+    recorded["samples-confidential"] = confidential.bus.events
     return recorded
 
 

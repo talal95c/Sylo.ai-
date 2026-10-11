@@ -39,7 +39,7 @@ DENIED = HELD + ["verification.recorded"] + REVOKED
 CONFIRMED = HELD + ["verification.recorded", "escrow.released", "intent.executed", "leg.settled", "leg.sent", "leg.settled", "payment.credited"]
 SIM_SWAPPED = HELD + REVOKED
 # Not part of the story line: asked more than once, told to people, or written by a (possibly slow) case writer.
-SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up"}
+SIDE_EVENTS = {"approval.required", "alert.raised", "case.ready", "system.mode", "session.reset", "rail.down", "rail.up", "clock.advanced", "confidential.transfer"}
 
 
 class CheckFailed(Exception):
@@ -124,10 +124,15 @@ def no_email(events: list[dict[str, Any]]) -> None:
             expect(event["data"]["channel"] in ("IN_APP", "SMS", "NETWORK"), f"an alert used {event['data']['channel']}")
 
 
-def check_legit(engine: Engine, speed: float) -> str:
+def check_legit(engine: Engine, speed: float, mode: dict[str, Any]) -> str:
     events = run_scenario(engine, "legit", speed, "payment.credited")
     expect_story(events, LEGIT)
     expect(first(events, "risk.scored")["tier"] == "LOW", "the legitimate payment is not LOW")
+    confidential = [e["data"] for e in events if e["type"] == "confidential.transfer"]
+    if mode.get("confidential", "off") != "off" and "confidential" not in mode["degraded"]:
+        expect(len(confidential) == 1 and confidential[0]["auditorMatches"], "the chain leg was not a matching confidential transfer")
+    else:
+        expect(not confidential, "a confidential transfer was made although the mode is off")
     routes = {r["routeId"]: r for r in first(events, "norms.checked")["routes"]}
     expect(routes["R4"]["excludedBy"] == "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK", "R4 is not excluded by Ghana's rule")
     selected = first(events, "route.selected")
@@ -228,7 +233,10 @@ def check_wave(engine: Engine, speed: float) -> str:
     expect(scored["tier"] != "LOW", "a payment into a region under a breaker is LOW")
     expect(not any(e["type"] == "payment.credited" for e in events), "the payment into the region was paid")
     outcome = "held then revoked" if any(e["type"] == "payment.held" for e in events) else "blocked, no route"
-    return f"cluster {detected['clusterId']} ({len(detected['linkedPayments'])} payments), breaker on, next payment {scored['tier']} with R-CB-01 ({outcome})"
+    return (
+        f"cluster {detected['clusterId']} found by {detected.get('detector', 'unknown')} ({len(detected['linkedPayments'])} payments), "
+        f"breaker on, next payment {scored['tier']} with R-CB-01 ({outcome})"
+    )
 
 
 def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:
@@ -243,6 +251,65 @@ def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:
     expect(selected["routeId"] != cut["adapter"], f"a payment still went through {cut['adapter']} after the kill switch")
     engine.post(f"/v1/sim/rails/{cut['adapter']}/up")
     return f"adapter {cut['adapter']} cut after {cut['refusals']} refusals, next payment through {selected['routeId']}"
+
+
+def wait_status(engine: Engine, payment_id: str, status: str) -> dict[str, Any]:
+    deadline = time.monotonic() + engine.timeout
+    info: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        info = engine.get(f"/v1/payments/{payment_id}")
+        if info["status"] == status:
+            return info
+        time.sleep(0.05)
+    raise CheckFailed(f"{payment_id} is {info.get('status')}, expected {status}")
+
+
+def check_stolen_key(engine: Engine, speed: float, payment_id: str, mode: dict[str, Any]) -> str:
+    """Scene 4. On a real chain the thief and the guardian are Lane C's script and process, not the engine."""
+    if mode["chain"] == "fuji":
+        return "not run on Fuji: use `uv run python -m sylo_chain.stolen_verifier_key` with the guardian watching"
+    manual = mode.get("humanSteps") == "manual"
+    engine.post("/v1/reset")
+    engine.post("/v1/scenarios/diverted/run", {"speed": speed, "auto": False})
+    if manual:
+        wait_status(engine, payment_id, "awaiting_approval")
+        for approver in ("claire", "marc"):
+            engine.post(f"/v1/payments/{payment_id}/approve", {"approver": approver})
+    wait_status(engine, payment_id, "awaiting_supplier")
+    attack = engine.post("/v1/attacks/stolen_verifier_key", {"paymentId": payment_id})
+    expect(attack["reverted"] and attack["reason"] == "PaymentNotReleasable", f"the thief's release was not refused: {attack}")
+    if manual:
+        wait_status(engine, payment_id, "awaiting_analyst")
+        engine.post(f"/v1/cases/{payment_id}/actions", {"action": "CONFIRM_REVOCATION"})
+    events = engine.events_until("payment.stopped")
+    incident = first(events, "guardian.incident")
+    expect("FREEZE" in incident["action"] and incident["dora"]["draft"] is True, f"guardian incident: {incident}")
+    expect(first(events, "intent.revoked")["reasonCode"] == "ANALYST_DECISION", "the frozen payment was not revoked by the analyst")
+    kinds = [e["type"] for e in events]
+    expect("escrow.refunded" in kinds and "escrow.released" not in kinds, "the frozen hold was not refunded to the payer")
+    expect("verification.recorded" not in kinds, "the engine recorded an answer the supplier never gave")
+    info = engine.get(f"/v1/payments/{payment_id}")
+    expect(info["chainStatus"] == "REVOKED" and info["hold"] is None, f"money is still held: {info}")
+    down = first(events, "rail.down")
+    engine.post(f"/v1/sim/rails/{down['routeId']}/up")
+    return f"forged confirmation, {incident['action']}, release → {attack['reason']}, revoked and refunded, {down['routeId']} closed then reopened"
+
+
+def check_clock(engine: Engine, speed: float) -> str:
+    """Hold expiry with automatic refund, then the time-lock of a confirmed first payment held at the bank."""
+    events = run_scenario(engine, "diverted_expiry", speed, "payment.stopped")
+    revoked = first(events, "intent.revoked")
+    expect(revoked["reasonCode"] == "EXPIRED", f"the expired hold was revoked as {revoked['reasonCode']}")
+    kinds = [e["type"] for e in events]
+    expect("escrow.refunded" in kinds and "escrow.released" not in kinds, "the expired hold was not refunded")
+    audiences = [e["data"]["audience"] for e in events if e["type"] == "alert.raised"]
+    expect("beneficiary_bank" not in audiences, "a freeze request was sent although nobody denied anything")
+    events = run_scenario(engine, "diverted_timelock", speed, "rail.up", "confirm")
+    lock = first(events, "timelock.on")
+    kinds = [e["type"] for e in events]
+    expect(first(events, "route.selected")["routeId"] == "R1", "the payment was not held at the bank")
+    expect(kinds.index("timelock.off") < kinds.index("payment.credited"), "the money left before the time-lock ended")
+    return f"hold expired after {first(events, 'clock.advanced')['hours']:g} h: revoked EXPIRED and refunded; time-lock of {lock['hours']:g} h kept before the credit"
 
 
 def check_metrics(engine: Engine) -> str:
@@ -306,12 +373,15 @@ def main(argv: list[str] | None = None) -> int:
             process, url = spawn_engine()
         engine = Engine(url, args.timeout)
         mode = engine.get("/health")["mode"]
-        flags = f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']}"
+        flags = (
+            f"risk={mode['risk']} chain={mode['chain']} llm={mode['llm']} clusters={mode.get('clusters', '?')} "
+            f"confidential={mode.get('confidential', 'off')}"
+        )
         print(f"engine {url}: {flags} degraded={mode['degraded'] or 'nothing'}")
 
         diverted = "PAY-2026-0002"
         steps = [
-            ("Scene 1  legitimate payment", lambda: check_legit(engine, args.speed)),
+            ("Scene 1  legitimate payment", lambda: check_legit(engine, args.speed, mode)),
             ("Scene 2  diverted, supplier denies", lambda: check_denied(engine, args.speed)),
             ("Scene 2b three attacks", lambda: check_attacks(engine, diverted)),
             ("Proof    typed data, signatures, log", lambda: check_proof(engine, diverted)),
@@ -319,7 +389,9 @@ def main(argv: list[str] | None = None) -> int:
             ("Scene 2  SIM swap on the known contact", lambda: check_sim_swap(engine, args.speed)),
             ("Scene 5  rail outage and reroute", lambda: check_outage(engine, args.speed)),
             ("Scene 3  mule wave and circuit breaker", lambda: check_wave(engine, args.speed)),
+            ("Scene 4  stolen verifier key and guardian", lambda: check_stolen_key(engine, args.speed, diverted, mode)),
             ("Kill switch on a rail adapter", lambda: check_kill_switch(engine, args.speed, diverted)),
+            ("Demo clock: hold expiry and time-lock", lambda: check_clock(engine, args.speed)),
             ("Metrics and integrity report", lambda: check_metrics(engine)),
         ]
         failures = 0

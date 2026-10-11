@@ -17,12 +17,12 @@ The order never changes: **norms → risk → cost → commit → action**. Frau
 
 | Event | Automatic | Human | In the engine today |
 |---|---|---|---|
-| Wave of linked payments to one cluster | A regional circuit breaker is proposed: payments into the region at least MEDIUM, thresholds 20 points lower, 24 h (rule R-CB-01) | Analyst confirms; only a person lifts it early | Built. The cluster comes from a sample until Lane B's detector is installed |
+| Wave of linked payments to one cluster | A regional circuit breaker is proposed: payments into the region at least MEDIUM, thresholds 20 points lower, 24 h (rule R-CB-01) | Analyst confirms; only a person lifts it early | Built. The cluster is found by Lane B's detector (three payers on one young account); a sample cluster is the fallback when the package is missing |
 | The known contact's SIM changed in the last 7 days | No text is sent (rule R-OOB-01) | Analyst decides | Built (scenario `diverted_simswap`) |
 | A leg was changed or replayed | The rail adapter refuses it before sending; the chain reverts a modified or replayed intent | Security lead revokes the caller | Built: three attacks, 300 integrity cases, none gets through |
 | Two such refusals on one adapter in 10 minutes | Kill switch: the adapter is cut; a payment held on that route is revoked and refunded; later payments take another route | Security lead rotates the keys, then restores the adapter | Built. Restoring is one call (`/v1/sim/rails/{id}/up`) |
-| Rail outage | The rail is not eligible; the payment takes the best remaining legal route. The tier does not change | Operations | Built (scenario `outage`) |
-| On-chain incident reported by the guardian | Incident shown with a DORA incident draft; the engine stops trying to release a frozen payment | Security lead confirms; compliance files if major | Intake built. The guardian itself is Lane C's |
+| Rail outage | The rail is not eligible; the payment takes the best remaining legal route within the payer's limits (fees up to EUR 500, at most 3 days). Beyond them nothing is sent and the payer is told in the app. The tier does not change | Operations; the payer decides if no replacement is within the limits | Built (scenario `outage`) |
+| On-chain incident reported by the guardian | Incident shown with a DORA incident draft. A frozen hold goes to the analyst (the supplier is no longer waited for) and ends revoked and refunded; a paused corridor closes its escrow route and payments are rerouted | Analyst confirms the revocation; security lead rotates the key and reopens the corridor; compliance files if major | Built (Scene 4). The guardian itself is Lane C's |
 | Model, chain or case writer down | Banner; rules (stricter) instead of the model, mock chain at start-up, case file from the rules; a payment to an account not on file is at least MEDIUM (rule R-DG-01); a chain failure during a payment releases nothing | Operations | Built |
 
 ## Rules of thumb
@@ -32,7 +32,9 @@ The order never changes: **norms → risk → cost → commit → action**. Frau
 | Dual control | From EUR 20,000, or from EUR 5,000 to a new account. The author approves first and cannot be the second approver |
 | Approval with untrusted bank details | Conditional: funds are released only after the supplier confirms on a known contact |
 | Out-of-band check | Outbound, on a contact already on file, after a SIM-swap check |
-| Hold | 24 hours, then the release is impossible and the refund is open to anyone |
+| Hold | 24 hours. If nobody decided, the engine revokes the payment (reason `EXPIRED`) and refunds the payer by itself; the other bank is not asked to freeze anything, because silence is not proof. After expiry a release is impossible on-chain |
+| Time-lock on a first payment to a new account | Under EUR 5,000: none. EUR 5,000 to 50,000: 4 h. Above EUR 50,000: 24 h. Applies to the bank hold; where an escrow exists it stands in for the lock. The analyst can still stop the payment during the lock |
+| Demo clock | `POST /v1/sim/clock` jumps the session's time, so an expiry or a time-lock is shown in seconds (`clock.advanced`) |
 | Payer alerts | In the app or by SMS. Never by e-mail: the event schema has no e-mail channel |
 | Who can release money | Nobody but the escrow contract, and only for a confirmed payment. No model, no case file, no administrator function |
 

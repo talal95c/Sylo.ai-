@@ -14,18 +14,26 @@ class Pacer(Protocol):
 
     async def wait(self, ms: float) -> None: ...
 
+    def advance(self, delta: timedelta) -> None:
+        """Jump the clock forward (demo clock): nothing is waited for."""
+        ...
+
 
 class RealPacer:
     """Wall clock; sleeps for ``ms / speed``."""
 
     def __init__(self, speed: float = 1.0) -> None:
         self.speed = speed
+        self._offset = timedelta(0)
 
     def now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(timezone.utc) + self._offset
 
     async def wait(self, ms: float) -> None:
         await asyncio.sleep(ms / self.speed / 1000)
+
+    def advance(self, delta: timedelta) -> None:
+        self._offset += delta
 
 
 class VirtualPacer:
@@ -41,6 +49,9 @@ class VirtualPacer:
     async def wait(self, ms: float) -> None:
         self._now += timedelta(milliseconds=ms / self.speed)
         await asyncio.sleep(0)
+
+    def advance(self, delta: timedelta) -> None:
+        self._now += delta
 
 
 def iso_ms(moment: datetime) -> str:
