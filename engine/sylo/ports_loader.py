@@ -59,15 +59,18 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
 
 
 def load_case_writer(settings: Settings) -> tuple[Any | None, bool]:
-    """Lane B's case writer for ``LLM_MODE=cached|live``. Returns (writer or None, degraded).
+    """Lane B's ``CasePort`` for ``LLM_MODE=cached|live``. Returns (writer or None, degraded).
 
-    The writer (``sylo_risk.case.CaseWriter``, the Mistral investigator) is optional: without it the
+    The writer (``sylo_risk.CaseWriter``, the Mistral investigator) is optional: without it the
     engine builds the case file from the rules and reports ``llm`` as degraded.
     """
     if settings.llm_mode == "off":
         return None, False
     try:
-        from sylo_risk.case import CaseWriter
+        try:
+            from sylo_risk import CaseWriter
+        except ImportError:
+            from sylo_risk.case import CaseWriter
 
         return CaseWriter(), False
     except Exception as err:

@@ -140,6 +140,9 @@ NEXT_STEP = (
     "We are asking Savanna Shea on the number already on file for Kwame Asante, after checking that it was "
     "not SIM-swapped."
 )
+HIGH_IDENTITY_ONLY_HOLD = (
+    "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
+)
 ANSWER_DENY = 'Kwame Asante: "We have not changed our bank details. Do not pay this account."'
 ANSWER_CONFIRM = 'Kwame Asante: "Yes, this is our new account."'
 REVOKED_BY = "Analyst (auto-confirmed)"
@@ -207,8 +210,20 @@ LEG_REJECTED_DETAIL = "{rail} refused hop {hop} ({reason}). Nothing was sent on 
 
 # --- Case file built from the rules (used when no case writer is available) -----------------
 
-CASE_OPENING = "{payment}: EUR {amount} to {payee} is rated {tier} (score {score}/100) [{ref}]."
-CASE_CLOSING = "The money is stopped before it reaches the beneficiary, until the supplier answers on a known contact [{ref}]."
+CASE_OPENING = "{payment}: EUR {amount} to {payee} is rated {tier} (score {score}/100)"
+CASE_CLOSING_HELD = "The money is stopped before it reaches the beneficiary, until the supplier answers on a known contact"
+CASE_CLOSING_ANALYST = "The supplier's known number cannot be trusted, so the decision is the analyst's"
+CASE_CLOSING_BLOCKED = "No route is allowed at this risk level: nothing was sent"
+CASE_EXPLANATION_NEUTRAL = "No risk rule fired for this payment."
+CASE_TIMELINE = {
+    "payment.created": "Payment order received.",
+    "risk.scored": "Risk scored {tier} ({score}/100).",
+    "route.selected": "Route {routeId} selected.",
+    "intent.committed": "Signed intent committed to the registry.",
+    "escrow.deposited": "Funds locked in escrow.",
+    "payment.held": "Payment held.",
+    "payment.stopped": "Payment stopped.",
+}
 CASE_EXPLANATION = (
     "We paused this payment because the bank details changed and do not match your supplier's verified records. "
     "Your money is protected while we check with the supplier on a number we already know. "

@@ -74,12 +74,16 @@ def choose_route(
     tier: Tier,
     amount: float,
     model: RouteModel,
+    oob_resolvable: bool = False,
     unavailable: Mapping[str, str] | None = None,
 ) -> RouteDecision:
-    """``unavailable`` maps a route id to why its rail cannot be used now (``RAIL_DOWN``, ``KILL_SWITCH``).
+    """``oob_resolvable``: the doubt is about the beneficiary's identity only, so a HIGH payment may still
+    use a route that can hold the money (it is then handled like MEDIUM, never paid directly).
 
+    ``unavailable`` maps a route id to why its rail cannot be used now (``RAIL_DOWN``, ``KILL_SWITCH``).
     Rerouting answers an operational problem only: a rail that is down never changes the tier.
     """
+    action_tier = Tier.MEDIUM if tier == Tier.HIGH and oob_resolvable else tier
     unavailable = unavailable or {}
     scores: list[dict[str, Any]] = []
     allowed: list[tuple[float, str, RouteEval]] = []
@@ -97,7 +101,7 @@ def choose_route(
             scores.append({"routeId": route.id, "s": s, "excludedBy": unavailable[route.id]})
             continue
         legal.append((s, route.id, evaluation))
-        exclusion = tier_exclusion(tier, route)
+        exclusion = tier_exclusion(action_tier, route)
         scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion})
         if exclusion is None:
             allowed.append((s, route.id, evaluation))
@@ -105,12 +109,12 @@ def choose_route(
     swift = cost_by_id.get("R1")
     if not allowed:
         return RouteDecision(
-            tier=tier,
+            tier=action_tier,
             route_eval=None,
             scores=scores,
             reason=(
-                texts.NO_ROUTE_DETAIL.format(tier=tier.name)
-                if tier >= Tier.HIGH or not unavailable
+                texts.NO_ROUTE_DETAIL.format(tier=action_tier.name)
+                if action_tier >= Tier.HIGH or not unavailable
                 else texts.NO_ROUTE_RAILS.format(routes=", ".join(sorted(unavailable)))
             ),
             settlement=None,
@@ -123,7 +127,7 @@ def choose_route(
     best_s, best_id, best = min(allowed, key=lambda c: (c[0], c[1]))
     cheapest_legal = min(legal, key=lambda c: (c[0], c[1]))[0]
     price_of_safety = round(best_s - cheapest_legal, 2)
-    if tier == Tier.LOW:
+    if action_tier == Tier.LOW:
         excluded = [(e.route.id, e.excluded_by or "") for e in norms.routes if e.status != PASS]
         reason = texts.route_reason_low(best_id, best_s, swift, excluded)
         settlement = "DIRECT"
@@ -133,7 +137,7 @@ def choose_route(
         settlement = best.route.settlement
     reason += texts.rails_unavailable(unavailable)
     return RouteDecision(
-        tier=tier,
+        tier=action_tier,
         route_eval=best,
         scores=scores,
         reason=reason,

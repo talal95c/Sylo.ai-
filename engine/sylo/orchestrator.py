@@ -28,6 +28,7 @@ from sylo_spec.canonical import corridor_id_of, hash_record, keccak_text, offcha
 from sylo_spec.devkeys import dev_address
 from sylo_spec.eip712 import Message, digest, primary_type, typed_data
 from sylo_spec.models import (
+    CaseFile,
     PaymentIntent,
     PaymentOrder,
     Revocation,
@@ -47,7 +48,7 @@ from sylo_spec.scenarios import ACCOUNTS, ORDERS, PAYEES, PAYER, build_risk_cont
 from . import texts
 from .approvals import ApprovalSession, required_approvers
 from .bus import EventBus
-from .case import CaseFile, CaseService, rules_case_file
+from .case import CaseService, rules_case_file
 from .config import Settings
 from .journal import Journal
 from .norms import NormsEngine, NormsResult
@@ -84,6 +85,12 @@ def typed_data_json(message: Message, domain: Any) -> dict[str, Any]:
         else:
             values[name] = value
     return {**data, "message": values}
+
+
+def action_tier(risk: RiskResult) -> Tier:
+    """The tier the response follows. HIGH risk that an out-of-band confirmation can lift is handled like
+    MEDIUM (conditional settlement); the tier shown to people stays the model's."""
+    return Tier.MEDIUM if risk.tier == Tier.HIGH and risk.oob_resolvable else risk.tier
 
 
 @dataclass(frozen=True)
@@ -580,6 +587,7 @@ class Orchestrator:
                 "tier": risk.tier.name,
                 "score": risk.score,
                 "rulesFired": risk.rules_fired,
+                "oobResolvable": risk.oob_resolvable,
                 "model": risk.model,
             }
         )
@@ -592,7 +600,7 @@ class Orchestrator:
             offchain_hash=offchain_hash(run.salt, self._offchain_fields(order)),
             decision_hash=decision_hash,
             approval_hash=approval_hash,
-            tier=int(risk.tier),
+            tier=int(action_tier(risk)),
             valid_until=int(run.pacer.now().timestamp()) + 600,
             nonce=self.signer.next_nonce("router_signer"),
         )
@@ -706,24 +714,30 @@ class Orchestrator:
                 "rulesFired": risk.rules_fired,
                 "reasons": [r.to_json_dict() for r in risk.reasons],
                 "model": risk.model,
+                "oobResolvable": risk.oob_resolvable,
             },
         )
 
         await pacer.wait(900)
         decision = choose_route(
-            norms, risk.tier, order.amount.as_float, self.norms.pack.route_model, unavailable=self.rails.unavailable()
+            norms,
+            risk.tier,
+            order.amount.as_float,
+            self.norms.pack.route_model,
+            oob_resolvable=risk.oob_resolvable,
+            unavailable=self.rails.unavailable(),
         )
         run.decision = decision
         if decision.route_eval is None:
             run.status = "stopped"
             self._emit(run, "payment.stopped", {"headline": texts.NO_ROUTE_HEADLINE, "detail": decision.reason})
-            await self._open_case(run)
+            await self._open_case(run, "blocked")
             return
         run.hops = decision.route_eval.hops
         self._emit(run, "route.selected", decision.to_event_data())
 
         await pacer.wait(1000)
-        conditional = risk.tier == Tier.MEDIUM
+        conditional = action_tier(risk) == Tier.MEDIUM
         approval_hash = await self._approve(run, decision, conditional)
 
         await pacer.wait(900)
@@ -735,7 +749,7 @@ class Orchestrator:
         self._emit(
             run,
             "intent.committed",
-            {"intentHash": run.intent_hash, "tier": risk.tier.name, **self._tx_fields(tx)},
+            {"intentHash": run.intent_hash, "tier": Tier(intent.tier).name, **self._tx_fields(tx)},
             simulated=tx.simulated,
         )
         run.status = "in_transit"
@@ -840,31 +854,35 @@ class Orchestrator:
 
     # --- hold, out-of-band check, outcome ----------------------------------------------------
 
-    async def _open_case(self, run: PaymentRun) -> None:
-        """Ask for the analyst's case file. Without a case writer it is built from the rules, at once."""
+    async def _open_case(self, run: PaymentRun, situation: str) -> None:
+        """Ask for the analyst's case file. Without a case writer it is built from the rules, at once.
+
+        ``situation`` is where the payment stands: ``held`` (the supplier is asked), ``analyst`` (the
+        known contact cannot be trusted) or ``blocked`` (no route at this risk level).
+        """
         assert run.risk is not None
         events = [event for event in self.bus.events if event["paymentId"] == run.order.id]
         if self.case.writer is None:
             await run.pacer.wait(700)
-            self._case_ready(run, self.case.write(run.order, run.risk, events))
+            self._case_ready(run, self.case.write(run.order, run.risk, events, situation))
         else:
-            run.case_task = asyncio.create_task(self._write_case(run, events))
+            run.case_task = asyncio.create_task(self._write_case(run, events, situation))
 
-    async def _write_case(self, run: PaymentRun, events: list[dict[str, Any]]) -> None:
+    async def _write_case(self, run: PaymentRun, events: list[dict[str, Any]], situation: str) -> None:
         assert run.risk is not None
         try:
             case = await asyncio.wait_for(
-                asyncio.to_thread(self.case.write, run.order, run.risk, events), timeout=CASE_TIMEOUT_S
+                asyncio.to_thread(self.case.write, run.order, run.risk, events, situation), timeout=CASE_TIMEOUT_S
             )
         except Exception as err:
             log.warning("case file not ready in time (%s); using the one built from the rules", err)
             self._degrade("llm")
-            case = rules_case_file(run.order, run.risk, events)
+            case = rules_case_file(run.order, run.risk, events, situation)
         self._case_ready(run, case)
 
     def _case_ready(self, run: PaymentRun, case: CaseFile) -> None:
         run.case = case
-        self._emit(run, "case.ready", case.to_event_data())
+        self._emit(run, "case.ready", case.model_dump(by_alias=True, mode="json"))
 
     async def _await_analyst(self, run: PaymentRun) -> str:
         assert run.analyst is not None
@@ -924,6 +942,8 @@ class Orchestrator:
             hours = (pacer.now() - changed).total_seconds() / 3600 if changed else 0.0
             next_step = texts.NEXT_STEP_ANALYST.format(hours=hours)
             reasons.append(RiskReason(ref="O", text=next_step, rule_id="R-OOB-01"))
+        if risk.tier == Tier.HIGH and risk.oob_resolvable:
+            next_step = f"{next_step}\n{texts.HIGH_IDENTITY_ONLY_HOLD}"
 
         await pacer.wait(200)
         run.status = "held"
@@ -947,7 +967,7 @@ class Orchestrator:
             simulated=self.chain_simulated if mode == "escrow" else True,
         )
         self._alert(run, "payer", PAYER.approvers[0].name, "IN_APP", texts.ALERT_HELD)
-        await self._open_case(run)
+        await self._open_case(run, "analyst" if sim_swap_recent else "held")
 
         await pacer.wait(800)
         self._emit(

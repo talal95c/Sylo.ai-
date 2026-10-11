@@ -1,21 +1,29 @@
-"""Analyst case file: the engine calls the case writer and emits ``case.ready`` (roadmap A1.7, plan/README.md).
+"""Analyst case file: the engine calls ``CasePort`` and emits ``case.ready`` (plan/README.md, roadmap A1.7).
 
-The writer belongs to Lane B (``sylo_risk.case.CaseWriter``, the Mistral investigator): the engine
-only calls ``write(payment_id, events)`` and checks what comes back. Without a writer, or when its
+The writer belongs to Lane B (``sylo_risk.CaseWriter``, the Mistral investigator): the engine only
+calls ``write(payment_id, events)`` and checks what comes back. Without a writer, or when its
 answer cannot be used, the file is built here from the rules that fired, and every sentence cites
-its rule or event. A case file informs the analyst; it never changes a decision.
+its rule or event. A case file informs the analyst; no decision ever reads it.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 from sylo_spec import SPEC_DIR
-from sylo_spec.models import PaymentOrder, RiskResult
+from sylo_spec.models import (
+    CaseFile,
+    CaseSentence,
+    Citation,
+    Event,
+    PaymentOrder,
+    RiskResult,
+    Tier,
+    TimelineEntry,
+)
 from sylo_spec.scenarios import ACCOUNTS, PAYEES, PAYER
 
 from . import texts
@@ -24,23 +32,14 @@ log = logging.getLogger("sylo.case")
 
 MAX_WORDS = 120
 LLM_MODES = ("off", "cached", "live")
-
-
-@dataclass
-class CaseFile:
-    summary: str
-    citations: list[dict[str, str]]
-    llm: str = "off"
-    explanation: str | None = None
-    report_draft: str | None = None
-
-    def to_event_data(self) -> dict[str, Any]:
-        data: dict[str, Any] = {"summary": self.summary, "citations": self.citations, "llm": self.llm}
-        if self.explanation:
-            data["explanation"] = self.explanation
-        if self.report_draft:
-            data["reportDraft"] = self.report_draft
-        return data
+RULES_PROMPT_VERSION = "rules-v1"
+RULES_MODEL = "rules"
+IMPERSONATION_RULES = frozenset({"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01"})
+CLOSINGS = {
+    "held": (texts.CASE_CLOSING_HELD, "RELEASE_AFTER_CONFIRMATION"),
+    "analyst": (texts.CASE_CLOSING_ANALYST, "CONFIRM_REVOCATION"),
+    "blocked": (texts.CASE_CLOSING_BLOCKED, "ESCALATE_AML"),
+}
 
 
 @lru_cache(maxsize=1)
@@ -54,98 +53,91 @@ def institution_name(institution_id: str) -> str:
     return _institution_names().get(institution_id, institution_id)
 
 
-def _event_id(events: list[dict[str, Any]], type_: str) -> str | None:
-    return next((e["id"] for e in reversed(events) if e["type"] == type_), None)
+def _last(events: list[dict[str, Any]], *types: str) -> dict[str, Any] | None:
+    return next((event for event in reversed(events) if event["type"] in types), None)
 
 
-def rules_case_file(order: PaymentOrder, risk: RiskResult, events: list[dict[str, Any]]) -> CaseFile:
+def _timeline(events: list[dict[str, Any]]) -> list[TimelineEntry]:
+    entries = []
+    for event in events:
+        template = texts.CASE_TIMELINE.get(event["type"])
+        if template is None:
+            continue
+        try:
+            text = template.format(**event["data"])
+        except (KeyError, IndexError):
+            text = template.split("{")[0].strip() or event["type"]
+        entries.append(TimelineEntry(at=event["ts"], event_id=event["id"], text=text))
+    return entries
+
+
+def rules_case_file(
+    order: PaymentOrder, risk: RiskResult, events: list[dict[str, Any]], situation: str = "held"
+) -> CaseFile:
     """Deterministic case file: one sentence per fired rule, each with its citation. No model involved."""
     payee = PAYEES.get(order.payee_id)
     account = ACCOUNTS.get(order.creditor_account_id)
     payee_name = payee.legal_name if payee else order.creditor.name
     amount = texts.eur(order.amount.as_float)
-    scored = _event_id(events, "risk.scored")
-    held = _event_id(events, "payment.held") or _event_id(events, "payment.stopped")
+    scored = _last(events, "risk.scored")
+    stopped = _last(events, "payment.held", "payment.stopped")
+    closing, recommended = CLOSINGS.get(situation, CLOSINGS["held"])
 
-    citations: list[dict[str, str]] = []
-    sentences = [
-        texts.CASE_OPENING.format(
-            payment=order.id, amount=amount, payee=payee_name, tier=risk.tier.name, score=risk.score, ref=scored or "risk"
-        )
-    ]
+    sentences: list[CaseSentence] = []
+    citations: list[Citation] = []
+
+    def add(text: str, ref: str, source: str) -> None:
+        sentences.append(CaseSentence(text=text if text.endswith(".") else f"{text}.", refs=[ref]))
+        if all(citation.ref != ref for citation in citations):
+            citations.append(Citation(ref=ref, source=source))
+
+    opening = texts.CASE_OPENING.format(
+        payment=order.id, amount=amount, payee=payee_name, tier=risk.tier.name, score=risk.score
+    )
     if scored:
-        citations.append({"ref": scored, "source": "event"})
+        add(opening, scored["id"], "event")
     for reason in risk.reasons:
-        if reason.rule_id is None:
-            continue
-        sentences.append(f"{reason.text.rstrip('.')} [{reason.rule_id}].")
-        citations.append({"ref": reason.rule_id, "source": "rule"})
-    if held:
-        sentences.append(texts.CASE_CLOSING.format(ref=held))
-        citations.append({"ref": held, "source": "event"})
+        if reason.rule_id is not None:
+            add(reason.text, reason.rule_id, "rule")
+    if stopped:
+        add(closing, stopped["id"], "event")
+    if not sentences:
+        raise ValueError("a case file needs at least one event of the payment to cite")
 
     holder = account.holder_name if account else order.creditor.name
     masked = account.account_masked if account else "unknown"
     bank = institution_name(account.institution_id if account else order.creditor.institution_id)
-    draft = texts.CASE_REPORT_DRAFT.format(
-        payment=order.id,
-        uetr=order.uetr,
-        payer=PAYER.name,
-        amount=amount,
-        payee=payee_name,
-        holder=holder,
-        account=masked,
-        bank=bank,
-        rules=", ".join(risk.rules_fired) or "none",
-    )
+    fired = set(risk.rules_fired)
+    if risk.tier == Tier.CRITICAL:
+        recommended = "ESCALATE_AML"
     return CaseFile(
-        summary=" ".join(sentences),
+        payment_id=order.id,
+        summary=" ".join(f"{sentence.text.rstrip('.')} [{sentence.refs[0]}]." for sentence in sentences),
+        sentences=sentences,
+        timeline=_timeline(events),
+        typology="T1" if fired & IMPERSONATION_RULES else "UNCLASSIFIED",
+        recommended_action=recommended,
+        explanation=texts.CASE_EXPLANATION if fired else texts.CASE_EXPLANATION_NEUTRAL,
         citations=citations,
+        report_draft=texts.CASE_REPORT_DRAFT.format(
+            payment=order.id,
+            uetr=order.uetr,
+            payer=PAYER.name,
+            amount=amount,
+            payee=payee_name,
+            holder=holder,
+            account=masked,
+            bank=bank,
+            rules=", ".join(risk.rules_fired) or "none",
+        ),
         llm="off",
-        explanation=texts.CASE_EXPLANATION if risk.rules_fired else None,
-        report_draft=draft,
-    )
-
-
-def validate_case(raw: Any, *, known_refs: set[str]) -> CaseFile:
-    """Check a writer's answer. Raises ValueError when it cannot be shown to an analyst as is."""
-    if hasattr(raw, "model_dump"):
-        raw = raw.model_dump(by_alias=True)
-    if not isinstance(raw, dict):
-        raise ValueError("the case writer did not return an object")
-    summary = raw.get("summary")
-    if not isinstance(summary, str) or not summary.strip():
-        raise ValueError("the case file has no summary")
-    if len(summary.split()) > MAX_WORDS:
-        raise ValueError(f"the summary is longer than {MAX_WORDS} words")
-    citations = raw.get("citations")
-    if not isinstance(citations, list) or not citations:
-        raise ValueError("the case file cites nothing")
-    clean: list[dict[str, str]] = []
-    for citation in citations:
-        if hasattr(citation, "model_dump"):
-            citation = citation.model_dump(by_alias=True)
-        ref = citation.get("ref") if isinstance(citation, dict) else None
-        if not isinstance(ref, str) or ref not in known_refs:
-            raise ValueError(f"the case file cites {ref!r}, which is not a rule, signal or event of this payment")
-        clean.append({"ref": ref, "source": str(citation.get("source") or "rule")})
-    llm = raw.get("llm")
-    if llm not in LLM_MODES:
-        raise ValueError(f"unknown llm label {llm!r}")
-    explanation = raw.get("explanation")
-    if isinstance(explanation, str) and len(explanation.split()) > MAX_WORDS:
-        raise ValueError(f"the explanation is longer than {MAX_WORDS} words")
-    report = raw.get("reportDraft", raw.get("report_draft"))
-    return CaseFile(
-        summary=summary.strip(),
-        citations=clean,
-        llm=llm,
-        explanation=explanation if isinstance(explanation, str) and explanation.strip() else None,
-        report_draft=report if isinstance(report, str) and report.strip() else None,
+        prompt_version=RULES_PROMPT_VERSION,
+        model=RULES_MODEL,
     )
 
 
 def known_refs(risk: RiskResult, events: list[dict[str, Any]]) -> set[str]:
+    """Everything a case file may cite: the rules that fired, reason refs, norm signals and the payment's events."""
     refs = set(risk.rules_fired)
     refs.update(reason.ref for reason in risk.reasons)
     refs.update(event["id"] for event in events)
@@ -156,8 +148,29 @@ def known_refs(risk: RiskResult, events: list[dict[str, Any]]) -> set[str]:
     return refs
 
 
+def validate_case(raw: Any, *, known_refs: set[str]) -> CaseFile:
+    """Check a writer's answer. Raises ValueError when it cannot be shown to an analyst as is."""
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump(by_alias=True)
+    if not isinstance(raw, dict):
+        raise ValueError("the case writer did not return a case file")
+    case = CaseFile.model_validate(raw)  # pydantic's ValidationError is a ValueError
+    if not case.summary.strip():
+        raise ValueError("the case file has no summary")
+    for name, text in (("summary", case.summary), ("explanation", case.explanation)):
+        if len(text.split()) > MAX_WORDS:
+            raise ValueError(f"the {name} is longer than {MAX_WORDS} words")
+    if not case.citations:
+        raise ValueError("the case file cites nothing")
+    cited = [citation.ref for citation in case.citations] + [ref for sentence in case.sentences for ref in sentence.refs]
+    unknown = sorted(set(cited) - known_refs)
+    if unknown:
+        raise ValueError(f"the case file cites {unknown}, which are not rules, signals or events of this payment")
+    return case
+
+
 class CaseService:
-    """``mode`` is the requested ``LLM_MODE``; ``writer`` is Lane B's case writer, or None when it is not installed."""
+    """``mode`` is the requested ``LLM_MODE``; ``writer`` is Lane B's ``CasePort``, or None when it is not installed."""
 
     def __init__(self, mode: str = "off", writer: Any | None = None) -> None:
         self.requested = mode if mode in LLM_MODES else "off"
@@ -172,11 +185,14 @@ class CaseService:
     def degraded(self) -> bool:
         return self.requested != "off" and self.writer is None
 
-    def write(self, order: PaymentOrder, risk: RiskResult, events: list[dict[str, Any]]) -> CaseFile:
+    def write(
+        self, order: PaymentOrder, risk: RiskResult, events: list[dict[str, Any]], situation: str = "held"
+    ) -> CaseFile:
         """Blocking (the writer may call an LLM): run it in a worker thread."""
         if self.writer is not None:
             try:
-                return validate_case(self.writer.write(order.id, events), known_refs=known_refs(risk, events))
+                answer = self.writer.write(order.id, [Event.model_validate(event) for event in events])
+                return validate_case(answer, known_refs=known_refs(risk, events))
             except Exception as err:
                 log.warning("case writer unusable (%s); using the case file built from the rules", err)
-        return rules_case_file(order, risk, events)
+        return rules_case_file(order, risk, events, situation)
