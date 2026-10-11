@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { loadGeo, type Institution } from "@/lib/geo";
 import { riskModeForSource } from "@/lib/store";
 import { useSylo } from "@/lib/useSylo";
@@ -35,6 +36,7 @@ export default function SyloApp() {
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
   const autoRunRef = useRef(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [mobileDemoOpen, setMobileDemoOpen] = useState(false);
   const decisionsOpen =
     decisionsUserOpen ||
     (sylo.scenarioStartedVersion > 0 &&
@@ -138,13 +140,22 @@ export default function SyloApp() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45, ease }}
           >
-            <FlowGraph state={sylo.state} speed={sylo.speed} />
+            <FlowGraph
+              state={sylo.state}
+              speed={sylo.speed}
+              unsupportedScene={
+                sylo.state.scenario === "mule_wave" ||
+                Boolean(sylo.state.incident) ||
+                Object.keys(sylo.state.rails).length > 0
+              }
+              onSwitchToGlobe={() => setView("globe")}
+            />
           </motion.div>
         )}
       </AnimatePresence>
 
-      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} onHelp={() => setTourOpen(true)} />
-      <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
+      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} connectionStatus={sylo.connectionStatus} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} onHelp={() => setTourOpen(true)} />
+      <StatusBanner state={sylo.state} view={view} onOpenIncident={() => setIncidentOpen(true)} />
 
       <AnimatePresence>
         {globe ? (
@@ -158,10 +169,10 @@ export default function SyloApp() {
               <EventFeed feed={sylo.state.feed} expanded={feedOpen} onExpandedChange={setFeedOpen} onOpenIncident={() => setIncidentOpen(true)} />
             </aside>
 
-            <AlertOverlay state={sylo.state} onClose={sylo.actions.closeAlert} />
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <AlertOverlay state={sylo.state} onClose={sylo.actions.closeAlert} />
       <Onboarding open={tourOpen} onClose={() => setTourOpen(false)} onRunLegit={() => void sylo.actions.runLegit()} onRunDiverted={() => void sylo.actions.runDiverted()} />
       <IncidentDrawer incident={sylo.state.incident} open={incidentOpen} onClose={() => setIncidentOpen(false)} />
       <DemoControls
@@ -173,6 +184,24 @@ export default function SyloApp() {
         sourceKind={sylo.sourceKind}
       />
       <Toast toasts={sylo.toasts} onDismiss={sylo.dismissToast} />
+      {!mobileDemoOpen ? (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-[var(--bg)] p-5 md:hidden">
+          <section className="card w-full max-w-sm rounded-[24px] p-6 text-center" aria-labelledby="mobile-demo-title">
+            <div className="mx-auto mb-5 grid size-12 place-items-center rounded-full bg-[var(--surface-2)]">
+              <span className="size-5 rounded-full" style={{ background: "var(--iridescent)" }} />
+            </div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">Sylo.ai demo</p>
+            <h1 id="mobile-demo-title" className="mt-2 text-[22px] font-semibold tracking-[-0.04em]">Best viewed on a laptop</h1>
+            <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
+              The live globe and decision panels are designed for a larger screen. You can still try a payment or open the demo here.
+            </p>
+            <div className="mt-6 grid gap-2.5">
+              <Link href="/test" className="flex h-11 items-center justify-center rounded-full bg-ink text-[13px] font-medium text-white">Try a payment</Link>
+              <button type="button" onClick={() => setMobileDemoOpen(true)} className="h-11 rounded-full border border-[var(--line-strong)] bg-white text-[13px] font-medium text-ink">Open the demo anyway</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
     </MotionConfig>
   );

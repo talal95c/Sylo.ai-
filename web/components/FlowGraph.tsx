@@ -272,7 +272,17 @@ function laneValue<T>(lane: Lane | null, own: Lane, value: T): T | null {
   return lane === own ? value : null;
 }
 
-export function FlowGraph({ state, speed = 1 }: { state: ViewState; speed?: number }) {
+export function FlowGraph({
+  state,
+  speed = 1,
+  unsupportedScene = false,
+  onSwitchToGlobe,
+}: {
+  state: ViewState;
+  speed?: number;
+  unsupportedScene?: boolean;
+  onSwitchToGlobe?: () => void;
+}) {
   const statuses = flowStatuses(state);
   const lane = flowLane(state);
   const p = state.payment;
@@ -333,7 +343,7 @@ export function FlowGraph({ state, speed = 1 }: { state: ViewState; speed?: numb
 
   return (
     <div className="absolute inset-0">
-      <div className="pointer-events-none absolute inset-x-4 top-[76px] z-20 flex justify-center">
+      <div className="pointer-events-none absolute inset-x-4 top-[76px] z-20 flex flex-col items-center gap-1.5">
         <div className="glass flex min-h-9 max-w-[min(820px,100%)] items-center gap-2.5 rounded-full px-4 py-1.5" aria-live="polite">
           <motion.span
             className="size-1.5 shrink-0 rounded-full"
@@ -353,6 +363,14 @@ export function FlowGraph({ state, speed = 1 }: { state: ViewState; speed?: numb
             </motion.span>
           </AnimatePresence>
         </div>
+        {unsupportedScene && onSwitchToGlobe ? (
+          <div className="glass pointer-events-auto flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] text-ink-2">
+            <span>This scene is shown on the globe</span>
+            <button type="button" onClick={onSwitchToGlobe} className="rounded-full px-2 py-1 font-medium text-accent hover:bg-[var(--accent-soft)]">
+              Switch to Globe
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div ref={frameRef} className="absolute inset-x-6 bottom-[92px] top-[128px] flex items-center justify-center">
