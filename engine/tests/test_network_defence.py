@@ -97,9 +97,9 @@ async def test_scene_3_three_linked_payments_propose_a_breaker_and_the_next_paym
     await orchestrator.run_wave()
     assert types(orchestrator) == WAVE_SEQUENCE
     detected = events_of(orchestrator, "cluster.detected")[0]["data"]
-    assert (detected["accounts"], detected["agents"], detected["region"]) == (6, 3, "GH-TV")
+    assert (detected["accounts"], detected["agents"], detected["region"]) == (3, 0, "GH-TV")
     assert detected["linkedPayments"] == ["PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"]
-    assert detected["proposedBreaker"]["breakerId"] == "CB-CL-AFLAO-01" and detected["detector"] == "cluster-sample"
+    assert detected["proposedBreaker"]["breakerId"] == "CB-CL-AFLAO-01" and detected["detector"] == "sylo_risk.clusters"
     on = events_of(orchestrator, "breaker.on")[0]["data"]
     assert on["thresholdsDelta"] == -20 and on["scope"] == detected["proposedBreaker"]["scope"]
     assert on["scope"]["institutions"] == ["mule_bank"] and on["expiresAt"].startswith("2026-10-12T09:00")
