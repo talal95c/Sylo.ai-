@@ -119,6 +119,8 @@ export interface ViewState {
   attack: { attempted: boolean; reverted: boolean; reason: string | null };
   credited: PaymentCreditedData | null;
   stopped: PaymentStoppedData | null;
+  quote: RouteSelectedData | null;
+  timing: { createdTs?: string; committedTs?: string; creditedTs?: string };
   feed: FeedItem[];
 }
 
@@ -148,6 +150,8 @@ export const initialState: ViewState = {
   attack: { attempted: false, reverted: false, reason: null },
   credited: null,
   stopped: null,
+  quote: null,
+  timing: {},
   feed: [],
 };
 
@@ -225,6 +229,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
       const amount = data.amount as Record<string, unknown>;
       return {
         ...next,
+        timing: { createdTs: event.ts },
         payment: {
           paymentId: event.paymentId ?? "",
           payerName: String(payer.name ?? ""),
@@ -266,6 +271,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         ...next,
         selectedRouteId: String(data.routeId),
         routeScores: scores,
+        quote: data as unknown as RouteSelectedData,
         hops: selectedHops(next.routes, String(data.routeId)),
         payment: next.payment
           ? {
@@ -286,6 +292,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "intent.committed":
       return {
         ...next,
+        timing: { ...next.timing, committedTs: event.ts },
         payment: next.payment
           ? {
               ...next.payment,
@@ -387,6 +394,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         ...next,
         payment: paymentWithStatus(next.payment, "credited"),
         credited: data as unknown as PaymentCreditedData,
+        timing: { ...next.timing, creditedTs: event.ts },
       };
     case "payment.stopped":
       return {

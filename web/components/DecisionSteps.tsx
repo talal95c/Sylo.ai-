@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { buildQuote } from "@/lib/quote";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";
@@ -93,7 +94,7 @@ function buildSteps(state: ViewState): Step[] {
       label: p?.status === "stopped" ? "Payment stopped" : p?.status === "credited" ? "Supplier credited" : "Final outcome",
       done: final,
       fail: p?.status === "stopped",
-      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer / analyst case opened" : state.credited ? `${euros(state.credited.routeCostEur)} all-in vs ${euros(state.credited.swiftRouteCostEur)} via SWIFT` : "Credited or stopped",
+      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer / analyst case opened" : state.credited ? creditedSummary(state) : "Credited or stopped",
       badge: p?.status === "stopped" ? "Stopped" : p?.status === "credited" ? "Credited" : undefined,
     },
   ];
@@ -110,6 +111,13 @@ function buildSteps(state: ViewState): Step[] {
     const defaultBadge = value === "running" ? "Processing" : value === "pending" ? "Pending" : value === "warn" ? "Review" : value === "fail" ? "Blocked" : "Complete";
     return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key), badge: step.badge ?? defaultBadge, extra: step.extra };
   });
+}
+
+function creditedSummary(state: ViewState) {
+  const quote = buildQuote(state);
+  if (!quote) return "Supplier credited";
+  const label = quote.basis === "cash" ? "fees + FX" : "all-in";
+  return quote.swift ? `${euros(quote.cost)} ${label} vs ${euros(quote.swift.cost)} via SWIFT` : `${euros(quote.cost)} ${label}`;
 }
 
 function RouteTable({ state }: { state: ViewState }) {
