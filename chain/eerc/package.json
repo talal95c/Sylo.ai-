@@ -6,6 +6,7 @@
 	"scripts": {
 		"check": "node src/check-local.mjs",
 		"deploy": "node src/deploy.mjs",
+		"roles": "node src/roles.mjs",
 		"demo": "node src/cli.mjs",
 		"serve": "node src/server.mjs"
 	}
