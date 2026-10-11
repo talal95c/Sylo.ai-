@@ -50,7 +50,7 @@ function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
       key: "norms",
       label: "Legal routes checked",
       done: state.routes.length > 0,
-      detail: state.routes.length ? `${state.routes.length - excluded.length} of ${state.routes.length} routes allowed${excluded.length ? ` / ${excluded.map((route) => route.routeId).join(", ")} excluded` : ""}` : "France to Ghana norms pack",
+      detail: state.routes.length ? `${state.routes.length - excluded.length} of ${state.routes.length} routes allowed${excluded.length ? ` · ${excluded.map((route) => route.routeId).join(", ")} excluded` : ""}` : "France to Ghana norms pack",
       badge: state.routes.length ? "Compliant" : undefined,
     },
     {
@@ -58,14 +58,14 @@ function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
       label: "Fraud risk scored",
       done: Boolean(state.risk),
       warn: state.risk ? state.risk.tier !== "LOW" : false,
-      detail: state.risk ? `${state.risk.score} / ${state.risk.tier} / ${state.risk.reasons.length} ${state.risk.reasons.length === 1 ? "reason" : "reasons"}` : "Deterministic fraud controls",
+      detail: state.risk ? `${state.risk.score} · ${state.risk.tier} · ${state.risk.reasons.length} ${state.risk.reasons.length === 1 ? "reason" : "reasons"}` : "Deterministic fraud controls",
       badge: state.risk ? (state.risk.tier === "LOW" ? "Low risk" : "Review") : undefined,
     },
     {
       key: "route",
       label: "Compliant route selected",
       done: Boolean(state.selectedRouteId),
-      detail: p?.routeName ? `${p.routeId} / ${p.routeName}` : "Fraud risk never enters the route score",
+      detail: p?.routeName ? `${p.routeId} · ${p.routeName}` : "Fraud risk never enters the route score",
       badge: state.selectedRouteId ? "Selected" : undefined,
       extra: state.routeScores.length || state.routes.length ? <RouteTable state={state} /> : undefined,
     },
@@ -80,7 +80,7 @@ function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
       key: "intent",
       label: "Payment intent sealed",
       done: Boolean(p?.intentHash),
-      detail: p?.intentHash ? `${shortHash(p.intentHash, 8, 4)} / EIP-712` : "Signed before funds move",
+      detail: p?.intentHash ? `${shortHash(p.intentHash, 8, 4)} · EIP-712` : "Signed before funds move",
       badge: p?.intentHash ? "Sealed" : undefined,
     },
     {
@@ -89,7 +89,7 @@ function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
       done: p?.status === "credited" || state.refunded || (state.hops.length > 0 && settledCount === state.hops.length),
       warn: Boolean(state.held) && !state.released,
       fail: state.refunded,
-      detail: state.refunded ? "Intent revoked / funds returned" : state.released ? "Supplier confirmed / escrow released" : state.verification.requested ? `Known-contact check with ${state.verification.requested.contactName}` : state.hops.length ? `${settledCount} of ${state.hops.length} legs settled` : "Follows the signed payment intent",
+      detail: state.refunded ? "Intent revoked · funds returned" : state.released ? "Supplier confirmed · escrow released" : state.verification.requested ? `Known-contact check with ${state.verification.requested.contactName}` : state.hops.length ? `${settledCount} of ${state.hops.length} legs settled` : "Follows the signed payment intent",
       badge: state.refunded ? "Refunded" : state.released ? "Released" : state.held ? "Protected" : undefined,
     },
     {
@@ -97,7 +97,7 @@ function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
       label: p?.status === "stopped" ? "Payment stopped" : p?.status === "credited" ? "Supplier credited" : "Final outcome",
       done: final,
       fail: p?.status === "stopped",
-      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer / analyst case opened" : state.credited ? creditedSummary(state) : "Credited or stopped",
+      detail: state.attack.reverted ? "Unauthorized release rejected" : p?.status === "stopped" ? "Refunded to payer · analyst case opened" : state.credited ? creditedSummary(state) : "Credited or stopped",
       badge: p?.status === "stopped" ? "Stopped" : p?.status === "credited" ? "Credited" : undefined,
     },
   ];
@@ -165,7 +165,7 @@ function StepIcon({ state, index }: { state: StepState; index: number }) {
   if (state === "warn") return <span className="text-[11px] font-bold">!</span>;
   if (state === "fail") return <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>;
   if (state === "skipped") return <span className="font-mono text-[10px]">−</span>;
-  return <span className="font-mono text-[8.5px]">{String(index + 1).padStart(2, "0")}</span>;
+  return <span className="font-mono text-[10px]">{String(index + 1).padStart(2, "0")}</span>;
 }
 
 function decisionSummary(state: ViewState) {
