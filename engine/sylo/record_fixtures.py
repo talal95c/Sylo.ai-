@@ -105,11 +105,21 @@ async def _await_case_ready(run: PaymentRun) -> None:
 
 async def _denied_then(attack: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Diverted + deny on a fresh engine, then one attack. Returns (scenario events, attack events)."""
-    orchestrator = _orchestrator()
-    await orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    orchestrator = await _diverted_answer("deny")
     scenario = orchestrator.bus.events
     await orchestrator.attack(attack, DIVERTED)
     return scenario, orchestrator.bus.events[len(scenario) :]
+
+
+async def _diverted_answer(answer: str) -> Orchestrator:
+    orchestrator = _orchestrator()
+    payment_id = orchestrator.start("diverted", auto=False)
+    run = await _until(orchestrator, payment_id, "awaiting_supplier")
+    await _await_case_ready(run)
+    orchestrator.supplier_response(payment_id, answer)
+    assert orchestrator._task is not None
+    await orchestrator._task
+    return orchestrator
 
 
 async def _manual_sample() -> list[dict[str, Any]]:
@@ -175,18 +185,20 @@ async def _record() -> dict[str, list[dict[str, Any]]]:
     deny_events, release_attack = await _denied_then("release_revoked")
     split = next(i for i, e in enumerate(deny_events) if e["type"] == "verification.requested") + 1
 
-    confirmed = _orchestrator()
-    await confirmed.run_to_end("diverted", auto=True, auto_answer="confirm")
+    confirmed = await _diverted_answer("confirm")
     confirm_events = confirmed.bus.events
     if confirm_events[:split] != deny_events[:split]:
         raise RuntimeError("the diverted scenario is not deterministic up to verification.requested")
 
     simswap = _orchestrator()
-    await simswap.run_to_end("diverted_simswap", auto=True)
+    simswap_run = await simswap.run_to_end("diverted_simswap", auto=True)
+    await _await_case_ready(simswap_run)
+
+    case_ready_split = next(i for i, e in enumerate(deny_events) if e["type"] == "case.ready") + 1
 
     recorded = {
         "scene1-legit": legit.bus.events,
-        "scene2-diverted": deny_events[:split],
+        "scene2-diverted": deny_events[:case_ready_split],
         "scene2-deny": deny_events[split:],
         "scene2-confirm": confirm_events[split:],
         "scene2-simswap": simswap.bus.events,

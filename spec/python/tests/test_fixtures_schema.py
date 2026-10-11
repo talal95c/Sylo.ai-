@@ -46,7 +46,7 @@ def test_numbering_starts_at_one_and_branches_continue():
     legit, diverted = load("scene1-legit"), load("scene2-diverted")
     deny, confirm, attack = load("scene2-deny"), load("scene2-confirm"), load("scene2b-release-revoked")
     assert legit[0]["seq"] == 1 and diverted[0]["seq"] == 1
-    assert deny[0]["seq"] == diverted[-1]["seq"] + 1 == confirm[0]["seq"]
+    assert deny[0]["seq"] == diverted[-1]["seq"] == confirm[0]["seq"]
     assert attack[0]["seq"] == deny[-1]["seq"] + 1
     for events in (legit, diverted, deny, confirm, attack):
         seqs = [e["seq"] for e in events]
@@ -54,8 +54,18 @@ def test_numbering_starts_at_one_and_branches_continue():
         assert all(e["id"] == f"evt-{e['seq']:06d}" for e in events)
 
 
-def test_scene2_diverted_ends_at_the_supplier_question():
-    assert load("scene2-diverted")[-1]["type"] == "verification.requested"
+def test_scene2_case_is_ready_before_each_supplier_response():
+    for name in ("scene2-diverted", "scene2-deny", "scene2-confirm"):
+        events = load(name)
+        case_ready = [event for event in events if event["type"] == "case.ready"]
+        responses = [
+            event
+            for event in events
+            if event["type"].startswith("supplier.") or event["type"] == "verification.recorded"
+        ]
+        assert len(case_ready) == 1, name
+        assert all(case_ready[0]["seq"] < event["seq"] for event in responses), name
+    assert load("scene2-diverted")[-1]["type"] == "case.ready"
 
 
 def test_every_attack_fixture_continues_the_deny_branch():
