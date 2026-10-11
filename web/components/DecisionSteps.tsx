@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { ruleLabel } from "@/lib/feed";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";
@@ -54,7 +55,7 @@ function buildSteps(state: ViewState): Step[] {
       label: "Fraud risk scored",
       done: Boolean(state.risk),
       warn: state.risk ? state.risk.tier !== "LOW" : false,
-      detail: state.risk ? `${state.risk.score} / ${state.risk.tier} / ${state.risk.rulesFired.length} rules fired` : "Deterministic fraud controls",
+      detail: state.risk ? `${state.risk.score} / ${state.risk.tier} / ${state.risk.reasons.length} ${state.risk.reasons.length === 1 ? "reason" : "reasons"}` : "Deterministic fraud controls",
       badge: state.risk ? (state.risk.tier === "LOW" ? "Low risk" : "Review") : undefined,
     },
     {
@@ -125,7 +126,7 @@ function RouteTable({ state }: { state: ViewState }) {
           const route = state.routes.find((candidate) => candidate.routeId === score.routeId);
           const chosen = score.routeId === state.selectedRouteId;
           const excluded = score.s === null || Boolean(score.excludedBy);
-          const exclusion = score.excludedBy ?? route?.excludedBy ?? "Excluded";
+          const exclusion = ruleLabel(score.excludedBy ?? route?.excludedBy ?? "Excluded");
           return (
             <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[10.5px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
               <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>

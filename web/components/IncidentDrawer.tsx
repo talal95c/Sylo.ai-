@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { actionLabel } from "@/lib/feed";
 import type { IncidentView } from "@/lib/store";
 import { ease, euros, shortHash } from "./ui";
 
@@ -52,7 +53,7 @@ export function IncidentDrawer({ incident, open, onClose }: { incident: Incident
               <Field label="Third parties" value={incident.dora.thirdParties.join(" · ")} />
             </dl>
             <div className="mt-2 rounded-lg bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-3 text-[11.5px] text-ink-2">
-              <span className="font-medium text-[var(--danger)]">Action</span> · {incident.action}
+              <span className="font-medium text-[var(--danger)]">Action</span> · {actionLabel(incident.action)}
             </div>
             <div className="mt-3 pb-4 text-[11px]">
               {safeExplorer && incident.txHash ? (
