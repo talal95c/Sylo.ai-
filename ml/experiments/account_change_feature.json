@@ -1,0 +1,58 @@
+{
+  "baseline": {
+    "t_med": 0.0406830161495367,
+    "t_high": 0.4682277966097679,
+    "B": {
+      "auc": 0.99827,
+      "recallAll": 95.4,
+      "recallT1": 91.78,
+      "recallT1Evasive": 72.59,
+      "recallT2": 96.0,
+      "recallT3": 98.22,
+      "recallT4": 96.0,
+      "fprLegit": 1.04,
+      "fprHardNeg": 10.98,
+      "precisionHigh": 89.45
+    },
+    "C": {
+      "auc": 0.99843,
+      "recallAll": 95.13,
+      "recallT1": 87.78,
+      "recallT1Evasive": 75.56,
+      "recallT2": 97.67,
+      "recallT3": 98.67,
+      "recallT4": 98.33,
+      "fprLegit": 0.79,
+      "fprHardNeg": 12.4,
+      "precisionHigh": 91.25
+    }
+  },
+  "with_account_changed": {
+    "t_med": 0.042746754051582056,
+    "t_high": 0.4764897661102958,
+    "B": {
+      "auc": 0.99848,
+      "recallAll": 96.47,
+      "recallT1": 94.22,
+      "recallT1Evasive": 80.74,
+      "recallT2": 99.33,
+      "recallT3": 98.22,
+      "recallT4": 94.33,
+      "fprLegit": 1.09,
+      "fprHardNeg": 15.69,
+      "precisionHigh": 90.66
+    },
+    "C": {
+      "auc": 0.99883,
+      "recallAll": 96.8,
+      "recallT1": 92.22,
+      "recallT1Evasive": 84.44,
+      "recallT2": 99.67,
+      "recallT3": 98.44,
+      "recallT4": 98.33,
+      "fprLegit": 0.84,
+      "fprHardNeg": 18.13,
+      "precisionHigh": 92.34
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "C": 2333.6031699219234,
+  "C_h": 3031.4285104796595,
+  "results": [
+    {
+      "policy": "threshold t_med (current)",
+      "holds": 2974,
+      "fprLegit": 1.039,
+      "recallCount": 95.4,
+      "valueStoppedPct": 96.58,
+      "legitEurHeld": 97.64,
+      "recallT1": 91.78,
+      "recallT2": 96.0,
+      "recallT3": 98.22,
+      "recallT4": 96.0,
+      "seed": "B"
+    },
+    {
+      "policy": "expected-loss p*amount>=C",
+      "holds": 2869,
+      "fprLegit": 1.015,
+      "recallCount": 90.73,
+      "valueStoppedPct": 96.89,
+      "legitEurHeld": 142.09,
+      "recallT1": 92.67,
+      "recallT2": 97.33,
+      "recallT3": 98.44,
+      "recallT4": 69.67,
+      "seed": "B"
+    },
+    {
+      "policy": "hybrid t_med OR p*amount>=C_h",
+      "holds": 3221,
+      "fprLegit": 1.201,
+      "recallCount": 95.8,
+      "valueStoppedPct": 97.19,
+      "legitEurHeld": 133.06,
+      "recallT1": 92.89,
+      "recallT2": 96.33,
+      "recallT3": 98.22,
+      "recallT4": 96.0,
+      "seed": "B"
+    },
+    {
+      "policy": "threshold t_med (current)",
+      "holds": 2600,
+      "fprLegit": 0.79,
+      "recallCount": 95.13,
+      "valueStoppedPct": 95.48,
+      "legitEurHeld": 169.26,
+      "recallT1": 87.78,
+      "recallT2": 97.67,
+      "recallT3": 98.67,
+      "recallT4": 98.33,
+      "seed": "C"
+    },
+    {
+      "policy": "expected-loss p*amount>=C",
+      "holds": 3330,
+      "fprLegit": 1.296,
+      "recallCount": 93.73,
+      "valueStoppedPct": 97.19,
+      "legitEurHeld": 306.55,
+      "recallT1": 92.44,
+      "recallT2": 98.0,
+      "recallT3": 99.33,
+      "recallT4": 83.0,
+      "seed": "C"
+    },
+    {
+      "policy": "hybrid t_med OR p*amount>=C_h",
+      "holds": 3153,
+      "fprLegit": 1.149,
+      "recallCount": 96.4,
+      "valueStoppedPct": 97.01,
+      "legitEurHeld": 263.39,
+      "recallT1": 91.11,
+      "recallT2": 98.0,
+      "recallT3": 99.33,
+      "recallT4": 98.33,
+      "seed": "C"
+    }
+  ]
+}
