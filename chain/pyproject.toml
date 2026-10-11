@@ -5,6 +5,7 @@ description = "Sylo.ai Lane C: Avalanche Fuji client implementing ChainPort (ske
 requires-python = ">=3.11"
 dependencies = [
   "web3>=7",
+  "requests>=2.23",
   "sylo-spec",
 ]
 
@@ -23,3 +24,5 @@ packages = ["sylo_chain"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Long tracebacks print function arguments, which include the role private keys on Fuji runs.
+addopts = "--tb=short"

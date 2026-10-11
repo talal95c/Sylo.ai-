@@ -1671,6 +1671,7 @@ name = "sylo-chain"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "requests" },
     { name = "sylo-spec" },
     { name = "web3" },
 ]
@@ -1682,6 +1683,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "requests", specifier = ">=2.23" },
     { name = "sylo-spec", editable = "../spec/python" },
     { name = "web3", specifier = ">=7" },
 ]
