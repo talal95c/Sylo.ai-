@@ -26,7 +26,7 @@ def _thresholds(
     legit_scores = np.sort(probabilities[legit])
     if not len(legit_scores):
         raise ValueError("threshold tuning requires legitimate validation examples")
-    tolerated_false_positives = int(np.floor(0.02 * len(legit_scores)))
+    tolerated_false_positives = int(np.floor(0.01 * len(legit_scores)))
     boundary_index = len(legit_scores) - tolerated_false_positives - 1
     t_med = float(np.nextafter(legit_scores[boundary_index], np.inf))
     values = np.unique(probabilities)
@@ -118,10 +118,12 @@ def train_model(frame: pd.DataFrame, model_dir: Path | None = None) -> dict[str,
     calibrator = IsotonicRegression(out_of_bounds="clip")
     calibrated = calibrator.fit_transform(raw_validation, valid_labels)
     t_med, t_high, _, precision_high, precision_target_met = _thresholds(
-        calibrated, valid_labels
+        raw_validation, valid_labels
     )
-    metrics = evaluate(calibrated, validation_rows, t_med, t_high)
+    metrics = evaluate(raw_validation, validation_rows, t_med, t_high)
     metrics["precision_high"] = precision_high
+    metrics["brier_raw"] = float(np.mean((raw_validation - valid_labels) ** 2))
+    metrics["brier_isotonic"] = float(np.mean((calibrated - valid_labels) ** 2))
 
     version_date = datetime.now(timezone.utc).strftime("%Y%m%d")
     version = f"gbm-{version_date}"

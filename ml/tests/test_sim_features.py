@@ -73,6 +73,37 @@ def test_legitimate_data_has_realistic_overlap_with_risk_signals():
     assert evasive_t1["account_owned_by_payee"].mean() >= 0.20
 
 
+def test_new_legitimate_supplier_profiles_overlap_with_fraud_profiles():
+    frame = generate_dataset("A", small=True)
+    legit = frame.loc[frame["label"] == 0]
+    changes = legit.loc[legit["hard_negative_type"] == "bank_change"]
+    young = legit.loc[legit["legit_young_small_supplier"]]
+
+    assert abs(len(changes) / len(legit) - 0.01) < 0.002
+    assert changes["history_count"].mean() > 0.9
+    assert changes["account_age_days"].between(5, 400).all()
+    assert changes["successful_payments"].between(0, 3).all()
+    assert abs(changes["account_owned_by_payee"].mean() - 0.5) < 0.08
+    assert abs(changes["nominated_for_exports"].mean() - 0.3) < 0.08
+    assert (changes["name_match"] >= 0.85).all()
+    assert abs((changes["sender_domain"] == changes["known_domain"]).mean() - 0.9) < 0.08
+    assert abs(changes["bene_bank_border_region"].mean() - 0.05) < 0.04
+
+    assert abs(len(young) / len(legit) - 0.03) < 0.002
+    assert young["account_owned_by_payee"].all()
+    assert young["account_age_days"].between(10, 200).all()
+    assert young["successful_payments"].between(0, 6).all()
+
+
+def test_seed_c_keeps_structuring_and_declared_splits_below_cap():
+    frame = generate_dataset("C", small=True)
+    t4 = frame.loc[frame["typology"] == "T4", "amount_eur"]
+    declared_split = frame.loc[frame["declared_split"].astype(bool), "amount_eur"]
+
+    assert t4.between(9_000, 10_000, inclusive="left").all()
+    assert declared_split.between(9_000, 10_000, inclusive="left").all()
+
+
 def test_temporal_history_uses_strictly_earlier_days_and_same_day_velocity():
     frame = generate_dataset("A", small=True)
     sample = frame.sample(n=50, random_state=171)

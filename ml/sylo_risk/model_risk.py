@@ -113,13 +113,7 @@ class ModelRisk:
         shap_values = self._booster.predict(matrix, pred_contrib=True, num_threads=1)[0]
         raw_logit = float(np.sum(shap_values))
         probability = 1.0 / (1.0 + np.exp(-raw_logit))
-        probability = float(
-            np.interp(
-                probability,
-                self._artifact["isotonic"]["x"],
-                self._artifact["isotonic"]["y"],
-            )
-        )
+        probability = float(probability)
         thresholds = self._artifact["thresholds"]
         score = probability_to_score(probability, thresholds["t_med"], thresholds["t_high"])
 

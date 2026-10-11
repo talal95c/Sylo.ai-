@@ -22,7 +22,7 @@ from sylo_spec.models import (
 )
 
 from ..features import features_from_frame
-from ..geo import GH_REGIONS
+from ..geo import BORDER_REGIONS, GH_REGIONS
 
 SEEDS = {"A": 20261001, "B": 20261002, "C": 20261003}
 PAYER_BANKS = tuple(f"fr-bank-{index}" for index in range(6))
@@ -64,6 +64,15 @@ def _temporal_history(
             same_day = np.sort(pair_positions[days[pair_positions] == day])
             pair_payments_24h[current] = np.searchsorted(same_day, current, side="left")
     return history_count, history_median, pair_payments_24h
+
+
+def _truncated_beta(rng: np.random.Generator, size: int, minimum: float) -> np.ndarray:
+    samples = rng.beta(18, 1.5, size=size)
+    rejected = samples < minimum
+    while rejected.any():
+        samples[rejected] = rng.beta(18, 1.5, size=int(rejected.sum()))
+        rejected = samples < minimum
+    return samples
 
 
 def _make_integrity_cases(seed: str, output: Path) -> None:
@@ -153,7 +162,10 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     amount = rng.lognormal(mean=np.log(80_000), sigma=0.45, size=n_rows).clip(500, 500_000)
     norms = np.where(rng.random(n_rows) < 0.005, "R1", "").astype(object)
     declared_split = np.zeros(n_rows, dtype=bool)
-    known_bank_region = rng.integers(0, len(GH_REGIONS), size=n_rows)
+    non_border_regions = np.asarray(
+        [index for index, region in enumerate(GH_REGIONS) if region not in BORDER_REGIONS]
+    )
+    known_bank_region = rng.choice(non_border_regions, size=n_rows)
     account_institution = np.asarray(
         [f"gh-bank-{number:02d}" for number in known_bank_region], dtype=object
     )
@@ -195,7 +207,9 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     onboarding_owned = rng.random(len(onboarding)) < 0.5
     account_owned_by_payee[onboarding] = onboarding_owned
     successful_payments[onboarding] = 0
-    account_age_days[onboarding] = rng.uniform(30, 3_000, size=len(onboarding))
+    account_age_days[onboarding] = rng.lognormal(
+        mean=np.log(400), sigma=0.8, size=len(onboarding)
+    ).clip(5, 3_000)
     onboarding_provenance = np.where(
         rng.random(len(onboarding)) < 0.70, "invoice_pdf_email", "user_input"
     )
@@ -203,6 +217,28 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     sender_is_known = rng.random(len(onboarding)) < 0.85
     sender_domain[onboarding] = np.where(
         sender_is_known, known_domain[onboarding], "gmail.com"
+    )
+
+    small_supplier_count = round(0.03 * len(legitimate_indices))
+    small_supplier_candidates = legitimate_indices[~is_onboarding[legitimate_indices]]
+    young_small_suppliers = rng.choice(
+        small_supplier_candidates, size=small_supplier_count, replace=False
+    )
+    is_young_small_supplier = np.zeros(n_rows, dtype=bool)
+    is_young_small_supplier[young_small_suppliers] = True
+    account_owned_by_payee[young_small_suppliers] = True
+    account_age_days[young_small_suppliers] = rng.uniform(
+        10, 200, size=len(young_small_suppliers)
+    )
+    successful_payments[young_small_suppliers] = rng.integers(
+        0, 7, size=len(young_small_suppliers)
+    )
+    name_match[young_small_suppliers] = np.clip(
+        rng.beta(18, 1.5, size=len(young_small_suppliers)), 0.4, 1.0
+    )
+    young_supplier_border = rng.random(len(young_small_suppliers)) < 0.10
+    account_institution[young_small_suppliers[young_supplier_border]] = rng.choice(
+        border_banks, size=int(young_supplier_border.sum())
     )
 
     # T1 supplier impersonation includes both obvious and vendor-master-poisoned cases.
@@ -218,13 +254,15 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     account_age_days[ordinary_t1] = rng.lognormal(
         mean=np.log(18), sigma=0.8, size=len(ordinary_t1)
     ).clip(1, 60)
-    account_age_days[evasive_indices] = rng.uniform(60, 400, size=len(evasive_indices))
+    account_age_days[evasive_indices] = rng.lognormal(
+        mean=np.log(40), sigma=0.8, size=len(evasive_indices)
+    ).clip(5, 400)
     successful_payments[t1_indices] = 0
     successful_payments[evasive_indices] = rng.integers(0, 4, size=len(evasive_indices))
     name_match[ordinary_t1] = rng.uniform(0.2, 0.75, size=len(ordinary_t1))
     near_name = rng.random(len(ordinary_t1)) < 0.30
     name_match[ordinary_t1[near_name]] = rng.uniform(0.85, 1.0, size=int(near_name.sum()))
-    name_match[evasive_indices] = rng.uniform(0.85, 1.0, size=len(evasive_indices))
+    name_match[evasive_indices] = _truncated_beta(rng, len(evasive_indices), 0.85)
     lookalike = rng.random(len(ordinary_t1)) < 0.60
     lookalike_indices = ordinary_t1[lookalike]
     domain_suffix = "-invoice.com" if seed != "C" else "-billing.co.uk"
@@ -235,6 +273,11 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     sender_known = rng.random(len(evasive_indices)) < 0.60
     sender_domain[evasive_indices] = np.where(
         sender_known, known_domain[evasive_indices], "gmail.com"
+    )
+    provenance[evasive_indices] = np.where(
+        rng.random(len(evasive_indices)) < 0.85,
+        "invoice_pdf_email",
+        "user_input",
     )
     norms[t1_indices] = ""
     norms[ordinary_t1[rng.random(len(ordinary_t1)) < 0.80]] = "R1"
@@ -253,8 +296,8 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     account_owned_by_payee[t2_indices] = False
     nominated[t2_indices] = rng.random(len(t2_indices)) < 0.10
     account_age_days[t2_indices] = rng.lognormal(
-        mean=np.log(20), sigma=0.8, size=len(t2_indices)
-    ).clip(1, 90)
+        mean=np.log(60), sigma=0.8, size=len(t2_indices)
+    ).clip(1, 900)
     successful_payments[t2_indices] = 0
     sim_swap[t2_indices] = rng.random(len(t2_indices)) < 0.45
     new_device[t2_indices] = rng.random(len(t2_indices)) < 0.55
@@ -270,9 +313,7 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
     # Mule accounts belong to the mule payee but are concentrated near a border.
     t3_indices = np.flatnonzero(is_t3)
     account_owned_by_payee[t3_indices] = True
-    account_age_days[t3_indices] = rng.lognormal(
-        mean=np.log(30), sigma=0.8, size=len(t3_indices)
-    ).clip(1, 60)
+    account_age_days[t3_indices] = rng.uniform(1, 120, size=len(t3_indices))
     successful_payments[t3_indices] = rng.integers(0, 7, size=len(t3_indices))
     name_match[t3_indices] = rng.uniform(0.5, 0.95, size=len(t3_indices))
     t3_border = rng.random(len(t3_indices)) < 0.70
@@ -286,20 +327,45 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
 
     # Honest counterexamples: one or two risk-like signals with countervailing context.
     hard_negative = np.zeros(n_rows, dtype=bool)
-    eligible = np.flatnonzero(typology == "none")
+    eligible = np.flatnonzero(
+        (typology == "none") & ~is_onboarding & ~is_young_small_supplier
+    )
     negative_indices = rng.choice(eligible, size=round(n_rows * 0.03), replace=False)
     hard_negative[negative_indices] = True
-    negative_type = rng.integers(0, 6, size=len(negative_indices))
+    negative_type = rng.integers(1, 6, size=len(negative_indices))
+    bank_change_positions = rng.choice(
+        len(negative_indices),
+        size=round(0.01 * len(legitimate_indices)),
+        replace=False,
+    )
+    negative_type[bank_change_positions] = 0
+    hard_negative_type = np.full(n_rows, "", dtype=object)
+    hard_negative_type[negative_indices] = np.asarray(
+        ("bank_change", "trading_name", "travel", "new_supplier", "seasonal", "declared_split"),
+        dtype=object,
+    )[negative_type]
     bank_change = negative_indices[negative_type == 0]
-    account_age_days[bank_change] = rng.uniform(5, 25, size=len(bank_change))
-    successful_payments[bank_change] = 0
-    provenance[bank_change] = "payment_history"
-    account_owned_by_payee[bank_change] = True
-    nominated[bank_change] = True
-    name_match[bank_change] = rng.uniform(0.96, 1.0, size=len(bank_change))
-    sender_domain[bank_change] = known_domain[bank_change]
+    account_age_days[bank_change] = rng.lognormal(
+        mean=np.log(40), sigma=0.8, size=len(bank_change)
+    ).clip(5, 400)
+    successful_payments[bank_change] = rng.integers(0, 4, size=len(bank_change))
+    provenance[bank_change] = np.where(
+        rng.random(len(bank_change)) < 0.80, "invoice_pdf_email", "user_input"
+    )
+    account_owned_by_payee[bank_change] = rng.random(len(bank_change)) < 0.50
+    nominated[bank_change] = rng.random(len(bank_change)) < 0.30
+    name_match[bank_change] = _truncated_beta(rng, len(bank_change), 0.85)
+    bank_change_sender_known = rng.random(len(bank_change)) < 0.90
+    sender_domain[bank_change] = np.where(
+        bank_change_sender_known, known_domain[bank_change], "gmail.com"
+    )
+    bank_change_border = rng.random(len(bank_change)) < 0.05
     account_institution[bank_change] = np.asarray(
-        [f"gh-bank-{number:02d}" for number in known_bank_region[bank_change]], dtype=object
+        [f"gh-bank-{number:02d}" for number in known_bank_region[bank_change]],
+        dtype=object,
+    )
+    account_institution[bank_change[bank_change_border]] = rng.choice(
+        border_banks, size=int(bank_change_border.sum())
     )
     norms[bank_change] = ""
     trading_name = negative_indices[negative_type == 1]
@@ -356,6 +422,21 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
         + rng.integers(0, 2, size=len(t3_indices)),
         30,
     )
+    if len(bank_change):
+        prior_candidates = np.flatnonzero(
+            (typology == "none") & ~hard_negative & ~is_onboarding & (day < 30)
+        )
+        prior_rows = rng.choice(prior_candidates, size=len(bank_change), replace=True)
+        payer_ids[bank_change] = payer_ids[prior_rows]
+        payer_banks[bank_change] = payer_banks[prior_rows]
+        payee_ids[bank_change] = payee_ids[prior_rows]
+        payee_names[bank_change] = payee_names[prior_rows]
+        known_domain[bank_change] = known_domain[prior_rows]
+        supplier_institution[bank_change] = supplier_institution[prior_rows]
+        day[bank_change] = day[prior_rows] + 1
+        sender_domain[bank_change] = np.where(
+            bank_change_sender_known, known_domain[bank_change], "gmail.com"
+        )
 
     t4_indices = np.flatnonzero(is_t4)
     t4_groups: list[np.ndarray] = []
@@ -401,7 +482,7 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
             declared_split[group] = False
 
     if seed == "C":
-        amount *= 1.5
+        amount[~is_t4 & ~declared_split] *= 1.5
 
     # T2 account-takeover amounts are scaled against actual prior pair history when available.
     _, t2_history_median, _ = _temporal_history(
@@ -468,6 +549,8 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
             "typology": typology,
             "evasive": evasive,
             "hard_negative": hard_negative,
+            "hard_negative_type": hard_negative_type,
+            "legit_young_small_supplier": is_young_small_supplier,
             "day": day,
             "account_id_meta": account_ids,
             "cluster_id": cluster_ids,
