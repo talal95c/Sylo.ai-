@@ -131,7 +131,7 @@ Timing assumes a 4-minute slot; the live demo carries most of it. The run sheet'
 
 ### Slide 10 — Confidential payments with eERC
 - **Key message:** stablecoins are public by default. We showed confidential transfers between regulated institutions, readable by an auditor, live on Fuji.
-- **Show:** the three Snowtrace links (wrap, confidential transfer, unwrap) and a two-column visual: "On Snowtrace: amount hidden" vs "Auditor view: EUR 85,000". See §8.
+- **Show:** the EUR 85,000 confidential transfer on Snowtrace and a two-column visual: "On Snowtrace: amount hidden" vs "Auditor view: EUR 85,000". Optionally the float → hidden payments → netted settle sequence. See §8.
 - **Speaker notes:** "Confidential by default, auditable on demand. It's not a mixer: the addresses stay visible and a designated auditor reads every amount."
 
 ### Slide 11 — Compliance and principles
@@ -313,17 +313,19 @@ The three Sylo contracts and all 8 eERC contracts (5 verifiers, BabyJubJub libra
 
 **What eERC is:** Avalanche's **EncryptedERC**, an encrypted token standard. We use it in **converter mode** over our MockEURC: an institution "wraps" public tEURC into encrypted **eEURC**, sends it confidentially, and the receiver "unwraps" it back. It runs on unmodified upstream Ava Labs code (`ava-labs/EncryptedERC`), with Ava Labs' official **production** circuits and verification keys from their trusted-setup ceremony. We did not recompile the circuits or run our own setup.
 
-**What we showed (live on Fuji, not simulated, synthetic data and test-only keys):**
-1. The **EU CASP wrapped EUR 85,000** of tEURC into eEURC → [deposit tx](https://testnet.snowtrace.io/tx/0x40352f4fe095e8f37be722e730d041dfafa6b3daa09a75186df24394bf93933c)
-2. It made a **confidential transfer to the GH VASP**, with the payment ID (`PAY-2026-0001`) in **encrypted metadata** → [transfer tx](https://testnet.snowtrace.io/tx/0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e). On Snowtrace the amount is not readable.
-3. The **auditor decrypted exactly EUR 85,000**.
-4. The **GH VASP unwrapped** back to tEURC → [withdraw tx](https://testnet.snowtrace.io/tx/0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1)
+**What we showed (live on Fuji, not simulated, synthetic data and test-only keys).** We run it the way institutions would: a pre-funded float and netted settlement, so no public amount matches a payment.
+1. The **EU CASP pre-funded a float** of EUR 1,000,000 eEURC, once → [float deposit tx](https://testnet.snowtrace.io/tx/0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b)
+2. **Three confidential payments** to the GH VASP, each with its payment ID in **encrypted metadata**. On Snowtrace the amounts are not readable. The **auditor decrypted each one exactly**:
+   - `PAY-2026-0101`: **EUR 85,000** → [transfer tx](https://testnet.snowtrace.io/tx/0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c)
+   - `PAY-2026-0102`: EUR 12,400.75 → [transfer tx](https://testnet.snowtrace.io/tx/0xeb011a5d5814e7552a3a95353c96d701f2a565ffac98121e0ce87a1756b66c65)
+   - `PAY-2026-0103`: EUR 230,000 → [transfer tx](https://testnet.snowtrace.io/tx/0x1b8cd84674010e669c20e758f22a8d1373f61a76332ede8a0bcb45042c7e8bca)
+3. The **GH VASP unwrapped one netted EUR 300,000** later, which matches no single payment → [settle tx](https://testnet.snowtrace.io/tx/0x6f55d7fcb23b2a2a540f61d52cd6f51256fc97e20f7f2a20741ef8d6d728e9a4)
 
-A second run through the small transfer service (`POST /transfer` on port 8010), for EUR 1,250.50, also matched.
+**Separate roles:** the deployer only deploys; a dedicated **admin** wallet owns the eERC contract; a dedicated **auditor** wallet holds the decryption key. The auditor key was rotated on-chain from the deployer to the auditor wallet: the first two test payments (before rotation) are only readable with the old key, which shows rotation works.
 
-- **What's hidden:** the transfer amount, eEURC balances, the metadata (payment ID).
-- **What stays visible:** the sender and receiver addresses, and the wrap/unwrap amounts (see §9).
-- **Speed:** about **30 seconds per confidential leg** (3 transactions and 2 zero-knowledge proofs). Fine for business payments.
+- **What's hidden:** the transfer amounts, eEURC balances, the metadata (payment ID).
+- **What stays visible:** the sender and receiver addresses, the float size and the netted settlement amount (see §9).
+- **Speed:** about **10 seconds per confidential payment** (one transaction and its zero-knowledge proof). Fine for business payments.
 - **Status:** works on Fuji as a standalone service. **Not yet wired into the engine or the globe** (see §13).
 
 **Lines for the slide:** "Confidential by default, auditable on demand." "Not a mixer: addresses stay visible and a designated auditor reads every amount."
@@ -338,17 +340,17 @@ Each item has **what we say** on stage and **what would fix it in production**.
 - *What we say:* "Joining eERC requires a zero-knowledge proof that you own a private key. A smart contract has no private key, so it can't make that proof. So a payment that needs a hold, meaning MEDIUM risk, uses our **public escrow** (we call it Mode A). Low-risk payments that need no hold can go confidential."
 - *Production options:* (a) "hold by not sending": the sending institution only makes the confidential transfer once the engine releases it, while the registry still enforces the signed intent. That's enforced by the engine rather than by a contract, so it's weaker (Mode B, a lower-priority roadmap item). (b) A regulated custody agent holding a key acts as the escrow. That adds a trusted party.
 
-**2. Wrap and unwrap amounts are public.**
-- *What we say:* "In the demo we wrap 85,000 and unwrap 85,000, so an observer can match them, even though the transfer in the middle is encrypted."
-- *Production:* institutions pre-fund a float (wrap once, for example a large treasury amount), make confidential transfers from it, and unwrap netted or batched totals later. The chain then shows one big deposit, several hidden transfers and one unrelated withdrawal.
+**2. The float and the netted settlement are public.**
+- *What we say:* "Wrapping into and out of eERC is public. That's why we pre-fund a float once and settle netted totals: Snowtrace shows one EUR 1,000,000 deposit, three hidden transfers and one EUR 300,000 withdrawal, and none of them matches a payment."
+- *Production:* larger floats, settlement batched on a schedule, and institutions keeping balances in eEURC between payments make the visible amounts even less informative.
 
 **3. Sender and receiver addresses are visible.**
 - *What we say:* "That's by design. The addresses belong to regulated institutions (an EU CASP and a Ghanaian VASP), not to end customers. The customer's identity is never on-chain, and supervisors need to see which institutions trade with each other."
 - *Production:* per-corridor address rotation is possible.
 
-**4. The auditor key is held by the deployer wallet (test only).**
-- *What we say:* "For the demo, our deployer wallet holds the auditor key. Who should hold it in production is an open design question."
-- *Production:* the compliance function or the supervisor holds it, split across several holders (multi-party). It can be rotated with `setAuditorPublicKey`; old transfers stay readable only with the old key. The contract owner should be a multisig. All our keys are test keys; production keys live in hardware security modules (HSMs).
+**4. The auditor key is a single test wallet.**
+- *What we say:* "The auditor key has its own wallet, separate from the deployer and from the admin that owns the contract, and we rotated it on-chain. Who should hold it in production is an open design question."
+- *Production:* the compliance function or the supervisor holds it, split across several holders (multi-party). Rotation (`setAuditorPublicKey`) works, but old transfers stay readable only with the old key, so old keys must be archived securely. The admin should be a multisig. All our keys are test keys; production keys live in hardware security modules (HSMs).
 
 **5. Testnet, test token, synthetic data, simulated rails.**
 - *What we say:* "Everything runs on Avalanche's Fuji testnet with a labelled test euro token. Rails, banks, people, the supplier's phone, the SIM-swap check and strong authentication are simulated, and labelled as such on screen. Nothing has run on real payment flows. Report drafts (to TRACFIN in France or the FIC in Ghana) are drafts, never filings."
@@ -499,7 +501,7 @@ Notes for the slide:
 ## 14. Open items to check with the team before finalising
 
 1. **Web visuals:** Maria's redesign on branch `frontend-v2` is not on `main` yet. A review found it drops three things the story needs: the red dashed excluded route plus the route cost table, the "Fraud risk never enters the route score" line, and the "New account" pill. It also decides "Confirmed"/"Fraud" labels by reading the supplier's free text. **Take screenshots only from the version that will be demoed.**
-2. **eERC isn't wired into the engine or the web app.** The confidential transfer runs as a standalone service. Unless Oscar (engine) and Maria (web) add it, show eERC on a slide with the Snowtrace links, not in the live demo. An improved eERC demo (float pre-funding and netted unwraps, separate auditor/admin wallets) may land later; if it does, update §8 and §9 items 2 and 4.
+2. **eERC isn't wired into the engine or the web app.** The confidential transfer runs as a standalone service. Unless Oscar (engine) and Maria (web) add it, show eERC on a slide with the Snowtrace links, not in the live demo. The float and netted-settlement model and the separate auditor/admin wallets are live (§8).
 3. **Scene 4 isn't in the demo run sheet yet**, and the globe doesn't have a dedicated guardian view on `main` (the event shows in the feed). After a forged confirmation, the engine stays in "awaiting supplier", and its own revoke path can't finish a frozen case: in the live run the cleanup was done on-chain. Ask Oscar whether the analyst's revoke works from the UI on a frozen payment.
 4. **Scene 3 cluster fix:** confirm whether the engine now uses Lane B's detector or still the sample cluster, and adjust the wording (§9 item 10).
 5. **No metrics page in the web app on `main`.** Put the numbers on slides directly from §7.1.
@@ -530,10 +532,10 @@ Notes for the slide:
 - Corridor pause: <https://testnet.snowtrace.io/tx/0x878350758d51d38fccdac2ccb0522a7007dd932589e77be3e4d245e68e5de71c>
 - **Failed release:** <https://testnet.snowtrace.io/tx/0xd5e1b2d5ffc99cbf08a9c778e93298ee47b8a941dd7c599527a5550407544442>
 
-**eERC confidential transfer (EUR 85,000)**
-- Deposit (wrap): <https://testnet.snowtrace.io/tx/0x40352f4fe095e8f37be722e730d041dfafa6b3daa09a75186df24394bf93933c>
-- Confidential transfer: <https://testnet.snowtrace.io/tx/0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e>
-- Withdraw (unwrap): <https://testnet.snowtrace.io/tx/0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1>
+**eERC confidential payments (float + netted settlement)**
+- Float deposit (EUR 1,000,000): <https://testnet.snowtrace.io/tx/0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b>
+- Confidential transfer, EUR 85,000 (amount hidden): <https://testnet.snowtrace.io/tx/0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c>
+- Netted settle (EUR 300,000): <https://testnet.snowtrace.io/tx/0x6f55d7fcb23b2a2a540f61d52cd6f51256fc97e20f7f2a20741ef8d6d728e9a4>
 
 **Source documents in the repository**
 - Product reference: [`prd-final-v4.md`](../prd-final-v4.md) (§3 problem and facts, §7 scenes, §18 compliance, §22 pitch outline and prepared answers, §23 business model)
