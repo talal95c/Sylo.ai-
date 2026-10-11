@@ -56,5 +56,7 @@ takes about 30 s (3 txs and 2 proofs). `vendor/` and `node_modules` are git-igno
   A confidential escrow (Mode B) is P2.
 - **What stays visible:** sender and receiver addresses, and the wrap (deposit) and unwrap (withdraw) amounts in
   MockEURC. **What is hidden:** the eEURC transfer amount, the eEURC balances and the metadata (`paymentId`).
-  Only the receiver can decrypt the metadata; the auditor can decrypt amounts.
+  Only the receiver can decrypt the metadata; the auditor can decrypt amounts. In this demo the full
+  amount is wrapped and unwrapped in one go, so an observer can match them; real privacy needs the
+  institutions to keep standing eEURC balances.
 - The contracts are deployed from unmodified upstream sources (audited upstream; not re-audited by us).
