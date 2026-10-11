@@ -4,7 +4,7 @@ From: Lane D (web). Status: proposed, not implemented. Lane D does not edit `/en
 
 ## Why
 
-`/test` now prices the three recorded orders on the real engine (`POST /v1/quotes`) and launches the two FR → GH orders into the globe and nodes views (`POST /v1/payments`). Two limits remain, both on the engine side:
+`/test` now prices the two FR → GH recorded orders on the real engine (`POST /v1/quotes`, recorded quote shown offline) and launches them into the globe and nodes views (`POST /v1/payments`). Two limits remain, both on the engine side:
 
 1. **Only recorded orders run.** `QuoteBody.order` is `legit | diverted | lagos-accra` and `PaymentBody.order` is `legit | diverted` (`engine/sylo/main.py`). A quote with another `amount` is `executable: false` (`Orchestrator.quote`). So a user cannot run "their own" payment: amount, invoice reference or beneficiary account cannot change the run.
 2. **The globe cannot draw Lagos → Accra.** The NG institutions live only in `engine/packs/NG-GH.yaml` (`payer_lagos`, `bank_ng`, `corr_us`, `papss_hub`, `vasp_ng`, `momo_ng`) and have no coordinates; `spec/geo/institutions.json` has FR/EU/GH institutions only. spec/api.md says it: "the globe does not draw this corridor".

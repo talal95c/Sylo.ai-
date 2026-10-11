@@ -34,7 +34,7 @@ export default function SyloApp() {
   const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => {
-    const fromTest = new URLSearchParams(window.location.search).has("run");
+    const fromTest = new URLSearchParams(window.location.search).has("scene");
     if (fromTest || onboardingSeen()) return;
     const timer = window.setTimeout(() => setTourOpen(true), 900);
     return () => window.clearTimeout(timer);
@@ -43,10 +43,10 @@ export default function SyloApp() {
   useEffect(() => {
     if (!sylo.ready || autoRunRef.current) return;
     const url = new URL(window.location.href);
-    const run = url.searchParams.get("run");
+    const run = url.searchParams.get("scene");
     if (run !== "legit" && run !== "diverted") return;
     autoRunRef.current = true;
-    url.searchParams.delete("run");
+    url.searchParams.delete("scene");
     window.history.replaceState(null, "", url);
     if (run === "legit") void sylo.actions.runLegit();
     else void sylo.actions.runDiverted();
