@@ -97,3 +97,69 @@ export async function fetchQuote(order: OrderName, amount: number, signal?: Abor
 export function submitPayment(quoteId: string) {
   return call<{ paymentId: string }>("/v1/payments", { quoteId }, { "Idempotency-Key": `web-${quoteId}` });
 }
+
+export interface Bank {
+  id: string;
+  name: string;
+  short: string;
+  city: string;
+}
+
+export interface SavedAccount {
+  accountId: string;
+  accountHolder: string;
+  accountMasked: string;
+  bankId: string;
+  bankName: string;
+  successfulPayments: number;
+}
+
+export interface SavedPayee {
+  payeeId: string;
+  name: string;
+  accounts: SavedAccount[];
+}
+
+export type DetailsSource = "saved" | "invoice_email" | "phone" | "typed";
+
+/** What the user typed; the engine matches it against the registry and decides. */
+export interface PaymentDraft {
+  beneficiary: { accountId: string } | { name: string; accountHolder: string; accountNumber: string; bankId: string };
+  amount: string;
+  purpose: "GOODS" | "SERVICES";
+  invoiceRef: string;
+  locRef?: string;
+  detailsSource: DetailsSource;
+  senderDomain?: string;
+}
+
+async function get<T>(pathname: string): Promise<T> {
+  const response = await fetch(`${engineUrl.replace(/\/$/, "")}${pathname}`, { signal: AbortSignal.timeout(4000) });
+  if (!response.ok) throw new EngineError(response.status, null);
+  return (await response.json()) as T;
+}
+
+/** The payer's saved payees and the Ghanaian banks; null when the engine is offline (recorded orders only). */
+export async function fetchRegistry(): Promise<{ payees: SavedPayee[]; banks: Bank[] } | null> {
+  if (!liveEngineEnabled()) return null;
+  try {
+    const [payees, banks] = await Promise.all([
+      get<{ payees: SavedPayee[] }>("/v1/payees"),
+      get<{ banks: Bank[] }>("/v1/banks"),
+    ]);
+    return { payees: payees.payees, banks: banks.banks };
+  } catch {
+    return null;
+  }
+}
+
+/** The engine's live decision for a payment typed by the user. Executable as it is. */
+export function fetchPaymentQuote(payment: PaymentDraft, signal?: AbortSignal): Promise<Quote> {
+  return Promise.race([
+    call<Quote>("/v1/quotes", { payment }),
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new EngineError(0, null)), 6000);
+      signal?.addEventListener("abort", () => clearTimeout(timer));
+    }),
+  ]);
+}

@@ -8,10 +8,16 @@ import { HOP_COLORS, TIER_COLORS } from "@/lib/colors";
 import { loadGeo, type Institution } from "@/lib/geo";
 import {
   EngineError,
+  fetchPaymentQuote,
   fetchQuote,
+  fetchRegistry,
   INVOICE_AMOUNT,
   submitPayment,
+  type Bank,
+  type DetailsSource,
   type OrderName,
+  type PaymentDraft,
+  type SavedPayee,
   type Quote,
   type QuoteRoute,
 } from "@/lib/quote";
@@ -146,6 +152,86 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+const SOURCES: { id: DetailsSource; label: string }[] = [
+  { id: "typed", label: "I typed them myself" },
+  { id: "invoice_email", label: "From an invoice email" },
+  { id: "phone", label: "Given on a phone call" },
+];
+
+const NEW_RECIPIENT = { name: "", accountHolder: "", accountNumber: "", bankId: "", detailsSource: "typed" as DetailsSource, senderDomain: "" };
+
+const inputClass = "mt-0.5 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3";
+
+const cleanName = (text: string) => text.replace(/[^\p{L}\p{N} .,'&()/_-]/gu, "").slice(0, 120);
+const cleanRef = (text: string) => text.replace(/[^A-Za-z0-9 ._/-]/g, "").slice(0, 40);
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block rounded-xl border border-[var(--line-strong)] px-3.5 py-2.5 transition focus-within:border-ink focus-within:shadow-[0_0_0_3px_rgba(10,10,10,0.06)]">
+      <span className="block text-[11.5px] text-ink-2">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function RecipientCard({
+  active,
+  onSelect,
+  title,
+  tag,
+  tagTone,
+  account,
+  holder,
+  source,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  title: string;
+  tag: string;
+  tagTone: string;
+  account: string;
+  holder: string;
+  source: string;
+}) {
+  const initials = title
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0] ?? "")
+    .join("")
+    .toUpperCase();
+  return (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.99 }}
+      onClick={onSelect}
+      className={cx(
+        "flex items-center gap-4 rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow] duration-200",
+        active ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]" : "border-[var(--line-strong)] hover:border-[rgba(0,0,0,0.3)]",
+      )}
+    >
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[13px] font-medium">{initials}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-[14px] font-medium tracking-[-0.02em]">{title}</span>
+          <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium", tagTone)}>{tag}</span>
+        </span>
+        <span className="mt-0.5 block font-mono text-[11.5px] text-ink-2">
+          {account} · {holder}
+        </span>
+        <span className="mt-0.5 block text-[11.5px] text-ink-3">{source}</span>
+      </span>
+      <span
+        className={cx(
+          "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
+          active ? "border-ink bg-ink" : "border-[var(--line-strong)]",
+        )}
+      >
+        {active ? <Check size={11} color="#fff" /> : null}
+      </span>
+    </motion.button>
+  );
+}
+
 export default function TestTransaction() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -157,10 +243,60 @@ export default function TestTransaction() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [institutions, setInstitutions] = useState<Record<string, Institution> | null>(null);
+  const [registry, setRegistry] = useState<{ payees: SavedPayee[]; banks: Bank[] } | null>(null);
+  const [tab, setTab] = useState<"saved" | "new">("saved");
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [form, setForm] = useState(NEW_RECIPIENT);
+  const [invoiceRef, setInvoiceRef] = useState("SSE-2026-131");
+  const [purpose, setPurpose] = useState<"GOODS" | "SERVICES">("GOODS");
+  const [locRef, setLocRef] = useState("LOC-GH-2026-0457");
 
   const amount = parseAmount(amountText);
   const atInvoiceAmount = amount === INVOICE_AMOUNT;
   const recipient = RECIPIENTS.find((item) => item.order === order) ?? null;
+  const live = registry !== null;
+  const savedAccounts = registry?.payees.flatMap((payee) => payee.accounts.map((account) => ({ payee, account }))) ?? [];
+  const saved = savedAccounts.find((item) => item.account.accountId === accountId) ?? null;
+  const bank = registry?.banks.find((item) => item.id === form.bankId) ?? null;
+  const newReady =
+    form.name.trim().length >= 2 && form.accountHolder.trim().length >= 2 && /^[0-9]{10,16}$/.test(form.accountNumber) && bank !== null;
+  const beneficiary: PaymentDraft["beneficiary"] | null =
+    tab === "saved"
+      ? saved
+        ? { accountId: saved.account.accountId }
+        : null
+      : newReady
+        ? { name: form.name.trim(), accountHolder: form.accountHolder.trim(), accountNumber: form.accountNumber, bankId: form.bankId }
+        : null;
+  const draft: PaymentDraft | null =
+    live && beneficiary && amount !== null && invoiceRef.trim()
+      ? {
+          beneficiary,
+          amount: amount.toFixed(2),
+          purpose,
+          invoiceRef: invoiceRef.trim(),
+          locRef: purpose === "GOODS" && locRef.trim() ? locRef.trim() : undefined,
+          detailsSource: tab === "saved" ? "saved" : form.detailsSource,
+          senderDomain: tab === "new" && form.detailsSource === "invoice_email" && form.senderDomain.trim() ? form.senderDomain.trim() : undefined,
+        }
+      : null;
+  const draftKey = draft && step >= 1 ? JSON.stringify(draft) : null;
+  const to = live
+    ? tab === "saved"
+      ? saved
+        ? { name: saved.payee.name, account: saved.account.accountMasked, holder: saved.account.accountHolder, bank: saved.account.bankName }
+        : null
+      : newReady && bank
+        ? {
+            name: form.name.trim(),
+            account: `GH•• •••• ${form.accountNumber.slice(-4)}`,
+            holder: form.accountHolder.trim().toUpperCase(),
+            bank: `${bank.short}, ${bank.city}`,
+          }
+        : null
+    : recipient
+      ? { name: "Savanna Shea Exports Ltd", account: recipient.account, holder: recipient.holder, bank: null }
+      : null;
   const chosen = quote?.routes.find((route) => route.routeId === quote.route.chosen) ?? null;
   const chosenCost = quote && chosen ? costOf(quote, chosen.routeId) : null;
   const swiftCost = quote ? costOf(quote, "R1") : null;
@@ -169,15 +305,22 @@ export default function TestTransaction() {
     loadGeo()
       .then((geo) => setInstitutions(geo.institutions))
       .catch(() => undefined);
+    void fetchRegistry().then(setRegistry);
   }, []);
 
   useEffect(() => {
-    if (!order || amount === null) return;
     const controller = new AbortController();
+    const request =
+      draftKey !== null
+        ? () => fetchPaymentQuote(JSON.parse(draftKey) as PaymentDraft, controller.signal)
+        : !live && order && amount !== null
+          ? () => fetchQuote(order, amount, controller.signal)
+          : null;
+    if (!request) return;
     const timer = setTimeout(() => {
       setQuoting(true);
       setQuoteError(null);
-      fetchQuote(order, amount, controller.signal)
+      request()
         .then((next) => {
           if (!controller.signal.aborted) setQuote(next);
         })
@@ -185,7 +328,11 @@ export default function TestTransaction() {
           if (controller.signal.aborted) return;
           setQuote(null);
           setQuoteError(
-            error instanceof EngineError && error.status === 0
+            live
+              ? error instanceof EngineError && error.status !== 0 && error.detail
+                ? `The engine refused this payment: ${error.detail}.`
+                : "The engine did not answer. Try again."
+              : error instanceof EngineError && error.status === 0
               ? "Estimates for other amounts need the live engine. The recorded quote is for €85,000."
               : "The engine could not price this payment.",
           );
@@ -198,13 +345,13 @@ export default function TestTransaction() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [order, amount]);
+  }, [order, amount, live, draftKey]);
 
   async function send() {
-    if (!quote || !order) return;
+    if (!quote) return;
     setSendError(null);
     if (quote.recorded || !quote.quoteId) {
-      router.push(`/demo?scene=${order}`);
+      if (order) router.push(`/demo?scene=${order}`);
       return;
     }
     setSending(true);
@@ -222,7 +369,13 @@ export default function TestTransaction() {
   }
 
   const canContinue =
-    step === 0 ? Boolean(order) : step === 1 ? Boolean(quote) && !quoting && amount !== null : step === 2 ? Boolean(quote) : false;
+    step === 0
+      ? live
+        ? beneficiary !== null
+        : Boolean(order)
+      : step === 1
+        ? Boolean(quote) && !quoting && amount !== null && (!live || draft !== null)
+        : step === 2 ? Boolean(quote) : false;
 
   return (
     <main className="h-dvh w-full overflow-y-auto bg-white">
@@ -270,47 +423,143 @@ export default function TestTransaction() {
             {step === 0 ? (
               <motion.div key="recipient" {...slide}>
                 <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">Who are you paying?</h1>
-                <p className="mt-2 text-[13.5px] text-ink-2">Rhône Cosmétiques SAS · invoice SSE-2026-118</p>
-                <div className="mt-7 flex flex-col gap-2.5">
-                  {RECIPIENTS.map((item) => {
-                    const active = order === item.order;
-                    return (
-                      <motion.button
+                <p className="mt-2 text-[13.5px] text-ink-2">From Rhône Cosmétiques SAS{live ? "" : " · invoice SSE-2026-118"}</p>
+                {live ? (
+                  <>
+                    <div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] p-1">
+                      {(["saved", "new"] as const).map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            setTab(id);
+                            setQuote(null);
+                          }}
+                          className={cx(
+                            "relative h-8 rounded-full px-4 text-[12.5px] font-medium transition-colors",
+                            tab === id ? "text-ink" : "text-ink-2 hover:text-ink",
+                          )}
+                        >
+                          {tab === id ? (
+                            <motion.span
+                              layoutId="recipient-tab"
+                              className="absolute inset-0 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                              transition={{ duration: 0.3, ease }}
+                            />
+                          ) : null}
+                          <span className="relative">{id === "saved" ? "Saved" : "New recipient"}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {tab === "saved" ? (
+                      <div className="mt-4 flex flex-col gap-2.5">
+                        {savedAccounts.map(({ payee, account }) => (
+                          <RecipientCard
+                            key={account.accountId}
+                            active={accountId === account.accountId}
+                            onSelect={() => {
+                              setAccountId(account.accountId);
+                              setQuote(null);
+                            }}
+                            title={payee.name}
+                            tag="Saved account"
+                            tagTone="text-[var(--low)] bg-[rgba(22,163,74,0.08)]"
+                            account={account.accountMasked}
+                            holder={account.accountHolder}
+                            source={`${account.bankName} · ${account.successfulPayments} payments made`}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-2.5">
+                        <Field label="Business name">
+                          <input
+                            className={inputClass}
+                            value={form.name}
+                            placeholder="Savanna Shea Exports Ltd"
+                            onChange={(event) => setForm({ ...form, name: cleanName(event.target.value) })}
+                          />
+                        </Field>
+                        <Field label="Account holder, as the bank shows it">
+                          <input
+                            className={inputClass}
+                            value={form.accountHolder}
+                            placeholder="SAVANNA SHEA EXPORTS LTD"
+                            onChange={(event) => setForm({ ...form, accountHolder: cleanName(event.target.value) })}
+                          />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <Field label="Bank in Ghana">
+                            <select
+                              className={inputClass}
+                              value={form.bankId}
+                              onChange={(event) => setForm({ ...form, bankId: event.target.value })}
+                            >
+                              <option value="">Choose a bank</option>
+                              {registry.banks.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.short} · {item.city}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field label="Account number">
+                            <input
+                              className={cx(inputClass, "font-mono")}
+                              inputMode="numeric"
+                              value={form.accountNumber}
+                              placeholder="10 to 16 digits"
+                              onChange={(event) => setForm({ ...form, accountNumber: event.target.value.replace(/\D/g, "").slice(0, 16) })}
+                            />
+                          </Field>
+                        </div>
+                        <Field label="Where do these bank details come from?">
+                          <select
+                            className={inputClass}
+                            value={form.detailsSource}
+                            onChange={(event) => setForm({ ...form, detailsSource: event.target.value as DetailsSource })}
+                          >
+                            {SOURCES.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {form.detailsSource === "invoice_email" ? (
+                          <Field label="Sender's email domain">
+                            <input
+                              className={inputClass}
+                              value={form.senderDomain}
+                              placeholder="savannashea-exports.com"
+                              onChange={(event) => setForm({ ...form, senderDomain: event.target.value.replace(/[^A-Za-z0-9.-]/g, "").slice(0, 120) })}
+                            />
+                          </Field>
+                        ) : null}
+                        <p className="text-[11.5px] text-ink-3">Synthetic banks · only the last four digits leave the engine.</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="mt-7 flex flex-col gap-2.5">
+                    {RECIPIENTS.map((item) => (
+                      <RecipientCard
                         key={item.order}
-                        type="button"
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => {
+                        active={order === item.order}
+                        onSelect={() => {
                           setOrder(item.order);
                           setQuote(null);
                         }}
-                        className={cx(
-                          "flex items-center gap-4 rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow] duration-200",
-                          active ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]" : "border-[var(--line-strong)] hover:border-[rgba(0,0,0,0.3)]",
-                        )}
-                      >
-                        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[13px] font-medium">SS</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <span className="truncate text-[14px] font-medium tracking-[-0.02em]">Savanna Shea Exports Ltd</span>
-                            <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium", item.tagTone)}>{item.tag}</span>
-                          </span>
-                          <span className="mt-0.5 block font-mono text-[11.5px] text-ink-2">
-                            {item.account} · {item.holder}
-                          </span>
-                          <span className="mt-0.5 block text-[11.5px] text-ink-3">{item.source}</span>
-                        </span>
-                        <span
-                          className={cx(
-                            "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
-                            active ? "border-ink bg-ink" : "border-[var(--line-strong)]",
-                          )}
-                        >
-                          {active ? <Check size={11} color="#fff" /> : null}
-                        </span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
+                        title="Savanna Shea Exports Ltd"
+                        tag={item.tag}
+                        tagTone={item.tagTone}
+                        account={item.account}
+                        holder={item.holder}
+                        source={item.source}
+                      />
+                    ))}
+                  </div>
+                )}
               </motion.div>
             ) : null}
 
@@ -362,8 +611,28 @@ export default function TestTransaction() {
                   ))}
                 </ol>
 
+                {live ? (
+                  <div className="mt-3 grid gap-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <Field label="Invoice reference">
+                        <input className={inputClass} value={invoiceRef} onChange={(event) => setInvoiceRef(cleanRef(event.target.value))} />
+                      </Field>
+                      <Field label="Purpose">
+                        <select className={inputClass} value={purpose} onChange={(event) => setPurpose(event.target.value as "GOODS" | "SERVICES")}>
+                          <option value="GOODS">Goods</option>
+                          <option value="SERVICES">Services</option>
+                        </select>
+                      </Field>
+                    </div>
+                    {purpose === "GOODS" ? (
+                      <Field label="Export letter of credit (Bank of Ghana)">
+                        <input className={inputClass} value={locRef} placeholder="Needed for goods" onChange={(event) => setLocRef(cleanRef(event.target.value))} />
+                      </Field>
+                    ) : null}
+                  </div>
+                ) : null}
                 {quoteError ? <p className="mt-2 text-[12.5px] text-[var(--danger)]">{quoteError}</p> : null}
-                {!atInvoiceAmount && amount !== null ? (
+                {!live && !atInvoiceAmount && amount !== null ? (
                   <p className="mt-3 rounded-xl bg-[var(--surface-2)] px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-2">
                     Estimate only: this proof of concept sends the invoice amount.{" "}
                     <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => setAmountText("85,000")}>
@@ -422,17 +691,26 @@ export default function TestTransaction() {
               </motion.div>
             ) : null}
 
-            {step === 3 && quote && recipient ? (
+            {step === 3 && quote && to ? (
               <motion.div key="review" {...slide}>
                 <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">Review and send</h1>
                 <p className="mt-2 text-[13.5px] text-ink-2">Nothing moves until the signed intent is committed.</p>
                 <div className="mt-6 rounded-2xl border border-[var(--line)] px-4">
                   <Row label="To">
-                    Savanna Shea Exports Ltd
+                    {to.name}
                     <span className="block font-mono text-[11.5px] text-ink-3">
-                      {recipient.account} · {recipient.holder}
+                      {to.account} · {to.holder}
                     </span>
+                    {to.bank ? <span className="block text-[11.5px] text-ink-3">{to.bank}</span> : null}
                   </Row>
+                  {live ? (
+                    <Row label="Invoice">
+                      <span className="font-mono">{invoiceRef}</span>
+                      <span className="block text-[11.5px] text-ink-3">
+                        {purpose === "GOODS" ? `Goods · LOC ${locRef || "missing"}` : "Services"}
+                      </span>
+                    </Row>
+                  ) : null}
                   <Row label="Amount">
                     <span className="font-mono">{amount !== null ? euros(amount) : "—"}</span>
                   </Row>
@@ -486,7 +764,7 @@ export default function TestTransaction() {
               {step === 1 && quoting ? <Spinner size={14} color="#fff" /> : null}
               Continue
             </motion.button>
-          ) : atInvoiceAmount ? (
+          ) : live || atInvoiceAmount ? (
             <motion.button
               type="button"
               whileTap={{ scale: 0.98 }}
@@ -495,7 +773,7 @@ export default function TestTransaction() {
               className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent text-[13px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-[#0023d6] disabled:opacity-60"
             >
               {sending ? <Spinner size={14} color="#fff" /> : null}
-              {chosen ? `Send ${euros(INVOICE_AMOUNT)}` : "No route available"}
+              {chosen ? `Send ${euros(live && amount !== null ? amount : INVOICE_AMOUNT)}` : "No route available"}
             </motion.button>
           ) : (
             <button

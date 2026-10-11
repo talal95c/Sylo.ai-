@@ -7,6 +7,9 @@ export type InstitutionId =
   | "remit_fr"
   | "vasp_gh"
   | "bank_gh"
+  | "bank_gh_accra"
+  | "bank_gh_tamale"
+  | "bank_gh_takoradi"
   | "momo_gh"
   | "supplier_ssx"
   | "mule_bank";
