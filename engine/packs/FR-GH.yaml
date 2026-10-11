@@ -1,5 +1,8 @@
 # Corridor pack France -> Ghana. All parameters are synthetic and labelled "simulated" in the UI.
-# Route score: S(r) = fees + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk
+# FX margins are synthetic and labelled "simulated". Sources: banks typically add 2–4% over
+# mid-market (Airwallex / CurrencyTransfer 2025–26), stablecoin off-ramp ≈ 0.8% (Yellow Card claim),
+# Circle EURC mint/redeem 0.03%; mid-market rate is fx.EUR_GHS.
+# Route score: S(r) = fees + fxMargin*A + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk
 # Fraud risk is never an input of S.
 id: FR-GH
 version: "2026-10-11"
@@ -9,7 +12,7 @@ fx:
   EUR_GHS: 16.5            # fixed demo rate (simulated)
 
 routeModel:
-  lambda: 0.0007           # cost of capital, per euro per day
+  lambda: 0.00022          # ≈ 8%/yr SME cost of capital, simulated
   mu: 0.02                 # cost of a failed payment, per euro
   nu: 0.05                 # cost of a credit the beneficiary cannot use, per euro
   sigma: 1.0               # weight of route (operational) risk; routeRisk = 0 in v0
@@ -21,6 +24,7 @@ routes:
     name: SWIFT correspondent
     settlement: FIAT_HOLD
     feesEur: 80
+    fxMarginPct: 0.02
     minutes: 2880
     pFail: 0.01
     pUnusable: 0
@@ -33,6 +37,7 @@ routes:
     name: Payout provider
     settlement: NONE
     feesEur: 935
+    fxMarginPct: 0.02
     minutes: 60
     pFail: 0.0025
     pUnusable: 0
@@ -45,6 +50,7 @@ routes:
     name: Euro stablecoin on Avalanche
     settlement: ONCHAIN_ESCROW
     feesEur: 170
+    fxMarginPct: 0.008
     minutes: 120
     pFail: 0.0025
     pUnusable: 0
@@ -58,6 +64,7 @@ routes:
     name: Mobile wallet remittance
     settlement: NONE
     feesPct: 0.015
+    fxMarginPct: 0.02
     minutes: 10
     pFail: 0.03
     pUnusable: 0.05

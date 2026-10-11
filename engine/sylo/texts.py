@@ -101,9 +101,12 @@ def route_reason_low(
     best_id: str, best_s: float, swift_s: float | None, excluded: list[tuple[str, str]], symbol: str = "€"
 ) -> str:
     if swift_s is None or best_id == "R1":
-        text = f"{best_id} is the cheapest compliant route: {symbol}{best_s:.0f} all-in."
+        text = f"{best_id} is the cheapest compliant route: {symbol}{best_s:,.0f} all-in (fees, FX margin and delay)."
     else:
-        text = f"{best_id} is the cheapest compliant route: {symbol}{best_s:.0f} all-in against {symbol}{swift_s:.0f} via SWIFT."
+        text = (
+            f"{best_id} is the cheapest compliant route: {symbol}{best_s:,.0f} all-in (fees, FX margin and delay) "
+            f"against {symbol}{swift_s:,.0f} via SWIFT."
+        )
     for route_id, rule_id in excluded:
         text += f" {route_id} is excluded by {RULE_LABELS.get(rule_id, rule_id)}."
     return text
@@ -119,13 +122,13 @@ def route_reason_medium(
 ) -> str:
     allowed = ", ".join(f"{rid} {SETTLEMENT_LABELS.get(settlement, settlement)}" for rid, settlement in holding)
     comparison = (
-        f"{symbol}{best_s:.0f}"
+        f"{symbol}{best_s:,.0f}"
         if swift_s is None or best_id == "R1"
-        else f"{symbol}{best_s:.0f} against {symbol}{swift_s:.0f}"
+        else f"{symbol}{best_s:,.0f} against {symbol}{swift_s:,.0f}"
     )
     return (
         f"Risk is MEDIUM, so only routes that can hold the money are allowed ({allowed}). "
-        f"{best_id} is the cheapest: {comparison}. Price of safety: {symbol}{price_of_safety:.0f}."
+        f"{best_id} is the cheapest: {comparison}. Price of safety: {symbol}{price_of_safety:,.0f}."
     )
 
 
