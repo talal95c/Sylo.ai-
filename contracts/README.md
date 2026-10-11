@@ -40,6 +40,8 @@ forge script script/Approve.s.sol --rpc-url fuji --broadcast                  # 
 
 Verification goes through Routescan (configured in `foundry.toml`). After a redeploy, update `REGISTRY_ADDRESS`, `ESCROW_ADDRESS` and `TOKEN_ADDRESS` in every `.env` and the table above.
 
+If a signer key leaks, `script/rotate-signer.sh ROUTER_SIGNER` (or `VERIFIER_SIGNER`, `ANALYST_SIGNER`) grants the role to a fresh wallet, rewrites `.env` and revokes the old address. Run it in a shell where no old `*_PK` variables are exported, and share the new `.env` values with whoever runs the engine on Fuji.
+
 ## Signatures
 
 Signers are plain keys (65-byte ECDSA signatures) or contract wallets such as a multisig: pass `abi.encodePacked(walletAddress, walletSignature)` and the registry checks it with ERC-1271.
