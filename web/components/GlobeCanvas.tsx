@@ -8,6 +8,15 @@ import { greatCircleMidpoint } from "@/lib/geo";
 import type { ViewState } from "@/lib/store";
 import { arcDotPositions } from "@/lib/arcDots";
 import { ACCENT, DANGER_COLOR, HOP_COLORS, REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
+import {
+  altitudeFactor,
+  freeCenter,
+  freeRect,
+  viewOffsetFor,
+  type Occluder,
+  type OccluderSide,
+  type Rect,
+} from "@/lib/globeFrame";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -15,6 +24,7 @@ export interface GlobeCanvasProps {
   chainAltitude: number;
   atmosphereColor: string;
   speed: number;
+  onFrame?: (cx: number, cy: number) => void;
 }
 
 interface ArcDatum {
@@ -114,7 +124,7 @@ function hopView(
     ? Math.max(routeAltitude, chainAltitude * 3.2)
     : routeAltitude;
   return {
-    lat: midpoint.lat - altitude * 3,
+    lat: midpoint.lat,
     lng: midpoint.lng,
     altitude,
   };
@@ -199,10 +209,20 @@ export default function GlobeCanvas({
   chainAltitude,
   atmosphereColor,
   speed,
+  onFrame,
 }: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { width, height } = useViewport();
   const reducedMotion = useReducedMotion();
+  const freeRectRef = useRef<Rect | null>(null);
+  const viewOffsetRef = useRef({ x: 0, y: 0 });
+  const viewOffsetTargetRef = useRef({ x: 0, y: 0 });
+  const offsetTweenRef = useRef(0);
+  const onFrameRef = useRef(onFrame);
+
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+  }, [onFrame]);
   const [landDots, setLandDots] = useState<LandDot[]>([]);
   const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
   const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
@@ -610,15 +630,11 @@ export default function GlobeCanvas({
       const globe = globeRef.current;
       if (!globe) return;
 
-      const panelRects = [...document.querySelectorAll<HTMLElement>("aside")]
-        .map((panel) => panel.getBoundingClientRect())
-        .filter((rect) => rect.width > 0 && rect.height > 0);
-      const leftPanel = panelRects.find((rect) => rect.left < width / 2);
-      const rightPanel = panelRects.find((rect) => rect.left > width / 2);
-      const viewportLeft = leftPanel ? leftPanel.right + 8 : 12;
-      const viewportRight = rightPanel ? rightPanel.left - 8 : width - 12;
-      const viewportTop = 76;
-      const viewportBottom = height - 72;
+      const free = freeRectRef.current;
+      const viewportLeft = free ? free.left : 12;
+      const viewportRight = free ? free.right : width - 12;
+      const viewportTop = free ? free.top : 76;
+      const viewportBottom = free ? free.bottom : height - 72;
       const placed: DOMRect[] = [...document.querySelectorAll<HTMLElement>(".globe-marker, .globe-chain-label")]
         .filter((marker) => marker.style.opacity !== "0")
         .map((marker) => {
@@ -766,17 +782,18 @@ export default function GlobeCanvas({
     const schedule = (delay: number, callback: () => void) => {
       timers.push(setTimeout(callback, ms(delay)));
     };
-    const focus = (point: GeoPoint | undefined, altitude: number, duration: number, latitudeOffset = 0) => {
+    const pov = (target: { lat: number; lng: number; altitude: number }, duration: number) => {
+      const fit = altitudeFactor(freeRectRef.current, width, height);
+      globe.pointOfView({ ...target, altitude: target.altitude * fit }, duration);
+    };
+    const focus = (point: GeoPoint | undefined, altitude: number, duration: number) => {
       if (!point) return;
-      globe.pointOfView(
-        { lat: point.lat + latitudeOffset, lng: point.lng, altitude },
-        ms(duration),
-      );
+      pov({ lat: point.lat, lng: point.lng, altitude }, ms(duration));
     };
     const pointAt = (id: string) => institutions?.[id];
-    const focusLock = (altitude: number, duration: number, latitudeOffset = 0) => {
+    const focusLock = (altitude: number, duration: number) => {
       if (!lockPoint) return;
-      focus(lockPoint, altitude, duration, latitudeOffset);
+      focus(lockPoint, altitude, duration);
     };
     const pullBack = (delay: number) => {
       schedule(delay, () => {
@@ -807,27 +824,25 @@ export default function GlobeCanvas({
             900,
             1800,
           );
-          globe.pointOfView(target, ms(duration / Math.max(1, speedRef.current)));
+          pov(target, ms(duration / Math.max(1, speedRef.current)));
         }
         break;
       }
       case "payment.held": {
-        const compactViewport = window.innerHeight < 840;
-        focusLock(1.4, 1200, compactViewport ? -11.5 : -5.5);
+        focusLock(1.4, 1200);
         break;
       }
       case "verification.requested": {
         const supplier = pointAt("supplier_ssx");
         if (!lockPoint || !supplier) break;
-        const target = hopView(lockPoint, supplier, chainAltitude, true);
-        const compactViewport = window.innerHeight < 840;
-        const altitude = Math.max(
-          1.4,
-          target.altitude * (compactViewport ? 3 : 2.25),
+        const midpoint = greatCircleMidpoint(lockPoint, supplier);
+        const routeAltitude = clamp(
+          0.8 + angularDistanceDegrees(lockPoint, supplier) / 32,
+          1,
+          1.75,
         );
-        const latitudeOffset = altitude * (compactViewport ? 14 : 8.5);
-        globe.pointOfView(
-          { ...target, lat: target.lat - latitudeOffset, altitude },
+        pov(
+          { lat: midpoint.lat, lng: midpoint.lng, altitude: Math.max(1.4, routeAltitude) },
           ms(1400),
         );
         break;
@@ -838,7 +853,7 @@ export default function GlobeCanvas({
       case "escrow.refunded": {
         const payer = pointAt("payer_rhone");
         if (payer && lockPoint) {
-          globe.pointOfView(hopView(payer, lockPoint, chainAltitude), ms(1600));
+          pov(hopView(payer, lockPoint, chainAltitude), ms(1600));
         }
         break;
       }
@@ -868,7 +883,74 @@ export default function GlobeCanvas({
     return () => {
       timers.forEach(clearTimeout);
     };
-  }, [lastEvent, state.scenario, institutions, lockPoint, reducedMotion, chainAltitude]);
+  }, [lastEvent, state.scenario, institutions, lockPoint, reducedMotion, chainAltitude, width, height]);
+
+  // Panel-aware framing: measure the occluders, then tween a camera view
+  // offset so pointOfView targets land in the centre of the free area.
+  useEffect(() => {
+    const applyViewOffset = (target: { x: number; y: number }) => {
+      const globe = globeRef.current;
+      if (!globe) return;
+      const camera = globe.camera() as THREE.PerspectiveCamera;
+      if (offsetTweenRef.current) {
+        cancelAnimationFrame(offsetTweenRef.current);
+        offsetTweenRef.current = 0;
+      }
+      const setOffset = (x: number, y: number) => {
+        viewOffsetRef.current = { x, y };
+        if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) camera.clearViewOffset();
+        else camera.setViewOffset(width, height, x, y, width, height);
+      };
+      if (reducedMotion) {
+        setOffset(target.x, target.y);
+        return;
+      }
+      const from = { ...viewOffsetRef.current };
+      const start = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / 600);
+        const eased = 1 - (1 - t) ** 3;
+        setOffset(from.x + (target.x - from.x) * eased, from.y + (target.y - from.y) * eased);
+        if (t < 1) offsetTweenRef.current = requestAnimationFrame(tick);
+        else offsetTweenRef.current = 0;
+      };
+      offsetTweenRef.current = requestAnimationFrame(tick);
+    };
+
+    const measure = () => {
+      const globe = globeRef.current;
+      const occluders: Occluder[] = [
+        ...document.querySelectorAll<HTMLElement>("[data-globe-occluder]"),
+      ].map((element) => ({
+        side: element.dataset.globeOccluder as OccluderSide,
+        rect: element.getBoundingClientRect(),
+      }));
+      const free = freeRect(occluders, width, height);
+      freeRectRef.current = free;
+      const { cx, cy } = free
+        ? freeCenter(free)
+        : { cx: width / 2, cy: height / 2 };
+      onFrameRef.current?.(cx, cy);
+      if (!globe) return;
+      if (process.env.NODE_ENV !== "production") {
+        (window as unknown as { __syloGlobe?: GlobeMethods }).__syloGlobe = globe;
+      }
+      const target = free ? viewOffsetFor(width, height, cx, cy) : { x: 0, y: 0 };
+      const previous = viewOffsetTargetRef.current;
+      viewOffsetTargetRef.current = target;
+      if (Math.abs(target.x - previous.x) <= 4 && Math.abs(target.y - previous.y) <= 4) return;
+      applyViewOffset(target);
+    };
+
+    measure();
+    const interval = setInterval(measure, 250);
+    window.addEventListener("resize", measure);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("resize", measure);
+      if (offsetTweenRef.current) cancelAnimationFrame(offsetTweenRef.current);
+    };
+  }, [width, height, reducedMotion]);
 
   function onReady() {
     const globe = globeRef.current;
