@@ -18,6 +18,10 @@ EXCLUSION_REASONS = {
     "EU_MICA_EMT_CASP": "Excluded: the EU crypto-asset provider or token on this route is not authorised under MiCA.",
     "EU_TRAVEL_RULE": "Excluded: the originator or beneficiary information required by the travel rule is missing.",
     "SANCTIONS_SCREEN": "Excluded: a party is on the sanctions list.",
+    "EU_HIGH_RISK_EDD": (
+        "Excluded: an institution on this route is in a country on the EU high-risk list, "
+        "and no enhanced due diligence file is attached."
+    ),
 }
 
 RULE_LABELS = {
@@ -27,9 +31,18 @@ RULE_LABELS = {
     "EU_MICA_EMT_CASP": "MiCA",
     "EU_TRAVEL_RULE": "the travel rule",
     "SANCTIONS_SCREEN": "sanctions screening",
+    "EU_HIGH_RISK_EDD": "the EU high-risk country rule",
+    "EU_VOP_SCOPE": "the scope of Verification of Payee",
 }
 
 SIGNAL_R1 = "The requested account is not {payee_short}'s nominated export account."
+SIGNAL_R4 = "The requested account is held in {country}, a country on the EU high-risk list, while the payee is in {expected}."
+CONTROL_NOTICES = {
+    "EU_VOP_SCOPE": (
+        "The bank's Verification of Payee does not reach this account (outside SEPA): new or changed bank "
+        "details need an out-of-band check on a known contact."
+    ),
+}
 
 # --- Risk ------------------------------------------------------------------------------------
 

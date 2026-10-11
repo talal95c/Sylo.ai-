@@ -2,7 +2,7 @@
 # Route score: S(r) = fees + lambda*A*T + mu*A*pFail + nu*A*pUnusable + sigma*routeRisk
 # Fraud risk is never an input of S.
 id: FR-GH
-version: "2026-10-10"
+version: "2026-10-11"
 profiles: [FR, GH]
 
 fx:
@@ -98,6 +98,21 @@ rules:
     check: travel_rule_fields
     routes: [R3]
     legalRef: "Regulation (EU) 2023/1113 (transfer of funds and crypto-assets)"
+  # "listed" holds only the entry checked for the PoC corridors (Côte d'Ivoire listed, Ghana not listed);
+  # the full list is the Commission's. A route through a listed country needs an enhanced due diligence file.
+  - id: EU_HIGH_RISK_EDD
+    jurisdiction: EU
+    check: high_risk_country
+    params: { listed: [CI] }
+    signal: { code: R4, check: account_country }
+    legalRef: "Directive (EU) 2015/849, Article 18a; Delegated Regulation (EU) 2016/1675 (high-risk third countries), as amended"
+  # Never excludes a route: it records that the bank's payee name check does not reach this corridor,
+  # so new or changed bank details need the out-of-band check instead.
+  - id: EU_VOP_SCOPE
+    jurisdiction: EU
+    check: payee_name_check_scope
+    params: { available: false }
+    legalRef: "Regulation (EU) 2024/886 (instant payments): Verification of Payee covers SEPA credit transfers only"
   - id: SANCTIONS_SCREEN
     jurisdiction: ALL
     check: sanctions_screen

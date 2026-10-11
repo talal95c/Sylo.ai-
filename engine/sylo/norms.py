@@ -6,13 +6,16 @@ check counts as FAIL (fail safe). Norm signals inform the risk engine but never 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from sylo_spec import SPEC_DIR
 from sylo_spec.models import PaymentOrder
 from sylo_spec.scenarios import ACCOUNTS, PAYEES, normalize_name
 
@@ -179,6 +182,28 @@ def _sanctions_screen(route: RouteDef, hops: list[Hop], order: PaymentOrder, par
     return FAIL if any(normalize_name(name) in listed for name in names) else PASS
 
 
+@lru_cache(maxsize=1)
+def institution_countries() -> dict[str, str]:
+    """Institution id -> ISO country, from the registry the globe draws (``spec/geo/institutions.json``)."""
+    raw = json.loads((SPEC_DIR / "geo" / "institutions.json").read_text(encoding="utf-8"))
+    return {item["id"]: item["country"] for item in raw["institutions"]}
+
+
+def _high_risk_country(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
+    """A route through a listed country needs an enhanced due diligence file; an unknown institution fails."""
+    listed = set(params.get("listed", []))
+    countries = institution_countries()
+    on_route = {institution for hop in hops for institution in (hop["from"], hop["to"])}
+    if any(institution not in countries for institution in on_route):
+        return FAIL
+    return NEEDS_DOCUMENT if any(countries[institution] in listed for institution in on_route) else PASS
+
+
+def _payee_name_check_scope(route: RouteDef, hops: list[Hop], order: PaymentOrder, params: dict, pack: Pack) -> str:
+    """Informative: whether the bank's own payee name check reaches the corridor never excludes a route."""
+    return PASS
+
+
 CHECKS: dict[str, CheckFn] = {
     "export_proceeds_route": _export_proceeds_route,
     "wallet_daily_cap": _wallet_daily_cap,
@@ -186,6 +211,8 @@ CHECKS: dict[str, CheckFn] = {
     "casp_authorised": _casp_authorised,
     "travel_rule_fields": _travel_rule_fields,
     "sanctions_screen": _sanctions_screen,
+    "high_risk_country": _high_risk_country,
+    "payee_name_check_scope": _payee_name_check_scope,
 }
 
 
@@ -236,6 +263,8 @@ class NormsResult:
     routes: list[RouteEval]
     signals: list[dict[str, str]]
     tax_notices: list[dict[str, str]]
+    controls: list[dict[str, str]] = field(default_factory=list)
+    """Controls a rule asks for without excluding a route (for example the out-of-band check outside SEPA)."""
 
     def route(self, route_id: str) -> RouteEval:
         return next(r for r in self.routes if r.route.id == route_id)
@@ -250,6 +279,7 @@ class NormsResult:
             "routes": [r.to_event() for r in self.routes],
             "signals": self.signals,
             "taxNotices": self.tax_notices,
+            "controls": self.controls,
         }
 
 
@@ -312,6 +342,26 @@ class NormsEngine:
                             "ruleId": rule.id,
                         }
                     )
+                if rule.signal.get("check") == "account_country":
+                    account = ACCOUNTS.get(order.creditor_account_id)
+                    held_in = institution_countries().get(account.institution_id) if account else None
+                    if held_in in rule.params.get("listed", []) and held_in != order.creditor.country:
+                        signals.append(
+                            {
+                                "code": rule.signal["code"],
+                                "text": texts.SIGNAL_R4.format(country=held_in, expected=order.creditor.country),
+                                "ruleId": rule.id,
+                            }
+                        )
+
+        controls = [
+            {"ruleId": rule.id, "text": texts.CONTROL_NOTICES[rule.id], "legalRef": rule.legal_ref}
+            for rule in self.pack.rules
+            if rule.check == "payee_name_check_scope"
+            and rule.params.get("available") is False
+            and rule.id in texts.CONTROL_NOTICES
+            and _applies(rule, order)
+        ]
 
         passing = {e.route.id for e in evaluations if e.status == PASS}
         notices = [
@@ -319,4 +369,4 @@ class NormsEngine:
             for n in self.pack.tax_notices
             if not n.get("whenRoutePasses") or n["whenRoutePasses"] in passing
         ]
-        return NormsResult(self.pack.pack_version, evaluations, signals, notices)
+        return NormsResult(self.pack.pack_version, evaluations, signals, notices, controls)
