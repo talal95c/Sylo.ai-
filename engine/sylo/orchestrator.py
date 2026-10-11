@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -102,6 +102,7 @@ APPROVAL_STEP_MS = 600
 SUPPLIER_AUTO_MS = 3000
 ANALYST_AUTO_MS = 1500
 GUARDIAN_REACTION_MS = 700
+GUARDIAN_WAIT_S = 20.0
 TIME_LOCK_AUTO_MS = 2000
 QUOTE_VALIDITY_S = 600
 GUARDIAN_KNOWN_RUNS = 50
@@ -559,8 +560,21 @@ class Orchestrator:
         self._payee_checks.clear()
         self._injected_sim_swap = None
         self.telecom.clear()
-        for route_id in list(self._paused_corridors):
-            self._reopen_corridor(route_id)
+        if self.chain_simulated:
+            for route_id in list(self._paused_corridors):
+                self._reopen_corridor(route_id)
+        else:
+            def unpause_paused_corridors() -> None:
+                corridor_ids = set(self._paused_corridors.values()) | {corridor_id_of(CORRIDOR)}
+                for corridor_id in corridor_ids:
+                    try:
+                        if self.chain.corridor_paused(corridor_id):
+                            self.chain.unpause_corridor(corridor_id)
+                    except Exception as err:  # noqa: BLE001
+                        log.warning("could not unpause Fuji corridor %s (%s)", corridor_id, type(err).__name__)
+
+            await asyncio.to_thread(unpause_paused_corridors)
+            self._paused_corridors.clear()
         self.rails.reset()
         self.breakers.reset()
         self._window.clear()
@@ -1222,7 +1236,7 @@ class Orchestrator:
             self._publish("rail.down", {"routeId": adapter.id, "name": adapter.name, "reason": adapter.down_reason})
 
     def _reopen_corridor(self, route_id: str) -> None:
-        """Only the simulated chain is reopened here: on Fuji the admin key unpauses (Lane C's guardian command)."""
+        """Reopen a locally paused route on the simulated chain; reset handles Fuji with the admin key."""
         corridor = self._paused_corridors.pop(route_id, None)
         unpause = getattr(self.chain, "unpause_corridor", None)
         if corridor is not None and self.chain_simulated and unpause is not None:
@@ -2490,13 +2504,11 @@ class Orchestrator:
     async def _attack_stolen_verifier_key(self, run: PaymentRun) -> dict[str, Any]:
         """Scene 4: a thief holding the verifier key confirms a held payment, then tries to release it.
 
-        On a simulated chain the engine also plays the guardian (freeze, pause, report). On Fuji the real
-        guardian must be watching, so the scene is run with Lane C's script instead.
+        On a simulated chain the engine also plays the guardian (freeze, pause, report). Fuji waits for
+        the real guardian and fails safe if it does not react.
         """
         if not self.chain_simulated:
-            raise AttackNotApplicable(
-                "on a real chain run `uv run python -m sylo_chain.stolen_verifier_key <paymentId>` with the guardian watching"
-            )
+            return await self._attack_stolen_verifier_key_onchain(run)
         waiting = run.answer is not None and not run.answer.done()
         if run.intent is None or run.hold != "escrow" or run.frozen or not waiting:
             raise AttackNotApplicable("this payment is not held in escrow waiting for the supplier's answer")
@@ -2535,6 +2547,79 @@ class Orchestrator:
 
         await pacer.wait(THIEF_RELEASE_MS)
         result = {"ok": True, "reverted": False, "reason": None, "incidentId": incident["incidentId"]}
+        try:
+            await self._chain("release", self.chain.release, run.chain_pid, "attacker")
+        except ChainReverted as err:
+            self._reverted(run, err, "release")
+            result.update(reverted=True, reason=err.reason)
+        else:
+            log.error("release() on a frozen hold did NOT revert: the chain port is broken")
+        self._escalate(run)
+        return result
+
+    async def _attack_stolen_verifier_key_onchain(self, run: PaymentRun) -> dict[str, Any]:
+        """Try a forged confirmation on Fuji, then let the guardian freeze it before testing release."""
+        waiting = run.answer is not None and not run.answer.done()
+        if run.intent is None or run.hold != "escrow" or run.frozen or not waiting:
+            raise AttackNotApplicable("this payment is not held in escrow waiting for the supplier's answer")
+        address = getattr(self.chain, "address", None)
+        if address is None or not address("attacker"):
+            raise AttackNotApplicable("ATTACKER_PK is not set")
+
+        intent, pacer = run.intent, run.pacer
+        self._attack_started(run, "stolen_verifier_key")
+        domain = self.chain.domain()
+        forged = VerificationAttestation(
+            payment_id=intent.payment_id,
+            intent_hash=to_hex(digest(intent, domain)),
+            method=int(VerificationMethod.OOB_KNOWN_CONTACT),
+            result=int(VerificationResult.CONFIRMED),
+            sim_swap_checked=True,
+            evidence_hash=hash_record({"paymentId": run.order.id, "forged": True}),
+            verified_at=int(pacer.now().timestamp()),
+            nonce=self.signer.next_nonce("verifier_signer"),
+        )
+        verification = partial(
+            self.chain.record_verification,
+            forged,
+            self.signer.sign("verifier_signer", forged, domain),
+            caller="attacker",
+        )
+        tx = await self._chain("recordVerification", verification)
+
+        deadline = time.monotonic() + GUARDIAN_WAIT_S
+        while not run.frozen:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(0.5, remaining))
+        if not run.frozen:
+            await self._chain("freeze", self.chain.freeze, run.chain_pid)
+            await self._chain("pauseCorridor", self.chain.pause_corridor, intent.corridor_id)
+            self.guardian_incident(
+                {
+                    "rule": "CONFIRMED_WITHOUT_OOB_RECORD",
+                    "action": "FREEZE_AND_PAUSE",
+                    "txHash": tx.tx_hash,
+                    "explorerUrl": tx.explorer_url,
+                    "paymentId": run.order.id,
+                    "simulated": False,
+                },
+                escalate=False,
+            )
+            log.warning("guardian did not react to stolen verifier key attack for %s", run.order.id)
+
+        await pacer.wait(THIEF_RELEASE_MS)
+        hold = await asyncio.to_thread(self.chain.hold, run.chain_pid)
+        if not hold.get("frozen") and not hold.get("settled"):
+            try:
+                await self._chain("freeze", self.chain.freeze, run.chain_pid)
+            except ChainReverted as err:
+                log.warning("fallback freeze reverted for %s (%s); release not attempted", run.order.id, err.reason)
+                self._escalate(run)
+                return {"ok": True, "reverted": False, "reason": err.reason, "incidentId": run.incident_id}
+
+        result = {"ok": True, "reverted": False, "reason": None, "incidentId": run.incident_id}
         try:
             await self._chain("release", self.chain.release, run.chain_pid, "attacker")
         except ChainReverted as err:
