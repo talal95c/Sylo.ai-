@@ -1,6 +1,50 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+load_secret_files() {
+  local secrets_dir="${SYLO_SECRETS_DIR:-/etc/secrets}"
+  local file line key value current_value loaded
+  [[ -d "$secrets_dir" ]] || return 0
+
+  for file in "$secrets_dir"/*; do
+    [[ -f "$file" ]] || continue
+    loaded=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line=${line%$'\r'}
+      line="${line#"${line%%[![:space:]]*}"}"
+      [[ -z "$line" || "$line" == \#* ]] && continue
+      if [[ "$line" == export[[:space:]]* ]]; then
+        line=${line#export}
+        line="${line#"${line%%[![:space:]]*}"}"
+      fi
+      [[ "$line" == *=* ]] || continue
+
+      key="${line%%=*}"
+      value="${line#*=}"
+      key="${key#"${key%%[![:space:]]*}"}"
+      key="${key%"${key##*[![:space:]]}"}"
+      [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      if [[ ${value:0:1} == '"' && ${value: -1} == '"' ]] ||
+        [[ ${value:0:1} == "'" && ${value: -1} == "'" ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+
+      if [[ -v $key ]]; then
+        current_value=${!key}
+        [[ -n "$current_value" ]] && continue
+      fi
+      export "$key=$value"
+      loaded=$((loaded + 1))
+    done < "$file"
+    printf 'loaded %d variables from %s\n' "$loaded" "$file" >&2
+  done
+}
+
+load_secret_files
+
 engine_pid=
 web_pid=
 guardian_pid=

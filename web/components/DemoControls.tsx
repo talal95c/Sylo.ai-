@@ -191,8 +191,16 @@ export function DemoControls({
 
   return (
     <>
+      <motion.nav
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease, delay: 0.3 }}
+        aria-label="Demo controls"
+        data-globe-occluder="bottom"
+        className="glass absolute bottom-4 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
+      >
       {showFloatingCaption ? (
-        <div className="pointer-events-none absolute bottom-[74px] left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
+        <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={caption}
@@ -207,14 +215,6 @@ export function DemoControls({
           </AnimatePresence>
         </div>
       ) : null}
-      <motion.nav
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease, delay: 0.3 }}
-        aria-label="Demo controls"
-        data-globe-occluder="bottom"
-        className="glass absolute bottom-4 left-1/2 z-30 flex h-auto min-h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
-      >
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
           key={phase + String(available.attack)}
@@ -227,20 +227,25 @@ export function DemoControls({
           {phase === "start" ? (
             <>
               <Button tone="primary" onClick={actions.runLegit}>Legitimate payment</Button>
-              <div className="relative flex flex-col items-center">
+              <div className="relative flex items-center gap-1.5">
                 <Button tone="dark" onClick={() => { void actions.runDiverted(); }}>Diverted invoice</Button>
                 {canWriteInvoice ? (
                   <>
                     <button
                       type="button"
+                      aria-label="Write the invoice"
+                      title="Write the invoice"
                       aria-expanded={invoiceOpen}
                       onClick={() => {
                         setInvoiceOpen((open) => !open);
                         setInvoiceError(undefined);
                       }}
-                      className="pt-0.5 text-[10.5px] font-medium text-ink-3 transition-colors hover:text-ink"
+                      className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--line-strong)] bg-white text-ink transition-colors hover:bg-[var(--surface-2)]"
                     >
-                      Write the invoice
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                        <path d="M9.7 2.9a1.8 1.8 0 0 1 2.6 0l.8.8a1.8 1.8 0 0 1 0 2.6L5.4 14H2v-3.4l7.7-7.7Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                        <path d="m8.6 4 3.4 3.4" stroke="currentColor" strokeWidth="1.4" />
+                      </svg>
                     </button>
                     <AnimatePresence initial={false}>
                       {invoiceOpen ? (

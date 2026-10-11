@@ -91,6 +91,7 @@ class FujiChain:
         registry: str,
         escrow: str,
         keys: Mapping[str, str],
+        token_address: str | None = None,
         chain_id: int = FUJI_CHAIN_ID,
         explorer_base_url: str | None = DEFAULT_EXPLORER,
         receipt_timeout: float = 60.0,
@@ -107,6 +108,7 @@ class FujiChain:
         self._accounts: dict[str, LocalAccount] = {role: Account.from_key(key) for role, key in keys.items() if key}
         self._registry_address = to_checksum_address(registry)
         self._escrow_address = to_checksum_address(escrow)
+        self.token_address = to_checksum_address(token_address) if token_address else None
         self._lock = threading.RLock()
         self._local = threading.local()
         self._nonces: dict[str, int] = {}
@@ -128,12 +130,19 @@ class FujiChain:
         if not urls:
             raise ValueError("FUJI_RPC_URL is not set")
         registry, escrow = env.get("REGISTRY_ADDRESS"), env.get("ESCROW_ADDRESS")
-        if not (registry and escrow):
+        token_address = env.get("TOKEN_ADDRESS")
+        addresses: dict[str, Any] = {}
+        if not (registry and escrow and token_address):
             deployment = DEPLOYMENTS / f"{FUJI_CHAIN_ID}.json"
-            if not deployment.exists():
+            if deployment.exists():
+                addresses = json.loads(deployment.read_text())
+            elif not (registry and escrow):
                 raise ValueError("REGISTRY_ADDRESS / ESCROW_ADDRESS are not set and no deployments/43113.json")
-            addresses = json.loads(deployment.read_text())
-            registry, escrow = registry or addresses["registry"], escrow or addresses["escrow"]
+        registry = registry or addresses.get("registry")
+        escrow = escrow or addresses.get("escrow")
+        token_address = token_address or addresses.get("token")
+        if not (registry and escrow):
+            raise ValueError("REGISTRY_ADDRESS / ESCROW_ADDRESS are not set and no deployments/43113.json")
         if not env.get("RELAYER_PK"):
             raise ValueError("RELAYER_PK is not set")
         keys = {
@@ -148,6 +157,7 @@ class FujiChain:
             registry=registry,
             escrow=escrow,
             keys=keys,
+            token_address=token_address,
             chain_id=chain_id,
             explorer_base_url=env.get("EXPLORER_BASE_URL") or DEFAULT_EXPLORER,
         )

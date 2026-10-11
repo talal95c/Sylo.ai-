@@ -2623,6 +2623,10 @@ def build_orchestrator(
     risk, chain, degraded = load_ports(settings, signer=signer, clock=lambda: holder["o"].now().timestamp())
     if keys_missing:
         degraded.append("chain")
+    if chain.mode == "fuji":
+        for address_name in ("EU_CASP_ADDRESS", "GH_VASP_ADDRESS"):
+            if not env.get(address_name):
+                log.warning("CHAIN_MODE=fuji but %s is not set", address_name)
     if chain.mode != "mock":
         # The registry outlives this process and keeps every nonce: start from this session's own base
         # (microseconds since the epoch), so no message repeats a nonce of an earlier session.
@@ -2657,7 +2661,7 @@ def build_orchestrator(
         degraded=degraded,
         beneficiary=env.get("GH_VASP_ADDRESS") or None,
         payer_address=env.get("EU_CASP_ADDRESS") or None,
-        token=settings.token_address,
+        token=settings.token_address or getattr(chain, "token_address", None),
         case=CaseService(
             settings.llm_mode,
             writer,

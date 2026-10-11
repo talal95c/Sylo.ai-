@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { PaymentStatus, ViewState } from "@/lib/store";
+import type { FeedItem, PaymentStatus, ViewState } from "@/lib/store";
 import { RouteQuote } from "./RouteQuote";
 import { Dot, ease, shortHash, Spinner, Tag } from "./ui";
 
@@ -81,8 +81,16 @@ export function PaymentCard({ state }: { state: ViewState }) {
               <PaymentRow
                 icon="route"
                 label="Route"
-                value={payment.routeName ?? (payment.status === "stopped" ? "No route" : "Awaiting route selection")}
-                detail={payment.routeName || payment.status !== "stopped" ? routeDetail(payment) : "Blocked before any money moved"}
+                value={
+                  payment.status === "stopped" && !payment.routeName
+                    ? "No route allowed"
+                    : payment.routeName ?? "Awaiting route selection"
+                }
+                detail={
+                  payment.status === "stopped" && !payment.routeName
+                    ? state.stopped?.detail
+                    : routeDetail(payment)
+                }
               />
               <PaymentRow
                 icon="status"
@@ -95,6 +103,7 @@ export function PaymentCard({ state }: { state: ViewState }) {
                 last
               />
             </div>
+            <ChainProof feed={state.feed} />
             <RouteQuote state={state} />
           </motion.div>
         ) : (
@@ -109,6 +118,69 @@ export function PaymentCard({ state }: { state: ViewState }) {
         )}
       </AnimatePresence>
     </motion.section>
+  );
+}
+
+const PROOF_LABEL: Record<string, string> = {
+  "intent.committed": "Signed intent sealed",
+  "escrow.deposited": "Funds locked in escrow",
+  "verification.recorded": "Supplier verification recorded",
+  "guardian.incident": "Forged confirmation caught",
+  "tx.reverted": "Step refused by the contract",
+  "intent.revoked": "Intent revoked",
+  "escrow.refunded": "Refunded to the payer",
+  "escrow.released": "Released to the supplier",
+  "intent.executed": "Payment executed",
+};
+
+function proofLinks(feed: FeedItem[]) {
+  const seen = new Set<string>();
+  return feed.filter((item) => {
+    if (!item.txHash || typeof item.explorerUrl !== "string" || !/^https:\/\//.test(item.explorerUrl)) return false;
+    if (seen.has(item.txHash)) return false;
+    seen.add(item.txHash);
+    return true;
+  });
+}
+
+function ChainProof({ feed }: { feed: FeedItem[] }) {
+  const links = proofLinks(feed);
+  if (links.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-[var(--line)] pt-2.5" aria-label="On-chain proof">
+      <div className="flex items-center justify-between">
+        <span className="text-[10.5px] text-ink-3">On-chain proof</span>
+        <span className="text-[9.5px] text-ink-3">Avalanche Fuji · Snowtrace</span>
+      </div>
+      <ul className="mt-1.5">
+        <AnimatePresence initial={false}>
+          {links.map((item) => {
+            const danger = item.type === "tx.reverted" || item.family === "attack" || item.type === "guardian.incident";
+            return (
+              <motion.li
+                key={item.txHash}
+                layout
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease }}
+              >
+                <a
+                  href={item.explorerUrl as string}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-center gap-2 rounded-md py-1 text-[11px] hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                >
+                  <Dot color={danger ? "var(--danger)" : "var(--low)"} />
+                  <span className="min-w-0 flex-1 truncate text-ink">{PROOF_LABEL[item.type] ?? item.text}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-ink-3">{shortHash(item.txHash)}</span>
+                  <span className="shrink-0 text-[10px] font-medium text-accent group-hover:underline">View ↗</span>
+                </a>
+              </motion.li>
+            );
+          })}
+        </AnimatePresence>
+      </ul>
+    </div>
   );
 }
 

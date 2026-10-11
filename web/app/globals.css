@@ -136,13 +136,25 @@ body {
   display: block;
   transition: opacity 180ms ease;
 }
+.globe-label-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid #0a0a0a;
+  transform: translate(-50%, -50%);
+  content: "";
+}
 .globe-label-connector {
   position: absolute;
   bottom: 0;
   left: -0.5px;
   width: 1px;
   height: var(--globe-label-connector-length);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.45);
   content: "";
   transform: rotate(var(--globe-label-connector-angle));
   transform-origin: 50% 100%;
