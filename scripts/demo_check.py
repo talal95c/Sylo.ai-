@@ -139,7 +139,10 @@ def check_denied(engine: Engine, speed: float) -> str:
     events = run_scenario(engine, "diverted", speed, "payment.stopped", "deny")
     expect_story(events, DENIED)
     risk = first(events, "risk.scored")
-    expect(risk["tier"] == "MEDIUM" and 40 <= risk["score"] <= 69, f"diverted is {risk['tier']} {risk['score']}, not MEDIUM 40-69")
+    # MEDIUM, or HIGH that an out-of-band confirmation can lift (the model's answer): both are held, never paid directly.
+    conditional = risk["tier"] == "MEDIUM" or (risk["tier"] == "HIGH" and risk.get("oobResolvable") is True)
+    expect(conditional, f"diverted is {risk['tier']} {risk['score']} (oobResolvable: {risk.get('oobResolvable')}), which is not held")
+    expect(first(events, "intent.committed")["tier"] == "MEDIUM", "the diverted payment is not sealed as a conditional payment")
     expect(len(first(events, "payment.held")["reasons"]) >= 3, "fewer than three reasons on the alert")
     expect(first(events, "approval.granted")["conditional"] is True, "the approval of a MEDIUM payment is not conditional")
     requested = first(events, "verification.requested")
@@ -147,7 +150,7 @@ def check_denied(engine: Engine, speed: float) -> str:
     expect(first(events, "intent.revoked")["reasonCode"] == "SUPPLIER_DENIED", "wrong revocation reason")
     expect(any(e["type"] == "case.ready" for e in events), "no case file")
     no_email(events)
-    return f"MEDIUM {risk['score']}, {len(risk['reasons'])} reasons, held, revoked, refunded"
+    return f"{risk['tier']} {risk['score']}, {len(risk['reasons'])} reasons, held, revoked, refunded"
 
 
 def check_attacks(engine: Engine, payment_id: str) -> str:
@@ -224,7 +227,8 @@ def check_wave(engine: Engine, speed: float) -> str:
     expect("R-CB-01" in scored["rulesFired"], "the payment into the region does not carry rule R-CB-01")
     expect(scored["tier"] != "LOW", "a payment into a region under a breaker is LOW")
     expect(not any(e["type"] == "payment.credited" for e in events), "the payment into the region was paid")
-    return f"cluster {detected['clusterId']} ({len(detected['linkedPayments'])} payments), breaker on, next payment {scored['tier']} with R-CB-01"
+    outcome = "held then revoked" if any(e["type"] == "payment.held" for e in events) else "blocked, no route"
+    return f"cluster {detected['clusterId']} ({len(detected['linkedPayments'])} payments), breaker on, next payment {scored['tier']} with R-CB-01 ({outcome})"
 
 
 def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:

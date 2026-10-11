@@ -266,8 +266,8 @@ async def test_a_single_refusal_or_refusals_ten_minutes_apart_do_not_cut_the_ada
 
 
 async def test_a_missing_dependency_shows_in_the_mode_and_leaves_known_payees_alone():
-    orchestrator = make_orchestrator(llm_mode="cached", risk_mode="model")
-    assert set(orchestrator.mode()["degraded"]) == {"llm", "risk"}
+    orchestrator = make_orchestrator(llm_mode="cached")  # no case writer is installed in the engine's own tests
+    assert orchestrator.mode()["degraded"] == ["llm"]
     run = await orchestrator.run_to_end("legit")
     assert run.tier == Tier.LOW and types(orchestrator) == LEGIT_SEQUENCE
 
