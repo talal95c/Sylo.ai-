@@ -90,6 +90,6 @@ def test_the_engine_quotes_the_second_corridor_without_any_code_for_it():
 
 def test_the_first_corridor_is_unchanged_by_the_generalisation():
     pack = load_pack()
-    assert pack.fx_eur_ghs == 16.5 and (pack.currency, pack.symbol) == ("EUR", "€") and pack.demo is None
+    assert pack.fx_eur_ghs == 13.1886 and (pack.currency, pack.symbol) == ("EUR", "€") and pack.demo is None
     assert {r.id: r.fees(85_000.0) for r in pack.routes} == {"R1": 80.0, "R2": 935.0, "R3": 170.0, "R4": 1275.0}
     assert all(r.token == "EURC" for r in pack.routes)

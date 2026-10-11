@@ -34,7 +34,12 @@ def test_cost_breakdown_sums_to_route_score_and_includes_excluded_route_costs():
     assert r4["name"] == "Mobile wallet remittance"
     assert r4["etaLabel"] == "minutes" and r4["etaMinutes"] == 10.0
     assert r4["feesEur"] == 1275.0 and r4["fxMarginEur"] == 1700.0 and r4["cashCostEur"] == 2975.0
-    assert r4["recipientGetsGhs"] == 1374450.0
+    assert {score["routeId"]: score["recipientGetsGhs"] for score in decision.scores} == {
+        "R1": 1098610.38,
+        "R2": 1098610.38,
+        "R3": 1112062.75,
+        "R4": 1098610.38,
+    }
 
 
 def test_low_picks_r3_directly():
@@ -60,8 +65,8 @@ def test_low_picks_r3_directly():
         "cashCostEur": 850.0,
         "totalCostEur": 855.81,
     }
-    assert data["etaMinutes"] == 120.0 and data["midRateEurGhs"] == 16.5
-    assert data["recipientGetsGhs"] == 1391280.0
+    assert data["etaMinutes"] == 120.0 and data["midRateEurGhs"] == 13.1886
+    assert data["recipientGetsGhs"] == 1112062.75
     assert decision.price_of_safety == 0.0 and decision.fees_eur == 170.0
     assert decision.reason == (
         "R3 is the cheapest compliant route: €856 all-in (fees, FX margin and delay) against €1,834 via SWIFT. "

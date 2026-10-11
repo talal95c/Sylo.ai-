@@ -36,7 +36,7 @@ async def test_legit_sequence_and_timeline(orchestrator, event_validator):
     credited = by_type["payment.credited"]["data"]
     assert credited["routeCostEur"] == 855.81 and credited["swiftRouteCostEur"] == 1834.4
     assert credited["cashCostEur"] == 850.0 and credited["swiftCashCostEur"] == 1780.0
-    assert credited["fxMarginEur"] == 680.0 and credited["recipientGetsGhs"] == 1391280.0
+    assert credited["fxMarginEur"] == 680.0 and credited["recipientGetsGhs"] == 1112062.75
     assert credited["etaMinutes"] == 120.0 and credited["swiftEtaLabel"] == "1–3 days"
     assert credited["swiftEtaMinutes"] == 2880.0
 

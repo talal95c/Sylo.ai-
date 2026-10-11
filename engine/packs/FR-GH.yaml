@@ -9,7 +9,7 @@ version: "2026-10-11"
 profiles: [FR, GH]
 
 fx:
-  EUR_GHS: 16.5            # fixed demo rate (simulated)
+  EUR_GHS: 13.1886         # mid-market EUR→GHS on 2026-10-11 (Wise public price API midRate); demo constant
 
 routeModel:
   lambda: 0.00022          # ≈ 8%/yr SME cost of capital, simulated
