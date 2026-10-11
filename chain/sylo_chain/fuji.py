@@ -81,8 +81,8 @@ def _revert_data(err: ContractLogicError) -> Any:
 
 class FujiChain:
     """``ChainPort`` on a deployed registry and escrow. ``keys`` maps a role to its private key:
-    ``relayer`` (required) sends the engine's transactions; ``attacker``, ``analyst`` and ``guardian``
-    are optional and only needed for attacks, ``freeze`` and ``pause_corridor``."""
+    ``relayer`` (required) sends the engine's transactions; ``attacker``, ``analyst``, ``guardian`` and
+    ``admin`` are optional and only needed for attacks, ``freeze``, ``pause_corridor`` and ``unpause_corridor``."""
 
     def __init__(
         self,
@@ -141,6 +141,7 @@ class FujiChain:
             "attacker": env.get("ATTACKER_PK", ""),
             "analyst": env.get("ANALYST_SIGNER_PK", ""),
             "guardian": env.get("GUARDIAN_PK", ""),
+            "admin": env.get("DEPLOYER_PK", ""),
         }
         return cls(
             rpc_urls=urls,
@@ -373,8 +374,8 @@ class FujiChain:
     def deposit(self, intent: PaymentIntent, payer: str) -> TxRef:
         return self._transact("relayer", "escrow", "deposit", self._intent(intent), to_checksum_address(payer))
 
-    def record_verification(self, att: VerificationAttestation, verifier_sig: bytes) -> TxRef:
-        return self._transact("relayer", "registry", "recordVerification", self._attestation(att), bytes(verifier_sig))
+    def record_verification(self, att: VerificationAttestation, verifier_sig: bytes, caller: str = "relayer") -> TxRef:
+        return self._transact(caller, "registry", "recordVerification", self._attestation(att), bytes(verifier_sig))
 
     def revoke(self, rev: Revocation, analyst_sig: bytes) -> TxRef:
         return self._transact("relayer", "registry", "revoke", self._revocation(rev), bytes(analyst_sig))
@@ -407,3 +408,51 @@ class FujiChain:
 
     def pause_corridor(self, corridor_id: CorridorIdLike, caller: str = "guardian") -> TxRef:
         return self._transact(caller, "escrow", "pauseCorridor", to_bytes32(corridor_id))
+
+    def unpause_corridor(self, corridor_id: CorridorIdLike, caller: str = "admin") -> TxRef:
+        return self._transact(caller, "escrow", "unpauseCorridor", to_bytes32(corridor_id))
+
+    # --- reads for the guardian ----------------------------------------------------------------
+
+    @property
+    def endpoints(self) -> list[Web3]:
+        """Every reachable RPC endpoint; the guardian reads logs from all of them."""
+        return list(self._providers)
+
+    @property
+    def registry_address(self) -> str:
+        return self._registry_address
+
+    @property
+    def escrow_address(self) -> str:
+        return self._escrow_address
+
+    def contract(self, w3: Web3, name: str) -> Contract:
+        return self._registry(w3) if name == "registry" else self._escrow(w3)
+
+    def address(self, role: str) -> str | None:
+        account = self._accounts.get(role)
+        return account.address if account else None
+
+    def explorer_tx_url(self, tx_hash: str) -> str | None:
+        return self._txref(tx_hash, None).explorer_url
+
+    def hold(self, payment_id: PaymentIdLike) -> dict[str, Any]:
+        pid = self._pid(payment_id)
+        payer, beneficiary, token, amount, corridor, expires_at, frozen, settled = self._read(
+            lambda w3, block: self._escrow(w3).functions.holdOf(pid).call(block_identifier=block)
+        )
+        return {
+            "payer": payer,
+            "beneficiary": beneficiary,
+            "token": token,
+            "amount": int(amount),
+            "corridorId": _hex(corridor),
+            "expiresAt": int(expires_at),
+            "frozen": bool(frozen),
+            "settled": bool(settled),
+        }
+
+    def corridor_paused(self, corridor_id: CorridorIdLike) -> bool:
+        cid = to_bytes32(corridor_id)
+        return bool(self._read(lambda w3, block: self._escrow(w3).functions.corridorPaused(cid).call(block_identifier=block)))
