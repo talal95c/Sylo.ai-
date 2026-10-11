@@ -135,12 +135,12 @@ Where a fix is inside a component Talal is editing (`DecisionSteps`, `StatusBann
 
 ## P2: nice to have
 
-- [ ] **[Youssef]** Replay mode shows "Risk · rules" until the first score arrives, but the fixtures are recorded with the model (`lib/store.ts:166`). Default replay to `model`.
+- [x] **[Youssef]** Replay mode shows "Risk · rules" until the first score arrives, but the fixtures are recorded with the model (`lib/store.ts:166`). Default replay to `model`.
 - [ ] Times are shown in UTC (`ts.slice(11,19)`), so they look two hours behind in Paris, and replay always shows 09:00. Use local time or "+12 s".
 - [ ] The incident drawer stays open across Reset; a dismissed held alert can't be reopened (add "View alert" on the card).
 - [ ] Two different reds (`#FF3B30` vs `--danger #e5484d`), `lib/colors.ts` duplicating CSS variables, and hard-coded halo and hover colours.
 - [ ] Separators " / " vs " · "; corridor named "Lyon → Ghana", "FR → GH" and "France to Ghana"; final state named "Payment completed / Settled" vs "Supplier credited".
-- [ ] **[Youssef]** "Swap beneficiary" and "Replay intent" are enabled after a legitimate payment, and then replay diverted fixtures (`lib/store.ts` ~500).
+- [x] **[Youssef]** "Swap beneficiary" and "Replay intent" are enabled after a legitimate payment, and then replay diverted fixtures (`lib/store.ts` ~500).
 - [ ] If the map data fails to load, the globe is blank with no banner (`components/SyloApp.tsx` ~34-39).
 - [ ] At 1280×720 the flow graph scales to about 0.76×, making its 12px text about 9px.
 - [ ] Dead code: `Metric` (`components/ui.tsx`), `IRIDESCENT`, unused state fields (`rejectedLeg`, `routeReason`, `feesEur`, `intentTxHash`), `public/geo/countries.geojson` (174 KB) and the Next.js template SVGs in `public/`.
@@ -178,8 +178,8 @@ All of this section is Youssef's, including the two web items in P1. From a read
 ### P1
 
 - [ ] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
-- [ ] **Every attack or chain revert is narrated as "release() on the revoked payment"** (web). `web/lib/flow.ts:116-118` and `web/lib/store.ts:413-434`. Read `attack.attempted.data.attack` and narrate per attack.
-- [ ] **The web infers "escrow" from the tier** (`web/lib/flow.ts:42-45`, `:139-141`), which is wrong for a bank hold (time-lock on R1) and for a blocked payment. The rules say the web never decides, so use `route.selected.settlement` and `payment.stopped`.
+- [x] **Every attack or chain revert is narrated as "release() on the revoked payment"** (web). `web/lib/flow.ts:116-118` and `web/lib/store.ts:413-434`. Read `attack.attempted.data.attack` and narrate per attack.
+- [x] **The web infers "escrow" from the tier** (`web/lib/flow.ts:42-45`, `:139-141`), which is wrong for a bank hold (time-lock on R1) and for a blocked payment. The rules say the web never decides, so use `route.selected.settlement` and `payment.stopped`.
 - [ ] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode.
 - [ ] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
 - [ ] **Render free plan:** the service sleeps after 15 minutes and takes about a minute to wake, and state and the journal are lost on sleep. The engine peaks at about 196 MB, which fits in 512 MB with Next.js, but tightly. Ping `/health` a few minutes before the slot, and don't enable eERC or Fuji there.

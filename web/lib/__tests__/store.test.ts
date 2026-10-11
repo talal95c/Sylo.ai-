@@ -86,7 +86,19 @@ describe("store reducer", () => {
 
     const replayState = resetForSourceChange(liveState);
     expect(replayState.risk).toBeNull();
-    expect(riskModeForSource(replayState, "replay")).toBe("rules");
+    expect(riskModeForSource(replayState, "replay")).toBe("model");
+  });
+
+  it("ignores a chain revert that does not follow an attack", () => {
+    const state = replay(...fixture("scene2-diverted"));
+    const revert = synthetic("tx.reverted", { function: "recordVerification", reason: "NonceUsed" }, state.lastSeq + 1);
+    expect(reduce(state, revert).attack).toEqual(state.attack);
+  });
+
+  it("enables the swap and replay attacks only after a diverted payment", () => {
+    expect(availableActions(replay(...fixture("scene1-legit"))).swapAttack).toBe(false);
+    const diverted = availableActions(replay(...fixture("scene2-diverted")));
+    expect(diverted.swapAttack && diverted.replayAttack).toBe(true);
   });
 
   it("replays the legitimate payment to credit across five settled hops", () => {
