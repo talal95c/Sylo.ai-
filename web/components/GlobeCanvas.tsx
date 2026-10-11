@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { GeoPoint, Institution } from "@/lib/geo";
 import { greatCircleMidpoint } from "@/lib/geo";
 import type { ViewState } from "@/lib/store";
+import { arcDotPositions } from "@/lib/arcDots";
 import { ACCENT, DANGER_COLOR, HOP_COLORS, REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
 
 export interface GlobeCanvasProps {
@@ -29,6 +30,14 @@ interface ArcDatum {
   dashGap: number;
   dashInitialGap: number;
   animateTime: number;
+}
+
+interface DotTrack {
+  id: string;
+  points: THREE.Vector3[];
+  color: string;
+  opacity: number;
+  radius: number;
 }
 
 interface HtmlDatum {
@@ -126,6 +135,30 @@ const SHORT_NAME: Record<string, string> = {
 };
 
 const onePixelPathStroke = () => null;
+
+const DOT_SPACING = 0.8;
+const DOT_RADIUS = 0.2;
+const DOT_RADIUS_STRONG = 0.26;
+const DOT_GEOMETRY = new THREE.SphereGeometry(1, 10, 8);
+
+function dotTrackObject(datum: object) {
+  const track = datum as DotTrack;
+  const material = new THREE.MeshBasicMaterial({
+    color: track.color,
+    transparent: track.opacity < 1,
+    opacity: track.opacity,
+    depthWrite: track.opacity >= 1,
+  });
+  const mesh = new THREE.InstancedMesh(DOT_GEOMETRY, material, track.points.length);
+  const matrix = new THREE.Matrix4();
+  track.points.forEach((point, index) => {
+    matrix.makeScale(track.radius, track.radius, track.radius).setPosition(point);
+    mesh.setMatrixAt(index, matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
+}
 
 function rgba(hex: string, alpha: number) {
   const value = hex.replace("#", "");
@@ -277,9 +310,10 @@ export default function GlobeCanvas({
   const heldHop = state.held?.hop;
   const holding = state.held !== null && !state.released && !state.refunded;
 
-  const arcs = useMemo<ArcDatum[]>(() => {
-    if (!institutions) return [];
+  const { arcs, tracks } = useMemo(() => {
     const list: ArcDatum[] = [];
+    const tracks: DotTrack[] = [];
+    if (!institutions) return { arcs: list, tracks };
     const push = (
       id: string,
       fromId: string,
@@ -301,7 +335,27 @@ export default function GlobeCanvas({
         })),
       );
     };
-    const solid = { dashLength: 1, dashGap: 0, dashInitialGap: 0, animateTime: 0 };
+    const dots = (
+      id: string,
+      fromId: string,
+      toId: string,
+      altitude: number | null,
+      style: { color: string; opacity: number; radius?: number },
+    ) => {
+      const from = institutions[fromId];
+      const to = institutions[toId];
+      if (!from || !to) return;
+      const radius = style.radius ?? DOT_RADIUS;
+      tracks.push(
+        stable(`dots-${id}`, `${fromId}>${toId}|${altitude}|${style.color}|${style.opacity}|${radius}`, () => ({
+          id,
+          color: style.color,
+          opacity: style.opacity,
+          radius,
+          points: arcDotPositions(from, to, altitude, DOT_SPACING),
+        })),
+      );
+    };
 
     if (!state.selectedRouteId) {
       for (const route of state.routes) {
@@ -309,17 +363,16 @@ export default function GlobeCanvas({
         const excluded = route.status === "EXCLUDED" || unavailable;
         route.hops.forEach((hop, index) => {
           const altitude = hop.kind === "chain" ? chainAltitude : null;
-          push(`${route.routeId}-${index}`, hop.from, hop.to, excluded ? "x" : "eval", {
-            color: excluded ? rgba(DANGER_COLOR, 0.85) : rgba(HOP_COLORS[hop.kind], 0.28),
+          dots(
+            `${route.routeId}-${index}`,
+            hop.from,
+            hop.to,
             altitude,
-            stroke: excluded ? 0.45 : 0.3,
-            ...(excluded
-              ? { dashLength: 0.05, dashGap: 0.035, dashInitialGap: 0, animateTime: 0 }
-              : solid),
-          });
+            excluded ? { color: DANGER_COLOR, opacity: 0.9 } : { color: HOP_COLORS[hop.kind], opacity: 0.5 },
+          );
         });
       }
-      return list;
+      return { arcs: list, tracks };
     }
 
     for (const hop of state.hops) {
@@ -329,32 +382,17 @@ export default function GlobeCanvas({
       const duration = reducedMotion ? 0 : hop.durationMs ?? 1400;
 
       if (hop.state === "pending") {
-        push(base, hop.from, hop.to, "pending", {
-          color: "rgba(10, 10, 10, 0.16)",
-          altitude,
-          stroke: 0.22,
-          ...solid,
-        });
+        dots(base, hop.from, hop.to, altitude, { color: "#0a0a0a", opacity: 0.28, radius: DOT_RADIUS * 0.85 });
         continue;
       }
 
       if (hop.state === "settled") {
-        push(base, hop.from, hop.to, `settled-${tierColor}`, {
-          color: tierColor,
-          altitude,
-          stroke: 0.5,
-          ...solid,
-        });
+        dots(base, hop.from, hop.to, altitude, { color: tierColor, opacity: 1, radius: DOT_RADIUS_STRONG });
         continue;
       }
 
       if (hop.state === "refunded") {
-        push(base, hop.from, hop.to, "refunded-base", {
-          color: rgba(REFUND_COLOR, 0.35),
-          altitude,
-          stroke: 0.4,
-          ...solid,
-        });
+        dots(base, hop.from, hop.to, altitude, { color: REFUND_COLOR, opacity: 0.6 });
         if (!state.stopped && !reducedMotion) {
           push(`${base}-back`, hop.to, hop.from, "refunded-comet", {
             color: [rgba(REFUND_COLOR, 0), REFUND_COLOR],
@@ -370,24 +408,11 @@ export default function GlobeCanvas({
       }
 
       if (holding && hop.index === heldHop) {
-        push(base, hop.from, hop.to, "held", {
-          color: TIER_COLORS.MEDIUM,
-          altitude,
-          stroke: 0.55,
-          dashLength: 0.5,
-          dashGap: 0.5,
-          dashInitialGap: 0,
-          animateTime: 0,
-        });
+        dots(base, hop.from, hop.to, altitude, { color: TIER_COLORS.MEDIUM, opacity: 1, radius: DOT_RADIUS_STRONG });
         continue;
       }
 
-      push(base, hop.from, hop.to, "active-base", {
-        color: rgba(kindColor, 0.22),
-        altitude,
-        stroke: 0.3,
-        ...solid,
-      });
+      dots(base, hop.from, hop.to, altitude, { color: kindColor, opacity: 0.45 });
       push(`${base}-comet`, hop.from, hop.to, `comet-${duration}-${state.released}`, {
         color: [rgba(hop.kind === "chain" ? kindColor : ACCENT, 0), hop.kind === "chain" ? kindColor : ACCENT],
         altitude,
@@ -403,18 +428,13 @@ export default function GlobeCanvas({
       const unavailable = Boolean(state.rails[route.routeId] || state.killSwitch?.adapter === route.routeId);
       if (!unavailable || route.routeId === state.selectedRouteId) continue;
       route.hops.forEach((hop, index) => {
-        push(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, "unavailable", {
-          color: rgba(DANGER_COLOR, 0.82),
-          altitude: hop.kind === "chain" ? chainAltitude : null,
-          stroke: 0.45,
-          dashLength: 0.05,
-          dashGap: 0.035,
-          dashInitialGap: 0,
-          animateTime: 0,
+        dots(`unavailable-${route.routeId}-${index}`, hop.from, hop.to, hop.kind === "chain" ? chainAltitude : null, {
+          color: DANGER_COLOR,
+          opacity: 0.9,
         });
       });
     }
-    return list;
+    return { arcs: list, tracks };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [institutions, state.routes, state.rails, state.killSwitch, state.selectedRouteId, state.hops, state.stopped, tierColor, holding, heldHop, chainAltitude, reducedMotion]);
 
@@ -907,6 +927,8 @@ export default function GlobeCanvas({
       arcDashInitialGap="dashInitialGap"
       arcDashAnimateTime="animateTime"
       arcsTransitionDuration={0}
+      customLayerData={tracks}
+      customThreeObject={dotTrackObject}
       pointsData={points}
       pointLat="lat"
       pointLng="lng"
