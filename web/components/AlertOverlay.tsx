@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
@@ -37,7 +37,7 @@ const LLM_LABEL: Record<string, string> = {
 function AlertChip({ children, color = "var(--ink-2)" }: { children: React.ReactNode; color?: string }) {
   return (
     <span
-      className="inline-flex h-6 items-center rounded-full border px-2.5 text-[10.5px] font-medium"
+      className="inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-medium"
       style={{ color, borderColor: `color-mix(in srgb, ${color} 16%, white)`, background: `color-mix(in srgb, ${color} 7%, white)` }}
     >
       {children}
@@ -57,6 +57,9 @@ function verificationChip(state: ViewState) {
 
 export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: () => void }) {
   const [detailsFor, setDetailsFor] = useState<string | null>(null);
+  const alertRef = useRef<HTMLElement>(null);
+  const detailsButtonRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const held = state.held;
   const status = state.payment?.status;
   const terminal = status === "credited" || status === "stopped";
@@ -69,6 +72,25 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
 
   const check = verificationChip(state);
 
+  useEffect(() => {
+    if (!showHeld) return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => alertRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [showHeld]);
+
+  const handleAlertKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if (detailsOpen) {
+      setDetailsFor(null);
+      detailsButtonRef.current?.focus();
+      return;
+    }
+    onClose();
+    requestAnimationFrame(() => returnFocusRef.current?.focus());
+  };
+
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-[92px] z-20 flex justify-center px-4">
       <AnimatePresence mode="wait" initial={false}>
@@ -77,6 +99,9 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             key="held"
             role="alertdialog"
             aria-label={held.headline}
+            ref={alertRef}
+            tabIndex={-1}
+            onKeyDown={handleAlertKeyDown}
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -92,6 +117,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                   <p className="mt-1 truncate text-[11.5px] text-ink-2" title={held.reasons[0]?.text}>{held.reasons[0]?.text}</p>
                 </div>
                 <button
+                  ref={detailsButtonRef}
                   type="button"
                   onClick={onClose}
                   aria-label="Close alert"
@@ -130,11 +156,11 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                     transition={{ duration: 0.22, ease }}
                     className="overflow-hidden"
                   >
-                    <div className="thin-scrollbar mt-4 max-h-[min(52vh,460px)] overflow-x-hidden overflow-y-auto border-t border-[var(--line)] pt-4 pr-1">
+                    <div className="thin-scrollbar mt-4 max-h-[30vh] overflow-x-hidden overflow-y-auto border-t border-[var(--line)] pt-4 pr-1">
                       <ul className="space-y-2">
                         {held.reasons.map((reason) => (
                           <li key={`${reason.ref}-${reason.text}`} className="flex gap-3 text-[12px] leading-snug text-ink-2">
-                            <span className="h-5 shrink-0 rounded-full bg-[var(--surface-2)] px-2 text-[10px] font-medium leading-5 text-ink">{REF_LABEL[reason.ref] ?? reason.ref}</span>
+                            <span className="h-5 shrink-0 rounded-full bg-[var(--surface-2)] px-2 text-[11px] font-medium leading-5 text-ink">{REF_LABEL[reason.ref] ?? reason.ref}</span>
                             <span>{reason.text}</span>
                           </li>
                         ))}
@@ -259,9 +285,9 @@ function CaseFile({ state }: { state: ViewState }) {
     <section className="mt-3 rounded-lg border border-[var(--line)] p-3 text-[11.5px]" aria-label="Analyst case file">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-ink">Analyst case file</span>
-        <span className="text-[10px] text-ink-3">{LLM_LABEL[file.llm] ?? file.llm} · advisory only</span>
+        <span className="text-[11px] text-ink-3">{LLM_LABEL[file.llm] ?? file.llm} · advisory only</span>
       </div>
-      <div className="mt-2 inline-flex rounded-full bg-[var(--surface-2)] px-2 py-1 text-[10px] text-ink-2">{ACTION_LABEL[file.recommendedAction] ?? file.recommendedAction}</div>
+      <div className="mt-2 inline-flex rounded-full bg-[var(--surface-2)] px-2 py-1 text-[11px] text-ink-2">{ACTION_LABEL[file.recommendedAction] ?? file.recommendedAction}</div>
       {file.sentences?.length ? (
         <ul className="mt-3 space-y-1.5">
           {[...file.sentences]
@@ -269,7 +295,7 @@ function CaseFile({ state }: { state: ViewState }) {
             .map((sentence) => (
             <li key={`${sentence.text}-${sentence.refs.join("-")}`} className="leading-snug text-ink-2">
               {isInvoiceScreen(sentence.refs) ? (
-                <span className="mr-1.5 rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-ink">Invoice screen</span>
+                <span className="mr-1.5 rounded-full bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-medium text-ink">Invoice screen</span>
               ) : null}
               {sentence.text} <span className="font-mono text-[10px] text-ink-3">{sentence.refs.join(" · ")}</span>
             </li>
@@ -277,7 +303,7 @@ function CaseFile({ state }: { state: ViewState }) {
         </ul>
       ) : <p className="mt-3 leading-snug text-ink-2">{file.explanation}</p>}
       {file.citations.length ? (
-        <div className="mt-3 border-t border-[var(--line)] pt-2 text-[10px] text-ink-3">
+        <div className="mt-3 border-t border-[var(--line)] pt-2 text-[11px] text-ink-3">
           Citations: {file.citations.map((citation) => `${citation.ref} (${citation.source})`).join(" · ")}
         </div>
       ) : null}

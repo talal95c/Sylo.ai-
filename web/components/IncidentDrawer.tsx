@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { actionLabel } from "@/lib/feed";
 import type { IncidentView } from "@/lib/store";
 import { ease, euros, shortHash } from "./ui";
@@ -8,21 +9,56 @@ import { ease, euros, shortHash } from "./ui";
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="border-b border-[var(--line)] py-3 last:border-0">
-      <dt className="text-[10px] font-medium uppercase text-ink-3">{label}</dt>
+      <dt className="text-[11px] font-medium uppercase text-ink-3">{label}</dt>
       <dd className="mt-1 text-[12.5px] leading-relaxed text-ink">{value}</dd>
     </div>
   );
 }
 
 export function IncidentDrawer({ incident, open, onClose }: { incident: IncidentView | null; open: boolean; onClose: () => void }) {
+  const drawerRef = useRef<HTMLElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const safeExplorer = incident?.explorerUrl && /^https:\/\//.test(incident.explorerUrl) ? incident.explorerUrl : null;
+  useEffect(() => {
+    if (!open || !incident) return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => {
+      drawerRef.current?.querySelector<HTMLElement>("button, a, input, select, textarea, [tabindex]:not([tabindex='-1'])")?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      requestAnimationFrame(() => returnFocusRef.current?.focus());
+    };
+  }, [open, incident]);
+
+  const trapFocus = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab" || !drawerRef.current) return;
+    const items = Array.from(drawerRef.current.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [tabindex]:not([tabindex='-1'])"));
+    const first = items[0];
+    const last = items.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
   return (
     <AnimatePresence>
       {open && incident ? (
         <motion.aside
           role="dialog"
-          aria-modal="false"
+          aria-modal="true"
           aria-labelledby="incident-drawer-title"
+          ref={drawerRef}
+          tabIndex={-1}
+          onKeyDown={trapFocus}
           initial={{ opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
