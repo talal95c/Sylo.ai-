@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { loadGeo, type Institution } from "@/lib/geo";
+import { riskModeForSource } from "@/lib/store";
 import { useSylo } from "@/lib/useSylo";
 import { AlertOverlay } from "./AlertOverlay";
 import { DecisionSteps } from "./DecisionSteps";
@@ -87,7 +88,7 @@ export default function SyloApp() {
         )}
       </AnimatePresence>
 
-      <TopBar mode={sylo.state.mode} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
+      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
 
       <AnimatePresence>
         {globe ? (

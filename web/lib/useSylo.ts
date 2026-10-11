@@ -7,6 +7,7 @@ import {
   closeAlert,
   initialState,
   reduce,
+  resetForSourceChange,
   type ViewState,
 } from "./store";
 import {
@@ -23,7 +24,7 @@ type HookAction = SyloEvent | UiAction;
 function hookReducer(state: ViewState, action: HookAction): ViewState {
   if (!("v" in action)) {
     if (action.type === "ui.closeAlert") return closeAlert(state);
-    return { ...initialState, mode: state.mode };
+    return resetForSourceChange(state);
   }
   return reduce(state, action);
 }
