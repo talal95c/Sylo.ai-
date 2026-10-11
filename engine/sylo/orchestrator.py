@@ -2611,8 +2611,13 @@ class Orchestrator:
 
         await pacer.wait(THIEF_RELEASE_MS)
         hold = await asyncio.to_thread(self.chain.hold, run.chain_pid)
-        if not hold.get("frozen"):
-            await self._chain("freeze", self.chain.freeze, run.chain_pid)
+        if not hold.get("frozen") and not hold.get("settled"):
+            try:
+                await self._chain("freeze", self.chain.freeze, run.chain_pid)
+            except ChainReverted as err:
+                log.warning("fallback freeze reverted for %s (%s); release not attempted", run.order.id, err.reason)
+                self._escalate(run)
+                return {"ok": True, "reverted": False, "reason": err.reason, "incidentId": run.incident_id}
 
         result = {"ok": True, "reverted": False, "reason": None, "incidentId": run.incident_id}
         try:
