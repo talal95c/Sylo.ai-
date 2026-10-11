@@ -4,9 +4,42 @@ Audit of `main` on 11 Oct 2026, morning. Method: a live walkthrough of every sce
 
 Items already fixed on `main` since the audit are left out: the "Sample" cluster label, the raw "Event received: approval.required / case.action" lines, and globe arcs reused from the previous scene (the arc cache key now includes the endpoints). Re-check them once after your changes.
 
-`/web` is Lane D (Maria). Tell her what you take so you don't edit the same component at the same time.
+`/web` is Lane D (Maria). The work is split between Talal and Youssef (see "Who does what"); tell Maria too, so nobody edits the same component at the same time.
 
 **Priorities:** P0 = breaks or embarrasses the live demo. P1 = clearly visible to the jury. P2 = nice to have.
+
+## Who does what
+
+**Talal: front end.** Every item in the UI sections below (P0, P1, P2), **except** the ones tagged **[Youssef]**. Suggested order:
+1. Scene 3 shows almost nothing.
+2. Buttons fail silently (toast).
+3. UI ignores events after an engine restart.
+4. "Simulated" gets cut off.
+5. Globe slow on big screens.
+6. `/test` page.
+7. Raw revert reason in the attack climax.
+8. Then P1: globe and camera, panels and state, animations, layout. Then P2.
+
+**Youssef: engine, ML, deploy, docs, and the web items tied to wording or engine logic.** That is every item in "Backend, rules and docs", plus the web items tagged **[Youssef]**:
+- the "Wording: raw codes reaching the screen" section (mostly `web/lib/feed.ts`);
+- reason counts disagree;
+- Scene 4 not runnable live;
+- attack narration and the web inferring "escrow" (`web/lib/flow.ts`);
+- the two replay items in P2.
+
+Suggested order:
+1. Rule 3 leg check, with its test.
+2. Rule 6 model-crash fallback, and rule 2 tier.
+3. `DEMO_PUBLIC` flag on the shared Render session.
+4. Scene 4 live button.
+5. Docs drift (run sheet, README, pitch handoff).
+6. Then wording, and the rest of P1 and P2.
+
+**To avoid stepping on each other:**
+- Talal owns `web/components/*` and the globe.
+- Youssef only edits `web/lib/feed.ts`, `web/lib/flow.ts`, and the attack and replay parts of `web/lib/store.ts`. Talal edits the scene-3 and sequence-number parts of `store.ts`. Keep these commits small and rebase often.
+- `engine/` is Lane A (Oscar) and `ml/` is Lane B. Tell them before pushing there.
+- Run `make test` and `make demo-check` before each push to `main`.
 
 ---
 
@@ -18,7 +51,7 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
   - The reducer ignores `traffic.sample`, `cluster.detected` and `breaker.on`, so no wave arcs, cluster ring or breaker zone is drawn on the globe.
   - **Fix:** keep the feed on a second `scenario.started` within the same run, map `mule_wave` to its own scenario, draw the three `bank_fr → mule_bank` arcs plus a ring or zone around Aflao, and fly the camera there.
 
-- [ ] **Scene 4 (guardian and stolen key) cannot be run live.** `components/DemoControls.tsx:71` enables "Guardian incident" only when `sourceKind === "replay"`. The engine runs it fine in mock and Fuji modes (`POST /v1/attacks/stolen_verifier_key`; `make demo-check` passes). Enable it in live mode after a diverted payment is held.
+- [ ] **[Youssef] Scene 4 (guardian and stolen key) cannot be run live.** `components/DemoControls.tsx:71` enables "Guardian incident" only when `sourceKind === "replay"`. The engine runs it fine in mock and Fuji modes (`POST /v1/attacks/stolen_verifier_key`; `make demo-check` passes). Enable it in live mode after a diverted payment is held.
 
 - [ ] **"Simulated" gets cut off.** The project rules require simulated things to be labelled, but:
   - `components/PaymentCard.tsx` ~90/183 puts `Signed intent 0x…abcde · Simulated` in a 9.5px truncated line, so "Simulated" is always the part that disappears;
@@ -60,7 +93,7 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
 - [ ] **The outage outcome reads "€216 all-in vs €216 via SWIFT · Saved €0"** (`components/AlertOverlay.tsx` ~168-172, `components/DecisionSteps.tsx` ~96). When the payment was rerouted to SWIFT, say so instead: "Rerouted to SWIFT: Avalanche rail was down · €216 · 1–3 days."
 - [ ] **The outage banner stays after "Payment rail restored."** Clear it on `rail.up`.
 - [ ] **The savings line is the best pitch number but is tiny grey text** ("Saved €36.79 vs SWIFT" in the credited toast). Make it the headline of the credited card.
-- [ ] **Reason counts disagree.** The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
+- [ ] **[Youssef] Reason counts disagree.** The decisions panel says "77 / HIGH / 4 rules fired" while the alert lists 7 reasons, and two pairs say the same thing:
   - "first payment ever to this account" / "Only 0 successful payments on this account";
   - "name match 0.38" / "name match score is 38%".
   - **Fix:** de-duplicate in the web, or ask Lane B to stop the model reasons repeating the rules. Use one count everywhere.
@@ -69,7 +102,9 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
 - [ ] **The final decision box is below the fold on a laptop.** The decisions panel scrolls, but its conclusion sits at the bottom; pin the decision box to the top of the panel.
 - [ ] **Steps never reached stay "Pending" forever** after an early stop (blocked payment, mule wave). Mark them "Skipped" once the payment is final (`components/DecisionSteps.tsx` ~101-111).
 
-### Wording: raw codes reaching the screen
+### Wording: raw codes reaching the screen [Youssef]
+
+Where a fix is inside a component Talal is editing (`DecisionSteps`, `StatusBanner`, `IncidentDrawer`), give him the sentence instead of editing the file.
 
 - [ ] Rule IDs: `GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK` (feed, and cut to 96px in red in the route list), `TIER_MEDIUM_REQUIRES_CONDITIONAL_SET`, `PAYER_LIMIT`, `RAIL_DOWN` (`lib/feed.ts` ~97, `components/DecisionSteps.tsx` ~133).
 - [ ] "Scenario started: diverted" / "mule_wave" / "outage": use the scene names from the controls.
@@ -100,12 +135,12 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
 
 ## P2: nice to have
 
-- [ ] Replay mode shows "Risk · rules" until the first score arrives, but the fixtures are recorded with the model (`lib/store.ts:166`). Default replay to `model`.
+- [ ] **[Youssef]** Replay mode shows "Risk · rules" until the first score arrives, but the fixtures are recorded with the model (`lib/store.ts:166`). Default replay to `model`.
 - [ ] Times are shown in UTC (`ts.slice(11,19)`), so they look two hours behind in Paris, and replay always shows 09:00. Use local time or "+12 s".
 - [ ] The incident drawer stays open across Reset; a dismissed held alert can't be reopened (add "View alert" on the card).
 - [ ] Two different reds (`#FF3B30` vs `--danger #e5484d`), `lib/colors.ts` duplicating CSS variables, and hard-coded halo and hover colours.
 - [ ] Separators " / " vs " · "; corridor named "Lyon → Ghana", "FR → GH" and "France to Ghana"; final state named "Payment completed / Settled" vs "Supplier credited".
-- [ ] "Swap beneficiary" and "Replay intent" are enabled after a legitimate payment, and then replay diverted fixtures (`lib/store.ts` ~500).
+- [ ] **[Youssef]** "Swap beneficiary" and "Replay intent" are enabled after a legitimate payment, and then replay diverted fixtures (`lib/store.ts` ~500).
 - [ ] If the map data fails to load, the globe is blank with no banner (`components/SyloApp.tsx` ~34-39).
 - [ ] At 1280×720 the flow graph scales to about 0.76×, making its 12px text about 9px.
 - [ ] Dead code: `Metric` (`components/ui.tsx`), `IRIDESCENT`, unused state fields (`rejectedLeg`, `routeReason`, `feesEur`, `intentTxHash`), `public/geo/countries.geojson` (174 KB) and the Next.js template SVGs in `public/`.
@@ -114,9 +149,9 @@ Items already fixed on `main` since the audit are left out: the "Sample" cluster
 
 ---
 
-## Backend, rules and docs (engine / ml / deploy)
+## Backend, rules and docs (engine / ml / deploy) [Youssef]
 
-From a read-only review of `engine/`, `ml/`, `chain/`, the deploy files and `docs/` against the rules in `AGENTS.md`. Owners: `engine/` is Lane A (Oscar), `ml/` is Lane B, `chain/` and `contracts/` are Lane C, `docs/` is anyone. Paths are from the repo root.
+All of this section is Youssef's, including the two web items in P1. From a read-only review of `engine/`, `ml/`, `chain/`, the deploy files and `docs/` against the rules in `AGENTS.md`. Owners: `engine/` is Lane A (Oscar), `ml/` is Lane B, `chain/` and `contracts/` are Lane C, `docs/` is anyone. Paths are from the repo root.
 
 **Verified OK:**
 - Fraud risk never enters the route score (`engine/sylo/router.py`).
