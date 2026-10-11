@@ -418,7 +418,7 @@
       "required": ["attack", "description", "by"],
       "additionalProperties": true,
       "properties": {
-        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay"] },
+        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key"] },
         "description": { "type": "string" },
         "by": { "const": "attacker" }
       }

@@ -11,7 +11,7 @@ Endpoints and events are described in [`spec/api.md`](../spec/api.md). `$E` is t
 | Install | `make setup` | no error |
 | Check everything | `make test` | green |
 | Start | `make dev` | engine on :8000, web on :3000 |
-| Check the scenes | `make demo-check` | `demo check OK: 10 checks`, with the flags of `.env` on the first line |
+| Check the scenes | `make demo-check` | `demo check OK: 11 checks`, with the flags of `.env` on the first line |
 | Clean session | `curl -X POST $E/v1/reset` | banner without "degraded" |
 
 Flags in `.env` (the banner shows what is really running):
@@ -41,12 +41,15 @@ Times are at speed 1. "UI" means a button exists on the demo screen today; "curl
 | 2b | Attack 3: replay the intent | same with `/v1/attacks/replay` | `tx.reverted` `InvalidTransition` | 1 s |
 | 3 | Mule wave | `curl -X POST $E/v1/sim/mule-wave -H 'content-type: application/json' -d '{"auto":true}'` | Three payments seen on the network; `cluster.detected` near Aflao; `breaker.on` for 24 h | 6 s |
 | 3 | Next payment into the region | UI: **Diverted invoice** | Rule `R-CB-01` among the reasons; HIGH and held (rules), or CRITICAL and blocked (model) | 11 s |
+| 4 | Stolen verifier key (simulated chain) | UI: **Diverted invoice**, wait for "Payment held", then `curl -X POST $E/v1/attacks/stolen_verifier_key -H 'content-type: application/json' -d '{"paymentId":"PAY-2026-0002"}'` | `guardian.incident` `CONFIRMED_WITHOUT_OOB_RECORD`, action `FREEZE_AND_PAUSE`, DORA draft; R3 closed; the thief's `release()` reverts `PaymentNotReleasable`; the analyst revokes; refunded; "Payment stopped" | 8 s |
+| 4 | Stolen verifier key (Fuji) | Guardian watching (`cd chain && uv run python -m sylo_chain.guardian watch`), UI: **Diverted invoice**, wait for "Payment held", then `cd chain && uv run python -m sylo_chain.stolen_verifier_key PAY-2026-0002` | Same story with real transactions: the failed `release()` is public on Snowtrace. The engine answers the guardian's report by itself | 30 s |
+| 4 | Reopen the route | `curl -X POST $E/v1/sim/rails/R3/up` (on Fuji, first `uv run python -m sylo_chain.guardian unpause`) | `rail.up` R3; the next payment uses R3 again | 1 s |
 | 5 | Rail outage | `curl -X POST $E/v1/scenarios/outage/run -H 'content-type: application/json' -d '{"auto":true}'` | `rail.down` R3; the payment goes through R1 (fees €80); still LOW; `rail.up` | 16 s |
 | — | Kill switch | Attack 2 twice | `killswitch.on` for R3; the next legitimate payment goes through R1 | 3 s |
 | — | Proof | `curl $E/v1/payments/PAY-2026-0002/proof` then `make verify-log` | Typed data and three signatures; `decision log OK` | — |
 | — | "Edit a decision" | change one value in `engine/data/log.jsonl`, then `make verify-log` | `decision log TAMPERED: line N` | — |
 
-Order for four minutes: 1, 2 with the denial, 2b. Scenes 3 and 5 only if time is left. Press **Reset** between two runs of Scene 3 or after the kill switch: it removes the breaker and restores every rail.
+Order for four minutes: 1, 2 with the denial, 2b. Scenes 3, 4 and 5 only if time is left. Press **Reset** between two runs of Scene 3, after Scene 4 or after the kill switch: it removes the breaker and restores every rail (on Fuji a corridor paused by the guardian stays paused on-chain until the admin key reopens it; until then a held payment cannot be released and is refunded).
 
 With `HUMAN_STEPS=manual` and no panel yet, the human steps are:
 
@@ -64,6 +67,7 @@ curl -X POST $E/v1/breakers/CB-CL-AFLAO-01/confirm
 | A scene does not start: "a scenario is running" | **Reset**, then start again |
 | The engine does not answer | Switch the screen to **Replay**: it plays the recorded events of the same scenes. Restart the engine with `make engine` when you can |
 | Banner says `chain` is degraded | The Fuji client did not load: the mock chain is used. Say "simulated chain" and do not open the explorer |
+| After Scene 4 the next payment goes through SWIFT | Expected: the guardian paused the corridor, so R3 is closed. Reopen it (Scene 4, last row) or press **Reset** |
 | The chain stops answering during Scene 2 | The payment stays held and the analyst is alerted; nothing is released. **Reset** and run with `CHAIN_MODE=mock` |
 | Banner says `risk` is degraded | The model did not load: the stricter rules decide. Scene 2 still holds the payment |
 | The screen is frozen | Reload the page: it reconnects and receives the whole session again |

@@ -155,6 +155,7 @@ STOPPED_DETAIL = (
 )
 CHAIN_REFUSED_HEADLINE = "Payment stopped: the smart contract refused a step"
 CHAIN_REFUSED_DETAIL = "The chain rejected {function} with {reason}. No money moved beyond the last confirmed step."
+CHAIN_REFUSED_HELD = "{detail} The money stays in the hold until an analyst decides."
 CHAIN_DOWN_HEADLINE = "Chain unavailable: the payment stays where it is"
 CHAIN_DOWN_DETAIL = (
     "The chain did not answer during {step}. Nothing is released by default: the payment stays held "
@@ -192,8 +193,12 @@ ALERT_STOPPED = "Payment stopped: the supplier did not confirm the new account. 
 ALERT_STOPPED_ANALYST = "Payment stopped by your bank's fraud team. Funds returned."
 ALERT_FREEZE_REQUEST = (
     "Fraud alert on UETR {uetr}: please freeze account {account} ({holder}). A payment to it was revoked "
-    "after the real supplier denied the bank details."
+    "{cause}."
 )
+FREEZE_CAUSE_DENIED = "after the real supplier denied the bank details"
+FREEZE_CAUSE_ANALYST = "by the sender's fraud team"
+FREEZE_CAUSE_KILL = "after the route it used was cut"
+FREEZE_CAUSE_GUARDIAN = "after a confirmation that the supplier never gave"
 
 # --- Rails -----------------------------------------------------------------------------------
 
@@ -233,6 +238,19 @@ STOPPED_DETAIL_KILL_BANK = (
 )
 ALERT_STOPPED_KILL = "Payment stopped for safety: the route it was using was cut. Funds returned."
 GUARDIAN_HEADLINE = "On-chain incident: {rule}"
+GUARDIAN_PAUSE_REASON = "Corridor paused by the guardian (incident {incident}): no escrow release until it is reopened"
+ALERT_GUARDIAN_FROZEN = (
+    "The guardian froze this hold ({rule}): a confirmation reached the registry that the engine never signed. "
+    "The supplier's answer is no longer waited for. Revoke the payment to refund the payer."
+)
+STOPPED_DETAIL_GUARDIAN = (
+    "A confirmation reached the registry that the engine never signed, so the guardian froze the hold. "
+    "The analyst revoked the payment and it was refunded from escrow."
+)
+ALERT_REGISTRY_REFUSED = (
+    "The registry refused the supplier's answer ({reason}): its state changed outside the engine. "
+    "Nothing is released. Revoke the payment to refund the payer."
+)
 DORA_CRITICALITY = "Payment execution (critical function)"
 
 # --- Case file built from the rules (used when no case writer is available) -----------------
@@ -270,10 +288,15 @@ ATTACK_SWAP_BENEFICIARY = (
     "with the modified payment."
 )
 ATTACK_REPLAY = "An attacker replays the signed payment to commit it a second time."
+ATTACK_STOLEN_KEY = (
+    "A thief holding the verifier's signing key confirms the held payment without the supplier, "
+    "then calls release() to push the money out of escrow."
+)
 ATTACK_DESCRIPTIONS = {
     "release_revoked": ATTACK_RELEASE_REVOKED,
     "swap_beneficiary": ATTACK_SWAP_BENEFICIARY,
     "replay": ATTACK_REPLAY,
+    "stolen_verifier_key": ATTACK_STOLEN_KEY,
 }
 ATTACKER_ACCOUNT = {"name": "K. MENSAH VENTURES (attacker)", "account": "GH•• •••• 6660", "bank": "mule_bank"}
 REVERTED = "Rejected by the smart contract: {reason}."

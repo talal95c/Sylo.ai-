@@ -74,6 +74,8 @@ CHAIN_HOP_MS = 2200
 APPROVAL_STEP_MS = 600
 SUPPLIER_AUTO_MS = 3000
 ANALYST_AUTO_MS = 1500
+GUARDIAN_REACTION_MS = 700
+THIEF_RELEASE_MS = 900
 CASE_TIMEOUT_S = 10.0
 KILL_REFUSALS = 2
 KILL_WINDOW_S = 600.0
@@ -117,7 +119,7 @@ SCENARIOS: dict[str, ScenarioDef] = {
     "diverted_simswap": ScenarioDef("diverted", sim_swap_hours_ago=5.0),
     "outage": ScenarioDef("legit", rail_down="R3"),
 }
-ATTACKS = ("release_revoked", "swap_beneficiary", "replay")
+ATTACKS = ("release_revoked", "swap_beneficiary", "replay", "stolen_verifier_key")
 CASE_ACTIONS = ("CONFIRM_REVOCATION", "RELEASE", "FREEZE")
 HOLD_MODES = {"ONCHAIN_ESCROW": "escrow", "FIAT_HOLD": "bank"}
 
@@ -191,6 +193,9 @@ class PaymentRun:
     answer: asyncio.Future[str] | None = None
     analyst: asyncio.Future[str] | None = None
     analyst_by: str = texts.ANALYST
+    escalation: asyncio.Future[str] | None = None
+    """Resolved by a guardian incident that froze the hold: the supplier is no longer waited for."""
+    incident_id: str | None = None
     hold: str | None = None
     hold_hop: int | None = None
     hold_expires_at: str | None = None
@@ -244,6 +249,7 @@ class Orchestrator:
         self.breakers = Breakers()
         self.cluster_port, self.cluster_stub = load_cluster_port()
         self.incidents: list[dict[str, Any]] = []
+        self._paused_corridors: dict[str, str] = {}
         self._window: list[WindowPayment] = []
         self._announced_breakers: set[str] = set()
         self._rng = random.Random(settings.seed)
@@ -370,6 +376,8 @@ class Orchestrator:
         run = self._get(payment_id)
         if name == "release_revoked":
             return await self._attack_release_revoked(run)
+        if name == "stolen_verifier_key":
+            return await self._attack_stolen_verifier_key(run)
         if run.intent is None or run.intent_signature is None or run.decision is None:
             raise AttackNotApplicable("this payment has no committed intent yet")
         if name == "swap_beneficiary":
@@ -390,6 +398,8 @@ class Orchestrator:
         self._runs.clear()
         self._current_pacer = None
         self.telecom.clear()
+        for route_id in list(self._paused_corridors):
+            self._reopen_corridor(route_id)
         self.rails.reset()
         self.breakers.reset()
         self._window.clear()
@@ -412,6 +422,7 @@ class Orchestrator:
             "hold": run.hold,
             "holdExpiresAt": run.hold_expires_at,
             "frozen": run.frozen,
+            "incidentId": run.incident_id,
             "caseReady": run.case is not None,
         }
 
@@ -462,6 +473,7 @@ class Orchestrator:
         if adapter is None:
             raise UnknownRoute(route_id)
         adapter.restore()
+        self._reopen_corridor(adapter.id)
         self._publish("rail.up", {"routeId": adapter.id, "name": adapter.name})
         return {"ok": True, "routeId": adapter.id, "available": adapter.available}
 
@@ -500,8 +512,12 @@ class Orchestrator:
         self._publish("breaker.off", {"breakerId": breaker.id, "reason": "LIFTED", "by": by or texts.ANALYST})
         return {"ok": True, "breakerId": breaker.id}
 
-    def guardian_incident(self, report: dict[str, Any]) -> dict[str, Any]:
-        """An on-chain incident reported by the guardian (Lane C): show it and draft the DORA incident report."""
+    def guardian_incident(self, report: dict[str, Any], *, escalate: bool = True) -> dict[str, Any]:
+        """An on-chain incident reported by the guardian (Lane C): show it and draft the DORA incident report.
+
+        A freeze hands the held payment to the analyst (``escalate``): the supplier's answer can no longer
+        release it, so the only way out is a revocation and a refund to the payer.
+        """
         payment_id = report.get("paymentId")
         run = self._runs.get(payment_id) if isinstance(payment_id, str) else None
         incident_id = str(report.get("incidentId") or f"INC-{self.now():%Y%m%d}-{len(self.incidents) + 1:03d}")
@@ -526,14 +542,30 @@ class Orchestrator:
             "headline": texts.GUARDIAN_HEADLINE.format(rule=rule),
             "dora": dora,
         }
-        if run is not None and run.hold is not None and "FREEZE" in action.upper():
+        froze = run is not None and run.hold is not None and "FREEZE" in action.upper()
+        if run is not None and froze:
             run.frozen = True  # the guardian froze the hold on-chain: the engine must not try to release it
+            run.incident_id = incident_id
         self._publish(
             "guardian.incident",
             data,
             payment_id=run.order.id if run else None,
             simulated=bool(report.get("simulated", self.chain_simulated)),
         )
+        if "PAUSE" in action.upper():
+            self._corridor_paused(run, incident_id)
+        if run is not None and froze:
+            self._alert(
+                run,
+                "analyst",
+                texts.ANALYST,
+                "IN_APP",
+                texts.ALERT_GUARDIAN_FROZEN.format(rule=rule),
+                headline=texts.GUARDIAN_HEADLINE.format(rule=rule),
+                incidentId=incident_id,
+            )
+            if escalate:
+                self._escalate(run)
         draft = {**data, "paymentId": run.order.id if run else None, "receivedAt": iso_ms(self.now()), "status": "DRAFT, not filed"}
         self.incidents.append(draft)
         if self.settings.journal_path:
@@ -542,6 +574,36 @@ class Orchestrator:
             safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in incident_id)
             (folder / f"{safe}.json").write_text(json.dumps(draft, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {"ok": True, "incidentId": incident_id}
+
+    @staticmethod
+    def _escalate(run: PaymentRun) -> None:
+        """Stop waiting for the supplier on a hold the guardian froze: a person decides."""
+        if run.escalation is not None and not run.escalation.done():
+            run.escalation.set_result(run.incident_id or "guardian")
+
+    def _escrow_routes(self, run: PaymentRun | None) -> list[str]:
+        """The routes that settle through the on-chain escrow: the ones a paused corridor closes."""
+        if run is not None and run.decision is not None and run.decision.route is not None and run.hold == "escrow":
+            return [run.decision.route.id]
+        return [adapter.id for adapter in self.rails if adapter.route.settlement == "ONCHAIN_ESCROW"]
+
+    def _corridor_paused(self, run: PaymentRun | None, incident_id: str) -> None:
+        """The guardian paused the corridor: no escrow release can pass, so its route is closed until a
+        person reopens it (``rail_up``, after the keys are rotated and the corridor is unpaused)."""
+        for route_id in self._escrow_routes(run):
+            adapter = self.rails.adapter(route_id)
+            if not adapter.available:
+                continue
+            adapter.down_reason = texts.GUARDIAN_PAUSE_REASON.format(incident=incident_id)
+            self._paused_corridors[route_id] = corridor_id_of(CORRIDOR)
+            self._publish("rail.down", {"routeId": adapter.id, "name": adapter.name, "reason": adapter.down_reason})
+
+    def _reopen_corridor(self, route_id: str) -> None:
+        """Only the simulated chain is reopened here: on Fuji the admin key unpauses (Lane C's guardian command)."""
+        corridor = self._paused_corridors.pop(route_id, None)
+        unpause = getattr(self.chain, "unpause_corridor", None)
+        if corridor is not None and self.chain_simulated and unpause is not None:
+            unpause(corridor)
 
     async def _wave(self, pacer: Pacer, auto: bool) -> None:
         self._current_pacer = pacer
@@ -774,16 +836,22 @@ class Orchestrator:
         except ChainReverted as err:
             log.warning("chain refused %s: %s", err.function, err.reason)
             self._reverted(run, err)
-            run.status = "stopped"
-            self._emit(
-                run,
-                "payment.stopped",
-                {
-                    "headline": texts.CHAIN_REFUSED_HEADLINE,
-                    "detail": texts.CHAIN_REFUSED_DETAIL.format(function=err.function, reason=err.reason),
-                },
-                simulated=self.chain_simulated,
-            )
+            detail = texts.CHAIN_REFUSED_DETAIL.format(function=err.function, reason=err.reason)
+            if run.hold is not None:
+                # Fail safe: the money stays in the hold. Saying "stopped" would be wrong while it is still there.
+                run.status = "held"
+                self._alert(
+                    run, "analyst", texts.ANALYST, "IN_APP", texts.CHAIN_REFUSED_HELD.format(detail=detail),
+                    headline=texts.CHAIN_REFUSED_HEADLINE,
+                )
+            else:
+                run.status = "stopped"
+                self._emit(
+                    run,
+                    "payment.stopped",
+                    {"headline": texts.CHAIN_REFUSED_HEADLINE, "detail": detail},
+                    simulated=self.chain_simulated,
+                )
         except ChainUnavailable as err:
             # Fail safe: nothing is released by default. Money already in escrow stays there.
             log.exception("chain unavailable during %s", err.step)
@@ -1166,19 +1234,21 @@ class Orchestrator:
         return await run.analyst
 
     async def _await_supplier_or_analyst(self, run: PaymentRun) -> tuple[str, str]:
-        """The supplier's answer, unless the analyst revokes first."""
-        assert run.analyst is not None
+        """The supplier's answer, unless the analyst revokes first or the guardian freezes the hold."""
+        assert run.analyst is not None and run.escalation is not None
         run.answer = asyncio.get_running_loop().create_future()
         run.status = "awaiting_supplier"
         if run.auto:
             await run.pacer.wait(SUPPLIER_AUTO_MS)
-            if not run.answer.done() and not run.analyst.done():
+            if not (run.answer.done() or run.analyst.done() or run.escalation.done()):
                 run.answer.set_result(run.auto_answer)
-        await asyncio.wait({run.answer, run.analyst}, return_when=asyncio.FIRST_COMPLETED)
-        if run.analyst.done():
+        await asyncio.wait({run.answer, run.analyst, run.escalation}, return_when=asyncio.FIRST_COMPLETED)
+        if run.analyst.done() or run.escalation.done():
             if not run.answer.done():
                 run.answer.cancel()
-            return "analyst", run.analyst.result()
+            if run.analyst.done():
+                return "analyst", run.analyst.result()
+            return "guardian", run.escalation.result()
         return "supplier", run.answer.result()
 
     async def _hold_and_verify(self, run: PaymentRun, intent: PaymentIntent, hop_index: int, mode: str) -> bool:
@@ -1202,6 +1272,7 @@ class Orchestrator:
             )
         run.hold, run.hold_hop, run.hold_expires_at = mode, hop_index, iso_ms(expires)
         run.analyst = asyncio.get_running_loop().create_future()
+        run.escalation = asyncio.get_running_loop().create_future()
 
         payee = PAYEES[order.payee_id]
         contact = payee.known_contacts[0]
@@ -1263,6 +1334,10 @@ class Orchestrator:
         if who == "analyst":
             await self._stop_held(run, intent, mode, answer, RevocationReason.ANALYST_DECISION)
             return False
+        if who == "guardian":
+            # The hold is frozen on-chain: the supplier's answer no longer matters, the analyst decides.
+            await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
+            return False
 
         await pacer.wait(800)
         result = VerificationResult.CONFIRMED if answer == "confirm" else VerificationResult.DENIED
@@ -1278,9 +1353,20 @@ class Orchestrator:
             verified_at=int(pacer.now().timestamp()),
             nonce=self.signer.next_nonce("verifier_signer"),
         )
-        tx = await self._chain(
-            "recordVerification", self.chain.record_verification, attestation, self._sign(run, "verifier_signer", attestation)
-        )
+        try:
+            tx = await self._chain(
+                "recordVerification", self.chain.record_verification, attestation, self._sign(run, "verifier_signer", attestation)
+            )
+        except ChainReverted as err:
+            # The registry already holds an answer the engine never signed (a stolen verifier key), or the
+            # payment moved on outside the engine. Nothing is released: the analyst revokes and refunds.
+            self._reverted(run, err, "recordVerification")
+            self._alert(
+                run, "analyst", texts.ANALYST, "IN_APP", texts.ALERT_REGISTRY_REFUSED.format(reason=err.reason),
+                headline=texts.CHAIN_REFUSED_HEADLINE,
+            )
+            await self._stop_held(run, intent, mode, await self._await_analyst(run), RevocationReason.ANALYST_DECISION)
+            return False
         self._emit(
             run,
             "verification.recorded",
@@ -1332,17 +1418,26 @@ class Orchestrator:
         if action == "KILL_SWITCH":
             reason = RevocationReason.KILL_SWITCH
             detail = texts.STOPPED_DETAIL_KILL if mode == "escrow" else texts.STOPPED_DETAIL_KILL_BANK.format(bank=bank_name)
-            alert = texts.ALERT_STOPPED_KILL
+            alert, cause = texts.ALERT_STOPPED_KILL, texts.FREEZE_CAUSE_KILL
         elif reason == RevocationReason.SUPPLIER_DENIED:
             detail = texts.STOPPED_DETAIL if mode == "escrow" else texts.STOPPED_DETAIL_BANK.format(bank=bank_name)
-            alert = texts.ALERT_STOPPED
+            alert, cause = texts.ALERT_STOPPED, texts.FREEZE_CAUSE_DENIED
+        elif run.incident_id is not None and mode == "escrow":
+            detail, alert, cause = texts.STOPPED_DETAIL_GUARDIAN, texts.ALERT_STOPPED_ANALYST, texts.FREEZE_CAUSE_GUARDIAN
         else:
             detail = texts.STOPPED_DETAIL_ANALYST if mode == "escrow" else texts.STOPPED_DETAIL_ANALYST_BANK.format(bank=bank_name)
-            alert = texts.ALERT_STOPPED_ANALYST
-        await self._revoke_and_refund(run, intent, reason, mode, detail, alert)
+            alert, cause = texts.ALERT_STOPPED_ANALYST, texts.FREEZE_CAUSE_ANALYST
+        await self._revoke_and_refund(run, intent, reason, mode, detail, alert, cause)
 
     async def _revoke_and_refund(
-        self, run: PaymentRun, intent: PaymentIntent, reason: RevocationReason, mode: str, detail: str, payer_alert: str
+        self,
+        run: PaymentRun,
+        intent: PaymentIntent,
+        reason: RevocationReason,
+        mode: str,
+        detail: str,
+        payer_alert: str,
+        freeze_cause: str,
     ) -> None:
         """Revoke in the registry, give the money back, tell who must know (analyst decision or kill switch)."""
         pacer, order, risk = run.pacer, run.order, run.risk
@@ -1383,7 +1478,9 @@ class Orchestrator:
             "beneficiary_bank",
             account.institution_id,
             "NETWORK",
-            texts.ALERT_FREEZE_REQUEST.format(uetr=order.uetr, account=account.account_masked, holder=account.holder_name),
+            texts.ALERT_FREEZE_REQUEST.format(
+                uetr=order.uetr, account=account.account_masked, holder=account.holder_name, cause=freeze_cause
+            ),
             uetr=order.uetr,
         )
         await pacer.wait(2000)
@@ -1415,6 +1512,64 @@ class Orchestrator:
             return {"ok": True, "reverted": True, "reason": err.reason}
         log.error("release() on a revoked payment did NOT revert: the chain port is broken")
         return {"ok": True, "reverted": False, "reason": None}
+
+    async def _attack_stolen_verifier_key(self, run: PaymentRun) -> dict[str, Any]:
+        """Scene 4: a thief holding the verifier key confirms a held payment, then tries to release it.
+
+        On a simulated chain the engine also plays the guardian (freeze, pause, report). On Fuji the real
+        guardian must be watching, so the scene is run with Lane C's script instead.
+        """
+        if not self.chain_simulated:
+            raise AttackNotApplicable(
+                "on a real chain run `uv run python -m sylo_chain.stolen_verifier_key <paymentId>` with the guardian watching"
+            )
+        waiting = run.answer is not None and not run.answer.done()
+        if run.intent is None or run.hold != "escrow" or run.frozen or not waiting:
+            raise AttackNotApplicable("this payment is not held in escrow waiting for the supplier's answer")
+        intent, pacer = run.intent, run.pacer
+        self._attack_started(run, "stolen_verifier_key")
+        domain = self.chain.domain()
+        forged = VerificationAttestation(
+            payment_id=intent.payment_id,
+            intent_hash=to_hex(digest(intent, domain)),
+            method=int(VerificationMethod.OOB_KNOWN_CONTACT),
+            result=int(VerificationResult.CONFIRMED),
+            sim_swap_checked=True,
+            evidence_hash=hash_record({"paymentId": run.order.id, "forged": True}),
+            verified_at=int(pacer.now().timestamp()),
+            nonce=self.signer.next_nonce("verifier_signer"),
+        )
+        # Signed with the real key but never recorded by the engine: that gap is what the guardian looks for.
+        tx = await self._chain(
+            "recordVerification", self.chain.record_verification, forged, self.signer.sign("verifier_signer", forged, domain)
+        )
+
+        await pacer.wait(GUARDIAN_REACTION_MS)
+        await self._chain("freeze", self.chain.freeze, run.chain_pid)
+        await self._chain("pauseCorridor", self.chain.pause_corridor, intent.corridor_id)
+        incident = self.guardian_incident(
+            {
+                "rule": "CONFIRMED_WITHOUT_OOB_RECORD",
+                "action": "FREEZE_AND_PAUSE",
+                "txHash": tx.tx_hash,
+                "explorerUrl": tx.explorer_url,
+                "paymentId": run.order.id,
+                "simulated": True,
+            },
+            escalate=False,  # the run's script goes on once the thief's release has been seen to fail
+        )
+
+        await pacer.wait(THIEF_RELEASE_MS)
+        result = {"ok": True, "reverted": False, "reason": None, "incidentId": incident["incidentId"]}
+        try:
+            await self._chain("release", self.chain.release, run.chain_pid, "attacker")
+        except ChainReverted as err:
+            self._reverted(run, err, "release")
+            result.update(reverted=True, reason=err.reason)
+        else:
+            log.error("release() on a frozen hold did NOT revert: the chain port is broken")
+        self._escalate(run)
+        return result
 
     def _payout_hop(self, run: PaymentRun) -> int:
         """The first leg that moves money towards the beneficiary: where a substitution would pay off."""

@@ -245,6 +245,48 @@ def check_kill_switch(engine: Engine, speed: float, payment_id: str) -> str:
     return f"adapter {cut['adapter']} cut after {cut['refusals']} refusals, next payment through {selected['routeId']}"
 
 
+def wait_status(engine: Engine, payment_id: str, status: str) -> dict[str, Any]:
+    deadline = time.monotonic() + engine.timeout
+    info: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        info = engine.get(f"/v1/payments/{payment_id}")
+        if info["status"] == status:
+            return info
+        time.sleep(0.05)
+    raise CheckFailed(f"{payment_id} is {info.get('status')}, expected {status}")
+
+
+def check_stolen_key(engine: Engine, speed: float, payment_id: str, mode: dict[str, Any]) -> str:
+    """Scene 4. On a real chain the thief and the guardian are Lane C's script and process, not the engine."""
+    if mode["chain"] == "fuji":
+        return "not run on Fuji: use `uv run python -m sylo_chain.stolen_verifier_key` with the guardian watching"
+    manual = mode.get("humanSteps") == "manual"
+    engine.post("/v1/reset")
+    engine.post("/v1/scenarios/diverted/run", {"speed": speed, "auto": False})
+    if manual:
+        wait_status(engine, payment_id, "awaiting_approval")
+        for approver in ("claire", "marc"):
+            engine.post(f"/v1/payments/{payment_id}/approve", {"approver": approver})
+    wait_status(engine, payment_id, "awaiting_supplier")
+    attack = engine.post("/v1/attacks/stolen_verifier_key", {"paymentId": payment_id})
+    expect(attack["reverted"] and attack["reason"] == "PaymentNotReleasable", f"the thief's release was not refused: {attack}")
+    if manual:
+        wait_status(engine, payment_id, "awaiting_analyst")
+        engine.post(f"/v1/cases/{payment_id}/actions", {"action": "CONFIRM_REVOCATION"})
+    events = engine.events_until("payment.stopped")
+    incident = first(events, "guardian.incident")
+    expect("FREEZE" in incident["action"] and incident["dora"]["draft"] is True, f"guardian incident: {incident}")
+    expect(first(events, "intent.revoked")["reasonCode"] == "ANALYST_DECISION", "the frozen payment was not revoked by the analyst")
+    kinds = [e["type"] for e in events]
+    expect("escrow.refunded" in kinds and "escrow.released" not in kinds, "the frozen hold was not refunded to the payer")
+    expect("verification.recorded" not in kinds, "the engine recorded an answer the supplier never gave")
+    info = engine.get(f"/v1/payments/{payment_id}")
+    expect(info["chainStatus"] == "REVOKED" and info["hold"] is None, f"money is still held: {info}")
+    down = first(events, "rail.down")
+    engine.post(f"/v1/sim/rails/{down['routeId']}/up")
+    return f"forged confirmation, {incident['action']}, release → {attack['reason']}, revoked and refunded, {down['routeId']} closed then reopened"
+
+
 def check_metrics(engine: Engine) -> str:
     metrics = engine.get("/v1/metrics")
     expect(isinstance(metrics.get("sample"), bool), "metrics do not say whether they are a sample")
@@ -319,6 +361,7 @@ def main(argv: list[str] | None = None) -> int:
             ("Scene 2  SIM swap on the known contact", lambda: check_sim_swap(engine, args.speed)),
             ("Scene 5  rail outage and reroute", lambda: check_outage(engine, args.speed)),
             ("Scene 3  mule wave and circuit breaker", lambda: check_wave(engine, args.speed)),
+            ("Scene 4  stolen verifier key and guardian", lambda: check_stolen_key(engine, args.speed, diverted, mode)),
             ("Kill switch on a rail adapter", lambda: check_kill_switch(engine, args.speed, diverted)),
             ("Metrics and integrity report", lambda: check_metrics(engine)),
         ]

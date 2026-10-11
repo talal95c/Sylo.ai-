@@ -12,7 +12,7 @@ from sylo_spec.ports import ClusterPort
 from sylo import texts
 from sylo.breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from sylo.clusters import SampleClusterPort, cluster_sample
-from sylo.orchestrator import ActionNotAllowed, UnknownBreaker, UnknownRoute
+from sylo.orchestrator import ActionNotAllowed, NotWaiting, UnknownBreaker, UnknownRoute
 
 from .conftest import LEGIT_SEQUENCE, events_of, make_orchestrator, types, until
 
@@ -298,12 +298,15 @@ async def test_a_guardian_incident_is_shown_drafted_for_dora_and_freezes_the_pay
     draft = json.loads((tmp_path / "incidents" / "INC-20261011-001.json").read_text(encoding="utf-8"))
     assert draft["status"] == "DRAFT, not filed" and draft["paymentId"] == DIVERTED and draft["dora"]["draft"] is True
 
-    assert run.frozen
-    orchestrator.supplier_response(DIVERTED, "confirm")
-    await orchestrator._task  # the release reverts, then the analyst (played by the engine here) revokes
-    assert events_of(orchestrator, "tx.reverted")[0]["data"]["reason"] == "PaymentNotReleasable"
+    assert run.frozen and run.incident_id == "INC-20261011-001"
+    # The corridor is paused, so its escrow route is closed until a person reopens it.
+    assert events_of(orchestrator, "rail.down")[0]["data"]["routeId"] == "R3" and not orchestrator.rails.adapter("R3").available
+    await orchestrator._task  # the supplier is no longer waited for: the analyst (played by the engine here) revokes
     assert run.status == "stopped" and not events_of(orchestrator, "escrow.released")
     assert events_of(orchestrator, "intent.revoked")[0]["data"]["reasonCode"] == "ANALYST_DECISION"
+    assert events_of(orchestrator, "escrow.refunded") and orchestrator.chain.status(run.chain_pid) == Status.REVOKED
+    with pytest.raises(NotWaiting):
+        orchestrator.supplier_response(DIVERTED, "confirm")
     valid(orchestrator, event_validator)
 
 

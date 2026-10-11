@@ -22,7 +22,7 @@ The order never changes: **norms → risk → cost → commit → action**. Frau
 | A leg was changed or replayed | The rail adapter refuses it before sending; the chain reverts a modified or replayed intent | Security lead revokes the caller | Built: three attacks, 300 integrity cases, none gets through |
 | Two such refusals on one adapter in 10 minutes | Kill switch: the adapter is cut; a payment held on that route is revoked and refunded; later payments take another route | Security lead rotates the keys, then restores the adapter | Built. Restoring is one call (`/v1/sim/rails/{id}/up`) |
 | Rail outage | The rail is not eligible; the payment takes the best remaining legal route. The tier does not change | Operations | Built (scenario `outage`) |
-| On-chain incident reported by the guardian | Incident shown with a DORA incident draft; the engine stops trying to release a frozen payment | Security lead confirms; compliance files if major | Intake built. The guardian itself is Lane C's |
+| On-chain incident reported by the guardian | Incident shown with a DORA incident draft. A frozen hold goes to the analyst (the supplier is no longer waited for) and ends revoked and refunded; a paused corridor closes its escrow route and payments are rerouted | Analyst confirms the revocation; security lead rotates the key and reopens the corridor; compliance files if major | Built (Scene 4). The guardian itself is Lane C's |
 | Model, chain or case writer down | Banner; rules (stricter) instead of the model, mock chain at start-up, case file from the rules; a payment to an account not on file is at least MEDIUM (rule R-DG-01); a chain failure during a payment releases nothing | Operations | Built |
 
 ## Rules of thumb
