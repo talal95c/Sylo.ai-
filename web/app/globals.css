@@ -322,29 +322,88 @@ body {
   }
 }
 
-.landing-pin {
+.landing-node,
+.landing-traffic {
   position: absolute;
-  bottom: anchor(top);
-  left: anchor(center);
-  translate: -50% -12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 3px 9px;
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.18);
   pointer-events: none;
-  transition: opacity 300ms ease;
+  white-space: nowrap;
+  transition:
+    opacity 300ms ease,
+    filter 300ms ease;
+}
+.landing-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.landing-node-label {
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.landing-pyramid {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  transform-style: preserve-3d;
+  animation: pyramid-spin 4s linear infinite;
+}
+.landing-pyramid-face {
+  position: absolute;
+  left: -0.5px;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-left: 6.5px solid transparent;
+  border-right: 6.5px solid transparent;
+  border-bottom: 13px solid #0a0a0a;
+  transform-origin: center bottom;
+}
+@keyframes pyramid-spin {
+  from {
+    transform: rotateX(20deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(20deg) rotateY(360deg);
+  }
+}
+.landing-traffic {
+  display: flex;
+  min-width: 168px;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: var(--ink);
+}
+.landing-traffic-row {
+  display: flex;
+  gap: 6px;
+}
+.landing-traffic-foot {
+  margin-top: 2px;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-pyramid {
+    animation: none;
+  }
 }
 @supports not (anchor-name: --a) {
-  .landing-pin {
+  .landing-node,
+  .landing-traffic {
     display: none;
   }
 }
