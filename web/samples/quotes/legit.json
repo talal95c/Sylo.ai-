@@ -1,0 +1,310 @@
+{
+  "paymentId": "PAY-2026-0001",
+  "corridor": "FR-GH",
+  "currency": "EUR",
+  "routes": [
+    {
+      "routeId": "R1",
+      "name": "SWIFT correspondent",
+      "settlement": "FIAT_HOLD",
+      "hops": [
+        {
+          "from": "payer_rhone",
+          "to": "bank_fr",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_fr",
+          "to": "corr_uk",
+          "kind": "bank"
+        },
+        {
+          "from": "corr_uk",
+          "to": "bank_gh",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_gh",
+          "to": "supplier_ssx",
+          "kind": "bank"
+        }
+      ],
+      "status": "PASS",
+      "checks": [
+        {
+          "ruleId": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_HIGH_RISK_EDD",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_VOP_SCOPE",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "SANCTIONS_SCREEN",
+          "result": "PASS"
+        }
+      ]
+    },
+    {
+      "routeId": "R2",
+      "name": "Payout provider",
+      "settlement": "NONE",
+      "hops": [
+        {
+          "from": "payer_rhone",
+          "to": "bank_fr",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_fr",
+          "to": "payout_nl",
+          "kind": "bank"
+        },
+        {
+          "from": "payout_nl",
+          "to": "bank_gh",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_gh",
+          "to": "supplier_ssx",
+          "kind": "bank"
+        }
+      ],
+      "status": "PASS",
+      "checks": [
+        {
+          "ruleId": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_HIGH_RISK_EDD",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_VOP_SCOPE",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "SANCTIONS_SCREEN",
+          "result": "PASS"
+        }
+      ]
+    },
+    {
+      "routeId": "R3",
+      "name": "Euro stablecoin on Avalanche",
+      "settlement": "ONCHAIN_ESCROW",
+      "hops": [
+        {
+          "from": "payer_rhone",
+          "to": "bank_fr",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_fr",
+          "to": "casp_eu",
+          "kind": "bank"
+        },
+        {
+          "from": "casp_eu",
+          "to": "vasp_gh",
+          "kind": "chain"
+        },
+        {
+          "from": "vasp_gh",
+          "to": "bank_gh",
+          "kind": "bank"
+        },
+        {
+          "from": "bank_gh",
+          "to": "supplier_ssx",
+          "kind": "bank"
+        }
+      ],
+      "status": "PASS",
+      "checks": [
+        {
+          "ruleId": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "GH_VASP_LICENSED",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_MICA_EMT_CASP",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_TRAVEL_RULE",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_HIGH_RISK_EDD",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_VOP_SCOPE",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "SANCTIONS_SCREEN",
+          "result": "PASS"
+        }
+      ]
+    },
+    {
+      "routeId": "R4",
+      "name": "Mobile wallet remittance",
+      "settlement": "NONE",
+      "hops": [
+        {
+          "from": "payer_rhone",
+          "to": "remit_fr",
+          "kind": "wallet"
+        },
+        {
+          "from": "remit_fr",
+          "to": "momo_gh",
+          "kind": "wallet"
+        }
+      ],
+      "status": "EXCLUDED",
+      "excludedBy": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK",
+      "reason": "Excluded: Ghana requires export proceeds to reach the exporter's nominated bank account, and mobile wallets cannot receive them.",
+      "legalRef": "Foreign Exchange Act 2006 (Act 723); Bank of Ghana Notice BG/GOV/SEC/2025/34 (export proceeds and LOCs)",
+      "checks": [
+        {
+          "ruleId": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK",
+          "result": "FAIL"
+        },
+        {
+          "ruleId": "GH_WALLET_DAILY_CAP",
+          "result": "FAIL"
+        },
+        {
+          "ruleId": "EU_HIGH_RISK_EDD",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "EU_VOP_SCOPE",
+          "result": "PASS"
+        },
+        {
+          "ruleId": "SANCTIONS_SCREEN",
+          "result": "PASS"
+        }
+      ]
+    }
+  ],
+  "route": {
+    "chosen": "R3",
+    "candidates": [
+      {
+        "routeId": "R1",
+        "s": 216.0,
+        "excludedBy": null
+      },
+      {
+        "routeId": "R2",
+        "s": 941.73,
+        "excludedBy": null
+      },
+      {
+        "routeId": "R3",
+        "s": 179.21,
+        "excludedBy": null
+      },
+      {
+        "routeId": "R4",
+        "s": null,
+        "excludedBy": "GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK"
+      }
+    ],
+    "settlement": "DIRECT",
+    "reason": "R3 is the cheapest compliant route: €179 all-in against €216 via SWIFT. R4 is excluded by Ghana's export-proceeds rule.",
+    "feesEur": 170.0,
+    "etaLabel": "≈ 2 h",
+    "priceOfSafetyEur": 0.0,
+    "blockedBy": null
+  },
+  "risk": {
+    "score": 10,
+    "tier": "LOW",
+    "rulesFired": [],
+    "topReasons": [
+      {
+        "ref": "B",
+        "text": "Known supplier: 14 successful payments to this nominated account since 2024.",
+        "ruleId": null
+      },
+      {
+        "ref": "V",
+        "text": "Bank details come from the verified supplier registry.",
+        "ruleId": null
+      }
+    ],
+    "modelVersion": "rules-v0",
+    "oobResolvable": true
+  },
+  "rails": [
+    {
+      "routeId": "R1",
+      "rail": "SWIFT correspondent",
+      "settlement": "FIAT_HOLD",
+      "feesEur": 80.0,
+      "etaLabel": "1–3 days",
+      "available": true,
+      "simulated": true
+    },
+    {
+      "routeId": "R2",
+      "rail": "Payout provider",
+      "settlement": "NONE",
+      "feesEur": 935.0,
+      "etaLabel": "≈ 1 h",
+      "available": true,
+      "simulated": true
+    },
+    {
+      "routeId": "R3",
+      "rail": "Euro stablecoin on Avalanche",
+      "settlement": "ONCHAIN_ESCROW",
+      "feesEur": 170.0,
+      "etaLabel": "≈ 2 h",
+      "available": true,
+      "simulated": true
+    },
+    {
+      "routeId": "R4",
+      "rail": "Mobile wallet remittance",
+      "settlement": "NONE",
+      "feesEur": 1275.0,
+      "etaLabel": "minutes",
+      "available": true,
+      "simulated": true
+    }
+  ],
+  "approval": {
+    "required": [
+      {
+        "id": "claire",
+        "name": "Claire Martin",
+        "role": "CFO"
+      },
+      {
+        "id": "marc",
+        "name": "Marc Durand",
+        "role": "Second approver"
+      }
+    ],
+    "method": "DUAL_CONTROL",
+    "conditional": false
+  },
+  "executable": false
+}
