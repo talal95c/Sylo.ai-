@@ -63,7 +63,7 @@ What closes the Fintech brick ([`spec/api.md`](spec/api.md) has the details):
 ```bash
 make demo-check   # scenes 1 to 5, the kill switch, the demo clock and the proof against the running engine (or a temporary one): 12 checks
 make verify-log   # recompute the hash chain of the decision log; an edited line makes it fail
-make integrity    # 300 changed or replayed payments through the adapters: 0 must get through
+make integrity    # 400 changed or replayed payments through the adapters: 0 must get through
 ```
 
 ## Tests

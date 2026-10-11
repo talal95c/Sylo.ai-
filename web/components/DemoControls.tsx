@@ -12,6 +12,10 @@ interface Actions {
   runMuleWave: () => void;
   runGuardian: () => void;
   runOutage: () => void;
+  runSimSwap: () => void;
+  runHoldExpiry: () => void;
+  runTimeLock: () => void;
+  runConfidential: () => void;
   confirm: () => void;
   deny: () => void;
   attack: () => void;
@@ -53,16 +57,23 @@ function Button({
   );
 }
 
-function MoreScenes({ actions, available, sourceKind }: { actions: Actions; available: Available; sourceKind: SourceKind }) {
+function MoreScenes({ actions, available, sourceKind, state }: { actions: Actions; available: Available; sourceKind: SourceKind; state: ViewState }) {
   const [open, setOpen] = useState(false);
   const run = (action: () => void) => {
     setOpen(false);
     action();
   };
+  const confidentialEnabled =
+    sourceKind === "replay" ||
+    (state.mode?.confidential !== undefined && state.mode.confidential !== "off");
   const entries = [
     { label: "Mule wave", action: actions.runMuleWave, enabled: available.runMuleWave },
-    { label: "Guardian incident", action: actions.runGuardian, enabled: available.runGuardian && sourceKind === "replay", suffix: sourceKind === "live" ? "Replay" : undefined },
+    { label: "Guardian incident", action: actions.runGuardian, enabled: available.runGuardian, suffix: sourceKind === "live" && !available.runGuardian ? "Needs a hold" : undefined },
     { label: "Rail outage", action: actions.runOutage, enabled: available.runOutage },
+    { label: "SIM swap", action: actions.runSimSwap, enabled: available.runSimSwap },
+    { label: "Hold expiry", action: actions.runHoldExpiry, enabled: available.runHoldExpiry },
+    { label: "Time-lock", action: actions.runTimeLock, enabled: available.runTimeLock },
+    { label: "Confidential leg", action: actions.runConfidential, enabled: available.runConfidential && confidentialEnabled, suffix: sourceKind === "live" && !confidentialEnabled ? "Replay" : undefined },
     { label: "Swap beneficiary", action: actions.swapAttack, enabled: available.swapAttack },
     { label: "Replay intent", action: actions.replayAttack, enabled: available.replayAttack },
   ];
@@ -209,7 +220,7 @@ export function DemoControls({
         </motion.div>
       </AnimatePresence>
 
-      <MoreScenes actions={actions} available={available} sourceKind={sourceKind} />
+      <MoreScenes actions={actions} available={available} sourceKind={sourceKind} state={state} />
 
       <span className="mx-1 h-6 w-px bg-[var(--line-strong)]" />
       <div className="flex h-10 items-center rounded-full bg-[var(--surface-2)] p-1" role="radiogroup" aria-label="Speed">

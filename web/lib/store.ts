@@ -87,6 +87,7 @@ export interface ViewState {
     etaLabel?: string;
     routeReason?: string;
     routeCostEur?: number;
+    settlement?: string;
     intentHash?: string;
     intentTxHash?: string;
     intentSimulated?: boolean;
@@ -118,7 +119,13 @@ export interface ViewState {
   revoked: boolean;
   refunded: boolean;
   released: boolean;
-  attack: { attempted: boolean; reverted: boolean; reason: string | null };
+  attack: {
+    attempted: boolean;
+    reverted: boolean;
+    reason: string | null;
+    name: string | null;
+    functionName: string | null;
+  };
   credited: PaymentCreditedData | null;
   stopped: PaymentStoppedData | null;
   feed: FeedItem[];
@@ -147,7 +154,7 @@ export const initialState: ViewState = {
   revoked: false,
   refunded: false,
   released: false,
-  attack: { attempted: false, reverted: false, reason: null },
+  attack: { attempted: false, reverted: false, reason: null, name: null, functionName: null },
   credited: null,
   stopped: null,
   feed: [],
@@ -163,7 +170,7 @@ export function riskModeForSource(
 ): "rules" | "model" {
   const model = state.risk?.model.toLowerCase();
   if (model) return model.startsWith("rules") ? "rules" : "model";
-  return sourceKind === "replay" ? "rules" : (state.mode?.risk ?? "rules");
+  return sourceKind === "replay" ? "model" : (state.mode?.risk ?? "rules");
 }
 
 function eventData(event: SyloEvent): Record<string, unknown> {
@@ -232,7 +239,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "scenario.started":
       return {
         ...next,
-        scenario: data.scenario === "diverted" ? "diverted" : "legit",
+        scenario: String(data.scenario ?? "").startsWith("diverted") ? "diverted" : "legit",
       };
     case "payment.created": {
       const payer = data.payer as Record<string, unknown>;
@@ -292,6 +299,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
               etaLabel: String(data.etaLabel),
               routeReason: String(data.reason),
               routeCostEur: ownScore ?? undefined,
+              settlement: typeof data.settlement === "string" ? data.settlement : undefined,
               actionTier: data.tier as Tier,
             }
           : null,
@@ -413,7 +421,11 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "attack.attempted":
       return {
         ...next,
-        attack: { ...next.attack, attempted: true },
+        attack: {
+          ...next.attack,
+          attempted: true,
+          name: typeof data.attack === "string" ? data.attack : null,
+        },
       };
     case "leg.rejected":
       return {
@@ -424,12 +436,15 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         },
       };
     case "tx.reverted":
+      // Only a revert that follows an attack is the attack's outcome (a chain may revert for other reasons).
+      if (!next.attack.attempted) return next;
       return {
         ...next,
         attack: {
           ...next.attack,
           reverted: true,
           reason: String(data.reason ?? ""),
+          functionName: typeof data.function === "string" ? data.function : null,
         },
       };
     case "rail.down": {
@@ -469,12 +484,19 @@ export function closeAlert(state: ViewState): ViewState {
   return { ...state, alertOpen: false };
 }
 
-export function availableActions(state: ViewState): {
+export function availableActions(
+  state: ViewState,
+  sourceKind: "live" | "replay" = "replay",
+): {
   runLegit: boolean;
   runDiverted: boolean;
   runMuleWave: boolean;
   runGuardian: boolean;
   runOutage: boolean;
+  runSimSwap: boolean;
+  runHoldExpiry: boolean;
+  runTimeLock: boolean;
+  runConfidential: boolean;
   confirm: boolean;
   deny: boolean;
   attack: boolean;
@@ -487,18 +509,24 @@ export function availableActions(state: ViewState): {
     state.payment.status === "credited" ||
     state.payment.status === "stopped";
   const awaitingSupplier = state.payment?.status === "awaiting_supplier";
+  // Live, Scene 4 is an attack on the payment held in escrow; in replay it is a recorded scene.
+  const heldInEscrow = awaitingSupplier && state.held?.at === "escrow" && !state.attack.attempted;
 
   return {
     runLegit: canRun,
     runDiverted: canRun,
     runMuleWave: canRun,
-    runGuardian: canRun,
+    runGuardian: sourceKind === "live" ? heldInEscrow : canRun,
     runOutage: canRun,
+    runSimSwap: canRun,
+    runHoldExpiry: canRun,
+    runTimeLock: canRun,
+    runConfidential: canRun,
     confirm: awaitingSupplier,
     deny: awaitingSupplier,
     attack: state.revoked && !state.attack.attempted,
-    swapAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
-    replayAttack: Boolean(state.payment?.intentHash) && !state.attack.attempted,
+    swapAttack: state.scenario === "diverted" && Boolean(state.payment?.intentHash) && !state.attack.attempted,
+    replayAttack: state.scenario === "diverted" && Boolean(state.payment?.intentHash) && !state.attack.attempted,
     reset: true,
   };
 }

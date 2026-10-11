@@ -72,4 +72,78 @@ describe("feed outcome", () => {
     expect(item.outcome).toBeUndefined();
     expect(outcomeBadge(item)).toBeNull();
   });
+
+  it("labels detector clusters with singular and plural counts", () => {
+    expect(
+      describeEvent(
+        event("cluster.detected", {
+          detector: "networkx-mule-clusters",
+          clusterId: "cluster-one",
+          regionName: "Volta Region",
+          accounts: 1,
+          linkedPayments: ["P1"],
+        }),
+      ).text,
+    ).toBe("Mule cluster cluster-one · Volta Region · 1 account · 1 payment");
+
+    expect(
+      describeEvent(
+        event("cluster.detected", {
+          detector: "networkx-mule-clusters",
+          clusterId: "cluster-many",
+          region: "Volta",
+          accounts: 2,
+          linkedPayments: ["P1", "P2"],
+          agents: 2,
+        }),
+      ).text,
+    ).toBe("Mule cluster cluster-many · Volta · 2 accounts · 2 payments · 2 agents");
+  });
+
+  it("preserves sample-cluster wording and singularizes account and agent counts", () => {
+    expect(
+      describeEvent(
+        event("cluster.detected", {
+          detector: "cluster-sample",
+          clusterId: "CL-AFLAO-01",
+          accounts: 1,
+          agents: 1,
+        }),
+      ).text,
+    ).toBe("Sample cluster CL-AFLAO-01 · 1 account · 1 agent");
+
+    expect(
+      describeEvent(
+        event("cluster.detected", {
+          detector: "cluster-sample",
+          clusterId: "CL-AFLAO-02",
+          accounts: 2,
+          agents: 0,
+        }),
+      ).text,
+    ).toBe("Sample cluster CL-AFLAO-02 · 2 accounts · 0 agents");
+  });
+
+  it("omits missing detector payment counts and labels every new scene event", () => {
+    expect(
+      describeEvent(
+        event("cluster.detected", {
+          detector: "networkx-mule-clusters",
+          clusterId: "cluster-fallback",
+          region: "Volta",
+          accounts: 1,
+        }),
+      ).text,
+    ).toBe("Mule cluster cluster-fallback · Volta · 1 account");
+
+    for (const name of [
+      "scene2-simswap",
+      "samples-hold-expiry",
+      "samples-time-lock",
+      "samples-confidential",
+    ]) {
+      const labels = fixture(name).map((sceneEvent) => describeEvent(sceneEvent).text);
+      expect(labels.every((label) => !label.startsWith("Event received:"))).toBe(true);
+    }
+  });
 });

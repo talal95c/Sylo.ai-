@@ -12,7 +12,7 @@ from sylo.metrics import load_metrics
 
 async def test_no_changed_or_replayed_payment_gets_through():
     report = await integrity.evaluate(cases_per_kind=4, seed=7)
-    assert (report["cases"], report["diverted"], report["diversionRate"]) == (12, 0, 0.0)
+    assert (report["cases"], report["diverted"], report["diversionRate"]) == (16, 0, 0.0)
     assert report["simulated"] is True and report["chain"] == "mock"
     for kind in integrity.KINDS:
         result = report["byKind"][kind]
@@ -22,15 +22,16 @@ async def test_no_changed_or_replayed_payment_gets_through():
     assert report["byKind"]["I2_replay"]["adapterReasons"] == ["NONCE_USED"]
     assert report["byKind"]["I2_replay"]["chainReasons"] == ["InvalidTransition"]
     assert report["byKind"]["I3_modified_amount"]["adapterReasons"] == ["INTENT_HASH_MISMATCH"]
+    assert report["byKind"]["I4_tampered_leg"]["adapterReasons"] == ["INTENT_HASH_MISMATCH"]
 
 
 async def test_the_evaluation_is_reproducible():
     assert await integrity.evaluate(cases_per_kind=2, seed=3) == await integrity.evaluate(cases_per_kind=2, seed=3)
 
 
-def test_the_committed_report_says_zero_diversions_over_300_cases():
+def test_the_committed_report_says_zero_diversions_over_400_cases():
     report = json.loads(integrity.REPORT_PATH.read_text(encoding="utf-8"))
-    assert report["cases"] == 300 and report["diverted"] == 0 and report["diversionRate"] == 0.0
+    assert report["cases"] == 400 and report["diverted"] == 0 and report["diversionRate"] == 0.0
 
 
 def test_metrics_serve_the_labelled_sample_until_measured_numbers_exist(tmp_path):

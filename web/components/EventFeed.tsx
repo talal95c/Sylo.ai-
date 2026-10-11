@@ -64,7 +64,11 @@ const EVENT_TITLES: Record<string, string> = {
   "killswitch.on": "Rail kill switch activated",
   "guardian.incident": "Guardian incident",
   "traffic.sample": "Network payment observed",
-  "cluster.detected": "Sample mule cluster detected",
+  "cluster.detected": "Mule cluster detected",
+  "clock.advanced": "Demo clock advanced",
+  "timelock.on": "Time-lock activated",
+  "timelock.off": "Time-lock elapsed",
+  "confidential.transfer": "Confidential transfer",
   "breaker.on": "Circuit breaker activated",
   "breaker.off": "Circuit breaker removed",
   "alert.raised": "Security alert sent",
@@ -104,6 +108,10 @@ const EVENT_ICONS: Record<string, EventIconName> = {
   "guardian.incident": "shield",
   "traffic.sample": "route",
   "cluster.detected": "users",
+  "clock.advanced": "system",
+  "timelock.on": "lock",
+  "timelock.off": "unlock",
+  "confidential.transfer": "shield",
   "breaker.on": "shield",
   "breaker.off": "unlock",
   "alert.raised": "send",
@@ -118,6 +126,7 @@ const SUCCESS_EVENTS = new Set([
   "payment.credited",
   "rail.up",
   "breaker.off",
+  "timelock.off",
 ]);
 const DANGER_EVENTS = new Set([
   "intent.revoked",
@@ -164,6 +173,8 @@ function statusFor(item: FeedItem) {
       return "System";
     case "scenario.started":
       return "Started";
+    case "approval.required":
+      return "Pending";
     case "payment.created":
       return "Received";
     case "norms.checked":
@@ -172,6 +183,8 @@ function statusFor(item: FeedItem) {
       return "Route selected";
     case "approval.granted":
       return "Approved";
+    case "case.action":
+      return "Recorded";
     case "intent.committed":
       return "On chain";
     case "leg.sent":
@@ -213,7 +226,15 @@ function statusFor(item: FeedItem) {
     case "traffic.sample":
       return "Simulated";
     case "cluster.detected":
-      return "Sample";
+      return "Detected";
+    case "clock.advanced":
+      return "Advanced";
+    case "timelock.on":
+      return "Locked";
+    case "timelock.off":
+      return "Elapsed";
+    case "confidential.transfer":
+      return "Private";
     case "breaker.on":
       return "Active";
     case "breaker.off":

@@ -1,16 +1,16 @@
 {
   "paymentId": "PAY-2026-0002",
   "variants": 20,
-  "passValidatorRate": 0.0,
-  "fallbackRate": 1.0,
+  "passValidatorRate": 0.85,
+  "fallbackRate": 0.15,
   "acceptedLessStrictCount": 0,
   "fallbackReasons": {
-    "http_401": 20
+    "invalid:citation_mismatch": 3
   },
-  "repairedCount": 0,
+  "repairedCount": 2,
   "schema": "json_schema-strict",
   "latencyMs": {
-    "p50": 227.49815599991052,
-    "p95": 244.1048390001015
+    "p50": 4499.080088999988,
+    "p95": 7789.468733999967
   }
 }

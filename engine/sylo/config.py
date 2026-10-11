@@ -74,6 +74,9 @@ class Settings:
     eerc_url: str = "http://127.0.0.1:8010"
     # v2: "auto" uses Lane B's cluster detector when it is installed, "sample" always uses the sample cluster
     cluster_mode: str = "auto"
+    # A public deployment: the operator endpoints (approvals, case actions, guardian, payee checks,
+    # simulated clock, rails and events, breakers) answer 403; scenarios, attacks and reset stay open.
+    demo_public: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -110,4 +113,5 @@ class Settings:
             time_lock_long_hours=float(_get(env, "TIME_LOCK_LONG_HOURS", "24")),
             reroute_max_fees_eur=float(_get(env, "REROUTE_MAX_FEES_EUR", "500")),
             reroute_max_days=float(_get(env, "REROUTE_MAX_DAYS", "3")),
+            demo_public=_get(env, "DEMO_PUBLIC", "0").lower() in {"1", "true", "yes", "on"},
         )

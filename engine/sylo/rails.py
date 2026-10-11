@@ -4,7 +4,8 @@ Every rail is reached through the same interface: ``quote``, ``initiate``, ``sta
 pacs.008-shaped message that carries the payment's UETR, the signed intent and the salt of its
 off-chain fields. Before a leg is initiated the adapter
 
-1. recomputes the intent digest from the leg's own fields and salt and compares it with the registry;
+1. recomputes the intent digest from the leg's own fields and salt and compares it with the registry,
+   and checks that the leg's amount, rail and hop match the signed intent and its route;
 2. checks the validity window and that the leg was not already executed;
 3. reads the registry: not revoked, ``COMMITTED`` (LOW, or the funding legs of a MEDIUM payment) or
    confirmed (the pay-out legs of a MEDIUM payment).
@@ -17,15 +18,18 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sylo_spec.canonical import keccak_text, offchain_hash, to_bytes32, to_hex
 from sylo_spec.eip712 import digest
 from sylo_spec.models import Money, PaymentIntent, Status, Tier
 from sylo_spec.ports import ChainPort
+from sylo_spec.scenarios import ACCOUNTS, PAYEES
 
-from .norms import Pack, RouteDef
+from .norms import CRED, Pack, RouteDef
 
+TOKEN_DECIMALS = 6
 INTENT_HASH_MISMATCH = "INTENT_HASH_MISMATCH"
 NONCE_USED = "NONCE_USED"
 REVOKED = "REVOKED"
@@ -94,6 +98,12 @@ class LegMessage:
         }
 
 
+def _payee_banks(bank: str, account_masked: str) -> set[str]:
+    """The banks of the payees who own the creditor account (the last hop of a payee-routed payment)."""
+    owned = [a.id for a in ACCOUNTS.values() if a.institution_id == bank and a.account_masked == account_masked]
+    return {p.institution_id for p in PAYEES.values() for account_id in owned if p.owns(account_id)}
+
+
 LEG_STATUSES = ("PENDING", "SETTLED", "FAILED", "RETURNED")
 WEBHOOK_STATUSES = ("SETTLED", "FAILED", "RETURNED")
 
@@ -149,6 +159,9 @@ class RailAdapter:
             expected = bytes(self._chain.intent_hash(to_bytes32(payment_id)))
             if digest(leg.recomputed_intent(), domain) != expected:
                 self._refuse(INTENT_HASH_MISMATCH, leg, "the leg does not match the intent sealed in the registry")
+            mismatch = self._leg_mismatch(leg)
+            if mismatch is not None:
+                self._refuse(INTENT_HASH_MISMATCH, leg, mismatch)
 
             key = leg.idempotency_key
             previous = self._legs.get(key)
@@ -237,6 +250,36 @@ class RailAdapter:
             return False
         hold = self.hold_hop()
         return hold is None or hop > hold
+
+    def _leg_mismatch(self, leg: LegMessage) -> str | None:
+        """Why the leg's own amount, rail or hop differ from the signed intent and its route, if they do.
+
+        The intent hash binds the creditor fields but not these, so they are compared here. ``{CRED}``
+        in the route stands for the creditor's bank, which the intent hash binds (``leg.creditor_bank``);
+        one extra hop after the route is allowed, from that bank to the payee's own bank.
+        """
+        if leg.rail != self.id:
+            return f"the leg is for rail {leg.rail}, not {self.id}"
+        try:
+            micros = Decimal(leg.amount.value) * 10**TOKEN_DECIMALS
+        except InvalidOperation:
+            return f"the leg amount {leg.amount.value!r} is not a number"
+        if leg.amount.currency != "EUR" or micros != leg.intent.amount:
+            return "the leg amount differs from the amount in the signed intent"
+        hops = self.route.hops
+        if not 0 <= leg.hop <= len(hops):
+            return f"hop {leg.hop} is not on route {self.id}"
+        if leg.hop == len(hops):
+            if self.route.credits_wallet or (leg.sender, leg.kind) != (leg.creditor_bank, "bank"):
+                return f"hop {leg.hop} is not on route {self.id}"
+            if leg.receiver not in _payee_banks(leg.creditor_bank, leg.creditor_account):
+                return f"{leg.receiver} is not the payee's own bank"
+            return None
+        bank = leg.creditor_bank
+        sender, receiver, kind = (bank if part == CRED else part for part in hops[leg.hop])
+        if (leg.sender, leg.receiver, leg.kind) != (sender, receiver, kind):
+            return f"hop {leg.hop} of route {self.id} goes from {sender} to {receiver}, not {leg.sender} to {leg.receiver}"
+        return None
 
     # --- refusals and kill switch ------------------------------------------------------------
 

@@ -54,8 +54,29 @@ def test_the_adapter_completes_a_cluster_with_its_institutions_and_a_region_name
 def test_the_sample_can_be_forced_and_is_the_fallback():
     port, stub = load_cluster_port("sample")
     assert stub and isinstance(port, SampleClusterPort)
-    orchestrator = make_orchestrator()
+    orchestrator = make_orchestrator(cluster_mode="sample")
     assert orchestrator.cluster_stub and orchestrator.mode()["clusters"] == "sample"
+    assert "clusters" not in orchestrator.mode_event()["data"]["degraded"]
+
+
+def test_auto_mode_reports_a_missing_detector_as_degraded(monkeypatch):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def fail_cluster_detector(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "sylo_risk" and fromlist and "clusters" in fromlist:
+            raise ImportError("simulated missing Lane B detector")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fail_cluster_detector)
+    orchestrator = make_orchestrator(cluster_mode="auto")
+
+    assert orchestrator.cluster_stub
+    assert "clusters" in orchestrator.degraded
+    mode_event = orchestrator.mode_event()
+    assert mode_event["type"] == "system.mode"
+    assert "clusters" in mode_event["data"]["degraded"]
 
 
 def with_detector():

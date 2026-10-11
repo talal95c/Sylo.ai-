@@ -51,6 +51,11 @@ def test_live_injection_redteam_and_scene2_cache():
         if writer.last_fallback_reason:
             fallback_reasons[writer.last_fallback_reason] += 1
         repaired_count += int(writer.last_repair)
+        if writer.last_fallback_reason in {"http_401", "http_403"}:
+            pytest.fail(
+                f"Mistral refused the API key ({writer.last_fallback_reason}): "
+                "check MISTRAL_API_KEY; the red-team result would not measure the model"
+            )
         if writer.last_fallback_reason == "http_400":
             pytest.fail(f"Mistral rejected structured output: {writer.last_http_error_body}")
         if case.llm == "live":

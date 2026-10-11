@@ -39,9 +39,47 @@ export const FLOW_EDGES: FlowEdge[] = [
   { id: "supplier-stopped", from: "supplier", fromHandle: "no", to: "stopped", toHandle: "in", tone: "danger" },
 ];
 
+/** The lane follows the settlement the engine selected; before a route is chosen there is none. */
 export function flowLane(state: ViewState): Lane | null {
-  if (!state.risk) return null;
-  return state.risk.tier === "LOW" ? "direct" : "escrow";
+  const settlement = state.payment?.settlement;
+  if (!settlement) return null;
+  return settlement === "DIRECT" ? "direct" : "escrow";
+}
+
+const SETTLEMENT_TEXT: Record<string, string> = {
+  DIRECT: "The payment can go directly.",
+  ONCHAIN_ESCROW: "The money will wait in the on-chain escrow.",
+  FIAT_HOLD: "The money will wait at the payer's bank.",
+};
+
+const ATTACK_TEXT: Record<string, { attempt: string; rejected: (reason: string) => string }> = {
+  release_revoked: {
+    attempt: "An attacker calls release() to push the revoked money to the mule account…",
+    rejected: (reason) => `The attacker called release() on the revoked payment. The contract rejected it (${reason}).`,
+  },
+  swap_beneficiary: {
+    attempt: "An attacker swaps the beneficiary of a leg in transit for their own account…",
+    rejected: (reason) => `The changed leg was refused before sending, and the escrow rejected the modified payment (${reason}).`,
+  },
+  replay: {
+    attempt: "An attacker replays the signed payment to commit it a second time…",
+    rejected: (reason) => `The registry rejected the replayed payment (${reason}).`,
+  },
+  stolen_verifier_key: {
+    attempt: "A thief with the verifier's key confirms the held payment and calls release()…",
+    rejected: (reason) => `The guardian froze the payment first. The release was rejected (${reason}).`,
+  },
+};
+
+export function attackNarration(state: ViewState): string | null {
+  const { attack } = state;
+  if (!attack.attempted) return null;
+  const text = attack.name ? ATTACK_TEXT[attack.name] : undefined;
+  if (attack.reverted) {
+    const reason = attack.reason ?? "";
+    return text ? text.rejected(reason) : `The attack was rejected (${reason}).`;
+  }
+  return text ? text.attempt : "An attacker is trying to move the money…";
 }
 
 const REACHED: FlowStatus[] = ["done", "warn", "fail"];
@@ -113,9 +151,8 @@ const formatEur = (value: string | number) =>
 export function narrate(state: ViewState): { tone: NarrationTone; text: string } {
   const p = state.payment;
   const event = state.lastEvent;
-  if (state.attack.reverted)
-    return { tone: "low", text: `The attacker called release() on the revoked payment. The contract rejected it (${state.attack.reason}).` };
-  if (state.attack.attempted) return { tone: "danger", text: "An attacker calls release() to push the revoked money to the mule account…" };
+  const attack = attackNarration(state);
+  if (attack) return { tone: state.attack.reverted ? "low" : "danger", text: attack };
   if (state.stopped) return { tone: "danger", text: state.stopped.headline };
   if (state.credited)
     return {
@@ -136,12 +173,18 @@ export function narrate(state: ViewState): { tone: NarrationTone; text: string }
     case "risk.scored": {
       const risk = state.risk;
       if (!risk) break;
-      return risk.tier === "LOW"
-        ? { tone: "low", text: `Risk ${risk.score} · LOW. ${risk.reasons[0]?.text ?? ""} The payment can go directly.` }
-        : { tone: "medium", text: `Risk ${risk.score} · ${risk.tier}. ${risk.reasons[0]?.text ?? ""} The money will wait in escrow.` };
+      return {
+        tone: risk.tier === "LOW" ? "low" : "medium",
+        text: `Risk ${risk.score} · ${risk.tier}. ${risk.reasons[0]?.text ?? ""}`.trim(),
+      };
     }
-    case "route.selected":
-      return { tone: "accent", text: `Cheapest legal route: ${p.routeId} · ${p.routeName}. Fraud risk never changes the price.` };
+    case "route.selected": {
+      const settlement = p.settlement ? SETTLEMENT_TEXT[p.settlement] ?? "" : "";
+      return {
+        tone: "accent",
+        text: `Cheapest legal route: ${p.routeId} · ${p.routeName}. Fraud risk never changes the price. ${settlement}`.trim(),
+      };
+    }
     case "approval.granted":
       return {
         tone: "accent",

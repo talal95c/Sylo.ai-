@@ -311,6 +311,8 @@ class Orchestrator:
         self.rails = Rails(norms.pack, chain, clock=lambda: self.now().timestamp())
         self.breakers = Breakers()
         self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
+        if settings.cluster_mode == "auto" and self.cluster_stub and "clusters" not in self.degraded:
+            self.degraded.append("clusters")
         self.incidents: list[dict[str, Any]] = []
         self._paused_corridors: dict[str, str] = {}
         self._clock_offset = timedelta(0)
@@ -1161,6 +1163,8 @@ class Orchestrator:
 
     def _overlays(self, order: PaymentOrder, risk: RiskResult) -> RiskResult:
         """Circuit breaker and degraded mode. They can only make the decision stricter."""
+        if getattr(self.risk, "failed", False):
+            self._degrade("risk")
         for expired in self.breakers.expire(self.now()):
             self._publish("breaker.off", {"breakerId": expired.id, "reason": "EXPIRED"})
         account = ACCOUNTS.get(order.creditor_account_id)
