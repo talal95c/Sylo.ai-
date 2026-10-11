@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import type { GlobeCanvasProps } from "./GlobeCanvas";
@@ -55,6 +55,14 @@ export default function GlobeStage({
 }: Omit<GlobeCanvasProps, "atmosphereColor" | "onFrame"> & { state: ViewState }) {
   const tone = globeTone(state);
   const rootRef = useRef<HTMLDivElement>(null);
+  // cacheComponents keeps /demo in a hidden <Activity> after navigation: its Effects
+  // clean up (react-globe.gl disposes its renderer) but the DOM stays. Remount the
+  // globe each time the Effects run again so it never comes back blank.
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setGeneration((value) => value + 1));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const onFrame = useCallback((cx: number, cy: number) => {
     const root = rootRef.current;
     if (!root) return;
@@ -71,7 +79,15 @@ export default function GlobeStage({
         transition={{ duration: 0.7, ease: "easeInOut" }}
       />
       <div className="absolute inset-0 z-[1]">
-        <GlobeCanvas {...props} state={state} atmosphereColor={tone.atmosphere} onFrame={onFrame} />
+        {generation > 0 ? (
+          <GlobeCanvas
+            key={generation}
+            {...props}
+            state={state}
+            atmosphereColor={tone.atmosphere}
+            onFrame={onFrame}
+          />
+        ) : null}
       </div>
     </div>
   );
