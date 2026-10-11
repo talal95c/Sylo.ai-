@@ -1,5 +1,5 @@
-import SyloApp from "@/components/SyloApp";
+import Landing from "@/components/Landing";
 
 export default function Home() {
-  return <SyloApp />;
+  return <Landing />;
 }

@@ -170,7 +170,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "system.mode":
       return { ...next, mode: data as unknown as SystemModeData };
     case "session.reset":
-      return next;
+      return { ...next, feed: [] };
     case "scenario.started":
       return {
         ...next,
