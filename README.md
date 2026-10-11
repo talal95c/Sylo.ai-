@@ -17,20 +17,22 @@ make setup      # submodules, Python 3.12, Python packages, web packages
 make dev        # engine on http://localhost:8000, web on http://localhost:3000 (Ctrl-C stops both)
 ```
 
-Open <http://localhost:3000> and use the demo buttons at the bottom left:
+<http://localhost:3000> is the landing page; the demo is at <http://localhost:3000/demo>. Use the buttons at the bottom of the screen:
 
-1. **Run legit payment**: the illegal mobile-wallet route flashes red and disappears, the payment travels five hops with a high violet arc for Avalanche, and the card ends on "Credited".
-2. **Run diverted invoice**: the payment stops on the Avalanche arc behind an escrow lock and the alert explains why.
-3. **Supplier: deny**: the payment is revoked on-chain and the money flies back to Lyon. Or **Supplier: confirm**: the lock opens and the payment reaches the supplier.
-4. **Attack: release revoked payment** (after deny): the smart contract rejects it, on the globe and in the feed.
+1. **Legitimate payment**: the illegal mobile-wallet route flashes red and disappears, the payment travels five hops with a high violet arc for Avalanche, and the card ends on "Credited".
+2. **Diverted invoice**: the payment stops on the Avalanche arc behind an escrow lock and the alert explains why.
+3. **"We never changed it"**: the supplier denies, the payment is revoked on-chain and the money flies back to Lyon. Or **"Yes, it's our account"**: the lock opens and the payment reaches the supplier.
+4. **Try release() attack** (after the denial): the smart contract rejects it, on the globe and in the feed.
+5. **More scenes**: mule wave, guardian incident (on a held payment), rail outage, SIM swap, hold expiry, time-lock, confidential leg, and the swap and replay attacks.
 
-Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
+Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner. The full run sheet is [`docs/demo-run-sheet.md`](docs/demo-run-sheet.md).
 
 ## Deploy
 
 - **Render:** choose **New → Blueprint** and import this repository; one service serves both the web app and engine at the same URL.
 - The free service sleeps after 15 minutes idle; its first load after sleeping can take about a minute.
-- Visitors share one demo session and its in-memory state.
+- Visitors share one demo session and its in-memory state. `DEMO_PUBLIC=1` (set in `render.yaml`) closes the operator endpoints there; the demo buttons and Reset still work.
+- Live demo: <https://sylo-0wck.onrender.com/demo>.
 - `MISTRAL_API_KEY` is optional; without it, the engine uses its cached LLM mode.
 - For a split web/engine setup, `engine/Dockerfile` and `web/vercel.json` remain available.
 
@@ -39,7 +41,7 @@ Without a running engine, the page replays recorded events (`spec/fixtures`) and
 The engine now also runs the human steps and the integrity checks of v1 ([`spec/api.md`](spec/api.md)):
 
 - **Payer approval with dual control** (Claire, then Marc from EUR 20,000), **analyst actions** (confirm the revocation, release, freeze) and the supplier's answer. By default the approvals and the analyst are played by the engine (`HUMAN_STEPS=auto`); set `HUMAN_STEPS=manual` in `.env` when the payer panel and the analyst drawer call the API.
-- **Rail adapters**: every leg is checked against the sealed intent before it is sent. Three attacks fail visibly: `release_revoked`, `swap_beneficiary`, `replay`.
+- **Rail adapters**: every leg is checked against the sealed intent before it is sent: its creditor fields through the intent hash, and its amount, rail and hop against the intent and the route. Three attacks fail visibly: `release_revoked`, `swap_beneficiary`, `replay`.
 - **SIM-swap check** before the supplier is texted (scenario `diverted_simswap`: nobody is texted, the analyst decides).
 - **Case file** for the analyst (`case.ready`), **alerts** in the app or by SMS, never by e-mail (`alert.raised`).
 - **Decision log** chained by hash in `engine/data/log.jsonl` and `GET /v1/payments/{id}/proof`.
@@ -83,7 +85,7 @@ make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
 | [`engine/`](engine/) | A | FastAPI engine: norms, rules-based risk, router, signer, simulated chain, orchestrator, event stream |
 | [`ml/`](ml/) | B | Synthetic fraud-risk model, simulator and evaluation pipeline |
 | [`contracts/`](contracts/) | C | `PaymentRegistry`, `PaymentEscrow`, `MockEURC` (Foundry) |
-| [`chain/`](chain/) | C | Fuji adapter package (skeleton in v0) |
+| [`chain/`](chain/) | C | Fuji client, guardian, on-chain attack scripts and the eERC confidential-transfer service |
 | [`web/`](web/) | D | Next.js demo screen with the globe |
 
 Lane B runs with `RISK_MODE=model`; `LLM_MODE=cached|live` controls case generation and `JEV_MODE` controls advisory document screening. Use `make data SEED=A`, `make train` and `make eval SEED=B` for the model workflow. The cached demo needs no API key. See the [model card](docs/model-card.md) and [benchmark journal](ml/reports/BENCHMARKS.md). `make dev` loads `.env`, which overrides shell flags.

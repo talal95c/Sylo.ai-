@@ -183,13 +183,13 @@ All of this section is Youssef's, including the two web items in P1. From a read
 - [ ] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode.
 - [ ] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
 - [ ] **Render free plan:** the service sleeps after 15 minutes and takes about a minute to wake, and state and the journal are lost on sleep. The engine peaks at about 196 MB, which fits in 512 MB with Next.js, but tightly. Ping `/health` a few minutes before the slot, and don't enable eERC or Fuji there.
-- [ ] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
+- [x] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
   - "six with the model" should be 7 reasons;
   - the "UI vs curl" column is stale (Mule wave, Outage, Swap and Replay are UI buttons now);
   - there are no Render instructions (`E=https://sylo-0wck.onrender.com`);
   - Reset does not clear run-time degradations.
-- [ ] **The README Quickstart is stale** (`README.md:20-25`, `:85`). The demo is at `/demo`, the button names are wrong, and `chain/` is no longer a skeleton.
-- [ ] **The pitch handoff doesn't match the metrics** (`docs/pitch-handoff.md`):
+- [x] **The README Quickstart is stale** (`README.md:20-25`, `:85`). The demo is at `/demo`, the button names are wrong, and `chain/` is no longer a skeleton.
+- [x] **The pitch handoff doesn't match the metrics** (`docs/pitch-handoff.md`):
   - p95 says 0.73 ms, but `metrics.json` and `BENCHMARKS.md` say 2.60 ms;
   - the "generated" time is stale;
   - open issues 3 and 4 are resolved (Scene 4 is in the run sheet, and the deploy reports `clusters: detector`).
@@ -202,7 +202,7 @@ All of this section is Youssef's, including the two web items in P1. From a read
 - [ ] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
 - [ ] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
 - [ ] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
-- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused. `ml/pyproject.toml` and `chain/pyproject.toml` still say "skeleton". The pitch handoff has one open TODO (team credits).
+- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused (Lane B to decide). The pitch handoff has one open TODO (team credits: ask each person). Done: the "skeleton" descriptions in `ml/` and `chain/`.
 
 ## What already works well (keep it)
 
