@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyloEvent } from "../events";
-import { createReplaySource, type ScenarioName } from "../source";
+import { createLiveSource, createReplaySource, type ScenarioName } from "../source";
 
 const scenes = [
   { name: "diverted_simswap", file: "scene2-simswap.jsonl" },
@@ -43,6 +43,62 @@ describe("replay scenes", () => {
     );
     expect(events.map((event) => event.data)).toEqual(
       expected.map((event) => event.data),
+    );
+  });
+});
+
+describe("live engine errors", () => {
+  it("uses a FastAPI detail string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({ detail: "a payment is already running" }, { status: 409 }),
+      ),
+    );
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused: a payment is already running",
+    );
+  });
+
+  it("uses the first FastAPI validation message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            detail: [
+              { loc: ["body", "speed"], msg: "Input should be greater than 0" },
+              { loc: ["body", "auto"], msg: "Input should be a valid boolean" },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused: Input should be greater than 0",
+    );
+  });
+
+  it("falls back to the status when there is no useful response body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 409 })));
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine refused (409)",
+    );
+  });
+
+  it("explains unreachable engines", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const source = createLiveSource("http://engine.test");
+
+    await expect(source.runScenario("legit", { speed: 1 })).rejects.toThrow(
+      "Engine unreachable: check the connection or switch to Replay",
     );
   });
 });

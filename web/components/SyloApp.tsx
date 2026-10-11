@@ -15,6 +15,7 @@ import { IncidentDrawer } from "./IncidentDrawer";
 import { PaymentCard } from "./PaymentCard";
 import { StatusBanner } from "./StatusBanner";
 import { TopBar, type DemoView } from "./TopBar";
+import { Toast } from "./Toast";
 import { cx, ease } from "./ui";
 
 const noopSubscribe = () => () => undefined;
@@ -121,6 +122,7 @@ export default function SyloApp() {
         setSpeed={sylo.setSpeed}
         sourceKind={sylo.sourceKind}
       />
+      <Toast toasts={sylo.toasts} onDismiss={sylo.dismissToast} />
     </main>
   );
 }

@@ -40,7 +40,9 @@ export function useSylo() {
   );
   const [notice, setNotice] = useState<string>();
   const [speed, setSpeedState] = useState<1 | 2>(1);
+  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
   const sourceRef = useRef<Source | null>(null);
+  const toastId = useRef(0);
   const activePaymentId = state.payment?.paymentId;
 
   useEffect(() => {
@@ -127,6 +129,25 @@ export function useSylo() {
   const dismissAlert = useCallback(() => {
     dispatch({ type: "ui.closeAlert" });
   }, []);
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+  const pushToast = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    setToasts((current) =>
+      [...current, { id: ++toastId.current, message }].slice(-2),
+    );
+  }, []);
+  const safeAction = useCallback(
+    async (action: () => void | Promise<void>) => {
+      try {
+        await action();
+      } catch (error) {
+        pushToast(error);
+      }
+    },
+    [pushToast],
+  );
 
   return {
     state,
@@ -135,24 +156,30 @@ export function useSylo() {
     speed,
     setSpeed,
     setSourceKind,
+    toasts,
+    dismissToast,
     actions: {
-      runLegit: () => runScenario("legit"),
-      runDiverted: () => runScenario("diverted"),
-      runMuleWave: () => runScenario("muleWave"),
+      runLegit: () => safeAction(() => runScenario("legit")),
+      runDiverted: () => safeAction(() => runScenario("diverted")),
+      runMuleWave: () => safeAction(() => runScenario("muleWave")),
       runGuardian: () =>
-        sourceKind === "live" ? attack("stolen_verifier_key") : runScenario("guardian"),
-      runOutage: () => runScenario("outage"),
-      runSimSwap: () => runScenario("diverted_simswap"),
-      runHoldExpiry: () => runScenario("diverted_expiry"),
-      runTimeLock: () => runScenario("diverted_timelock"),
-      runConfidential: () => runScenario("confidential"),
-      confirm: () => supplierResponse("confirm"),
-      deny: () => supplierResponse("deny"),
-      attack: () => attack("release_revoked"),
-      swapAttack: () => attack("swap_beneficiary"),
-      replayAttack: () => attack("replay"),
-      reset,
-      closeAlert: dismissAlert,
+        safeAction(() =>
+          sourceKind === "live"
+            ? attack("stolen_verifier_key")
+            : runScenario("guardian"),
+        ),
+      runOutage: () => safeAction(() => runScenario("outage")),
+      runSimSwap: () => safeAction(() => runScenario("diverted_simswap")),
+      runHoldExpiry: () => safeAction(() => runScenario("diverted_expiry")),
+      runTimeLock: () => safeAction(() => runScenario("diverted_timelock")),
+      runConfidential: () => safeAction(() => runScenario("confidential")),
+      confirm: () => safeAction(() => supplierResponse("confirm")),
+      deny: () => safeAction(() => supplierResponse("deny")),
+      attack: () => safeAction(() => attack("release_revoked")),
+      swapAttack: () => safeAction(() => attack("swap_beneficiary")),
+      replayAttack: () => safeAction(() => attack("replay")),
+      reset: () => safeAction(reset),
+      closeAlert: () => safeAction(dismissAlert),
     },
     available: availableActions(state, sourceKind),
   };
