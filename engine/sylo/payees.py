@@ -14,12 +14,18 @@ from functools import lru_cache
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
 from sylo_spec import SPEC_DIR
 from sylo_spec.models import Account, Documents, Money, Party, PaymentOrder
-from sylo_spec.scenarios import ACCOUNTS, CORRIDOR, DEMO_NOW, LEGIT_ORDER, PAYEES, name_match
+from sylo_spec.scenarios import (
+    ACCOUNTS,
+    CORRIDOR,
+    DEMO_NOW,
+    LEGIT_ORDER,
+    PAYEES,
+    name_match,
+)
 
-MAX_AMOUNT_EUR = Decimal("1000000")
+MAX_AMOUNT_EUR = Decimal(1000000)
 MAX_SESSION_ACCOUNTS = 200
 NAME_MATCH_KNOWN_PAYEE = 0.9
 SESSION_ACCOUNT_PREFIX = "acc-s-"
@@ -52,7 +58,7 @@ class PaymentIn(BaseModel):
     beneficiary: BeneficiaryIn
     amount: str = Field(pattern=r"^[0-9]{1,7}(\.[0-9]{1,2})?$")
     purpose: Literal["GOODS", "SERVICES"] = "GOODS"
-    invoiceRef: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")
+    invoiceRef: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")
     locRef: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")
     """Bank of Ghana export letter of credit: a payment for goods to Ghana needs it on every bank route."""
     detailsSource: Literal["saved", "invoice_email", "phone", "typed"] = "typed"
@@ -136,7 +142,7 @@ def build_order(payment: PaymentIn, payment_id: str) -> PaymentOrder:
         amount = Decimal(payment.amount)
     except InvalidOperation:
         raise InvalidPayment("the amount is not a number") from None
-    if not Decimal("1") <= amount <= MAX_AMOUNT_EUR:
+    if not Decimal(1) <= amount <= MAX_AMOUNT_EUR:
         raise InvalidPayment(f"the amount must be between 1 and {MAX_AMOUNT_EUR:,} EUR")
     beneficiary = payment.beneficiary
     if beneficiary.accountId is not None:
