@@ -22,9 +22,73 @@ import {
   type QuoteRoute,
 } from "@/lib/quote";
 import { submitIntake, type IntakeResponse } from "@/lib/intake";
+import { RollingNumber } from "./RollingNumber";
 import { Check, cx, ease, euros, Spinner } from "./ui";
 
 const STEPS = ["Recipient", "Amount", "Route", "Review"] as const;
+
+const STEP_COPY = [
+  { title: "Who are you paying?", note: "" },
+  { title: "How much?", note: "Sylo prices every compliant route for this amount." },
+  { title: "How it travels", note: "The engine picked the cheapest route that is legal and safe enough." },
+  { title: "Review and send", note: "Nothing moves until the signed intent is committed." },
+] as const;
+
+const pad = (value: number) => String(value).padStart(2, "0");
+const money = (value: number) => `€${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const SLIDER_MIN = 1_000;
+const SLIDER_MAX = 1_000_000;
+const TICKS = 56;
+
+function toSlider(amount: number) {
+  const clamped = Math.min(Math.max(amount, SLIDER_MIN), SLIDER_MAX);
+  return Math.log(clamped / SLIDER_MIN) / Math.log(SLIDER_MAX / SLIDER_MIN);
+}
+
+function fromSlider(position: number) {
+  const raw = SLIDER_MIN * (SLIDER_MAX / SLIDER_MIN) ** position;
+  const step = raw < 10_000 ? 100 : raw < 100_000 ? 500 : 5_000;
+  return Math.round(raw / step) * step;
+}
+
+function AmountSlider({ amount, onChange }: { amount: number | null; onChange: (value: number) => void }) {
+  const position = amount === null ? 0 : toSlider(amount);
+  return (
+    <div className="mt-4 px-1">
+      <div className="relative h-6">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-between">
+          {Array.from({ length: TICKS }, (_, index) => {
+            const distance = Math.abs(index / (TICKS - 1) - position);
+            return (
+              <span
+                key={index}
+                className="w-[1.5px] rounded-full transition-[height,background-color] duration-200"
+                style={{
+                  height: distance < 0.012 ? 20 : distance < 0.045 ? 13 : 7,
+                  background: distance < 0.045 ? "var(--accent)" : "var(--line-strong)",
+                }}
+              />
+            );
+          })}
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={1000}
+          value={Math.round(position * 1000)}
+          onChange={(event) => onChange(fromSlider(Number(event.target.value) / 1000))}
+          aria-label="Amount slider"
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </div>
+      <div className="mt-1 flex justify-between font-mono text-[10.5px] text-ink-3">
+        <span>€1k</span>
+        <span>€1M</span>
+      </div>
+    </div>
+  );
+}
 
 const RECIPIENTS: { order: OrderName; account: string; holder: string; source: string; tag: string; tagTone: string }[] = [
   {
@@ -147,7 +211,7 @@ function RoutePath({
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-6 border-b border-[var(--line)] py-3 text-[13px] last:border-0">
-      <span className="shrink-0 text-ink-2">{label}</span>
+      <span className="shrink-0 pt-px font-mono text-[11.5px] text-ink-3">{label}</span>
       <span className="min-w-0 text-right text-ink">{children}</span>
     </div>
   );
@@ -168,8 +232,8 @@ const cleanRef = (text: string) => text.replace(/[^A-Za-z0-9 ._/-]/g, "").slice(
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block rounded-xl border border-[var(--line-strong)] px-3.5 py-2.5 transition focus-within:border-ink focus-within:shadow-[0_0_0_3px_rgba(10,10,10,0.06)]">
-      <span className="block text-[11.5px] text-ink-2">{label}</span>
+    <label className="block rounded-xl border border-[var(--line)] px-3.5 py-2.5 transition focus-within:border-ink focus-within:shadow-[0_0_0_3px_rgba(10,10,10,0.06)]">
+      <span className="block font-mono text-[11px] text-ink-3">{label}</span>
       {children}
     </label>
   );
@@ -207,7 +271,7 @@ function RecipientCard({
       onClick={onSelect}
       className={cx(
         "flex items-center gap-4 rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow] duration-200",
-        active ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]" : "border-[var(--line-strong)] hover:border-[rgba(0,0,0,0.3)]",
+        active ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]" : "border-[var(--line)] hover:border-[rgba(0,0,0,0.22)]",
       )}
     >
       <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[13px] font-medium">{initials}</span>
@@ -501,12 +565,12 @@ export default function TestTransaction() {
         : step === 2 ? Boolean(quote) : false;
 
   return (
-    <main className="h-dvh w-full overflow-y-auto bg-white">
+    <main className="h-dvh w-full overflow-y-auto bg-[var(--surface-2)]">
       <header className="flex w-full items-center justify-between px-6 pt-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2.5">
           <span className="relative grid size-6 place-items-center">
             <span className="absolute inset-0 rounded-full" style={{ background: "var(--iridescent)" }} />
-            <span className="absolute inset-[5px] rounded-full bg-white" />
+            <span className="absolute inset-[5px] rounded-full bg-[var(--surface-2)]" />
             <span className="relative size-1.5 rounded-full bg-ink" />
           </span>
           <span className="text-[16px] font-semibold tracking-[-0.04em]">Sylo.ai</span>
@@ -516,40 +580,46 @@ export default function TestTransaction() {
         </Link>
       </header>
 
-      <section className="mx-auto flex w-full max-w-[540px] flex-col px-6 pb-16 pt-[6vh]">
-        <nav aria-label="Steps" className="grid grid-cols-4 gap-2">
-          {STEPS.map((label, index) => (
-            <button
-              key={label}
-              type="button"
-              disabled={index >= step}
-              onClick={() => setStep(index)}
-              className="group flex flex-col gap-2 text-left disabled:cursor-default"
+      <section className="mx-auto flex w-full max-w-[520px] flex-col px-5 pb-16 pt-[5vh]">
+        <div className="rounded-[28px] border border-[var(--line)] bg-white p-6 shadow-[0_30px_80px_-44px_rgba(0,0,0,0.28)] sm:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="font-mono text-[12px] text-ink-3">
+                <span className="text-ink">{pad(step + 1)}</span> / {pad(STEPS.length)}
+              </p>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={step}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25, ease }}
+                >
+                  <h1 className="mt-1.5 text-[24px] font-normal leading-tight tracking-[-0.04em]">{STEP_COPY[step].title}</h1>
+                  <p className="mt-1 text-[13px] text-ink-2">
+                    {step === 0 ? `From Rhône Cosmétiques SAS${live ? "" : " · invoice SSE-2026-118"}` : STEP_COPY[step].note}
+                  </p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+            <Link
+              href="/"
+              aria-label="Close"
+              className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-ink-2 transition-colors hover:text-ink"
             >
-              <span className="relative h-[3px] overflow-hidden rounded-full bg-[var(--surface-2)]">
-                <motion.span
-                  className="absolute inset-y-0 left-0 rounded-full bg-ink"
-                  initial={false}
-                  animate={{ width: index <= step ? "100%" : "0%" }}
-                  transition={{ duration: 0.45, ease }}
-                />
-              </span>
-              <span className={cx("text-[12px] transition-colors", index <= step ? "text-ink" : "text-ink-3", index < step && "group-hover:text-accent")}>
-                {label}
-              </span>
-            </button>
-          ))}
-        </nav>
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                <path d="M1 1l8 8M9 1 1 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            </Link>
+          </div>
 
-        <div className="relative mt-9 min-h-[460px]">
+          <div className="relative mt-6 min-h-[400px]">
           <AnimatePresence mode="wait" initial={false}>
             {step === 0 ? (
               <motion.div key="recipient" {...slide}>
-                <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">Who are you paying?</h1>
-                <p className="mt-2 text-[13.5px] text-ink-2">From Rhône Cosmétiques SAS{live ? "" : " · invoice SSE-2026-118"}</p>
                 {live ? (
                   <>
-                    <div className="mt-6 inline-flex rounded-full bg-[var(--surface-2)] p-1">
+                    <div className="inline-flex rounded-full bg-[var(--surface-2)] p-1">
                       {(["saved", "new"] as const).map((id) => (
                         <button
                           key={id}
@@ -665,7 +735,7 @@ export default function TestTransaction() {
                     <InvoiceIntake onRead={applyIntake} />
                   </>
                 ) : (
-                  <div className="mt-7 flex flex-col gap-2.5">
+                  <div className="flex flex-col gap-2.5">
                     {RECIPIENTS.map((item) => (
                       <RecipientCard
                         key={item.order}
@@ -689,16 +759,14 @@ export default function TestTransaction() {
 
             {step === 1 ? (
               <motion.div key="amount" {...slide}>
-                <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">How much?</h1>
-                <p className="mt-2 text-[13.5px] text-ink-2">Sylo prices every compliant route for this amount.</p>
-                <label className="mt-7 block rounded-2xl border border-[var(--line-strong)] p-4 transition focus-within:border-ink focus-within:shadow-[0_0_0_3px_rgba(10,10,10,0.06)]">
-                  <span className="text-[12px] text-ink-2">You send</span>
+                <label className="block rounded-2xl border border-[var(--line-strong)] p-4 transition focus-within:border-ink focus-within:shadow-[0_0_0_3px_rgba(10,10,10,0.06)]">
+                  <span className="font-mono text-[11px] text-ink-3">You send</span>
                   <span className="mt-1 flex items-center gap-3">
                     <input
                       inputMode="decimal"
                       value={amountText}
                       onChange={(event) => setAmountText(formatInput(event.target.value))}
-                      className="min-w-0 flex-1 bg-transparent text-[34px] font-medium tracking-[-0.04em] text-ink outline-none"
+                      className="min-w-0 flex-1 bg-transparent font-mono text-[32px] tracking-[-0.03em] text-ink outline-none"
                       aria-label="Amount in euros"
                     />
                     <span className="flex h-9 shrink-0 items-center gap-2 rounded-full bg-[var(--surface-2)] px-3 text-[13px] font-medium">
@@ -708,35 +776,43 @@ export default function TestTransaction() {
                   </span>
                 </label>
 
-                <ol className="relative ml-[19px] mt-1 border-l-2 border-dotted border-[var(--line-strong)] py-2 pl-6">
+                <AmountSlider amount={amount} onChange={(value) => setAmountText(formatInput(String(value)))} />
+
+                <div className="mt-5 border-t border-[var(--line)] pt-3">
                   {[
+                    { label: "Route", value: chosen?.name ?? "—" },
+                    { label: "Arrives", value: chosen && quote ? etaOf(quote, chosen.routeId) ?? "—" : "—" },
                     {
-                      value: chosenCost !== null ? euros(chosenCost) : "—",
-                      label: chosen ? `All-in cost · ${chosen.name}` : "All-in cost",
-                    },
-                    ...(swiftCost !== null && chosen?.routeId !== "R1" ? [{ value: euros(swiftCost), label: "Same payment via SWIFT", muted: true }] : []),
-                    { value: chosen && quote ? etaOf(quote, chosen.routeId) ?? "—" : "—", label: "Should arrive" },
-                    {
-                      value: quote ? `${quote.risk.tier} · ${quote.risk.score}` : "—",
                       label: "Fraud check",
+                      value: quote ? `${quote.risk.tier} · ${quote.risk.score}` : "—",
                       color: quote ? TIER_COLORS[quote.risk.tier] : undefined,
                     },
+                    ...(swiftCost !== null && chosen?.routeId !== "R1" ? [{ label: "Same payment via SWIFT", value: money(swiftCost), muted: true }] : []),
                   ].map((line) => (
-                    <li key={line.label} className="relative flex items-baseline gap-3 py-1.5 text-[13px]">
-                      <span className="absolute -left-[30px] top-[11px] size-[9px] rounded-full border-2 border-white bg-[rgba(0,0,0,0.25)]" />
+                    <div key={line.label} className="flex items-baseline justify-between gap-4 py-1.5">
+                      <span className="font-mono text-[11.5px] text-ink-3">{line.label}</span>
                       <span
-                        className={cx("min-w-[86px] font-mono text-[12.5px]", "muted" in line && line.muted ? "text-ink-3 line-through" : "text-ink")}
-                        style={line.color ? { color: line.color } : undefined}
+                        className={cx("truncate font-mono text-[12.5px]", "muted" in line && line.muted ? "text-ink-3 line-through" : "text-ink")}
+                        style={"color" in line && line.color ? { color: line.color } : undefined}
                       >
-                        {quoting ? <span className="inline-block h-3 w-14 animate-pulse rounded bg-[var(--surface-2)]" /> : line.value}
+                        {quoting ? <span className="inline-block h-3 w-16 animate-pulse rounded bg-[var(--surface-2)] align-middle" /> : line.value}
                       </span>
-                      <span className="text-ink-2">{line.label}</span>
-                    </li>
+                    </div>
                   ))}
-                </ol>
+                  <div className="mt-2 flex items-end justify-between gap-4 border-t border-[var(--line)] pt-3">
+                    <div>
+                      <div className="text-[14px] font-medium tracking-[-0.02em]">All-in cost</div>
+                      <div className="mt-0.5 text-[11.5px] text-ink-3">Cheapest compliant route, priced by the engine</div>
+                    </div>
+                    <RollingNumber
+                      value={chosenCost !== null ? money(chosenCost) : "€—"}
+                      className={cx("text-[22px] tracking-[-0.02em] transition-opacity", quoting && "opacity-40")}
+                    />
+                  </div>
+                </div>
 
                 {live ? (
-                  <div className="mt-3 grid gap-2.5">
+                  <div className="mt-5 grid gap-2.5">
                     <div className="grid grid-cols-2 gap-2.5">
                       <Field label="Invoice reference">
                         <input className={inputClass} value={invoiceRef} onChange={(event) => setInvoiceRef(cleanRef(event.target.value))} />
@@ -769,9 +845,7 @@ export default function TestTransaction() {
 
             {step === 2 && quote ? (
               <motion.div key="route" {...slide}>
-                <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">How it travels</h1>
-                <p className="mt-2 text-[13.5px] text-ink-2">The engine picked the cheapest route that is legal and safe enough.</p>
-                <div className="mt-7 flex flex-col gap-2.5">
+                <div className="flex flex-col gap-2.5">
                   {orderedRoutes(quote).map((route, index) => {
                     const isChosen = route.routeId === quote.route.chosen;
                     const reason = excludedReason(quote, route);
@@ -785,7 +859,7 @@ export default function TestTransaction() {
                         transition={{ duration: 0.35, ease, delay: 0.05 * index }}
                         className={cx(
                           "rounded-2xl border p-4",
-                          isChosen ? "border-ink shadow-[0_0_0_3px_rgba(10,10,10,0.06)]" : "border-[var(--line)]",
+                          isChosen ? "border-transparent bg-[var(--surface-2)]" : "border-[var(--line)]",
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -817,9 +891,7 @@ export default function TestTransaction() {
 
             {step === 3 && quote && to ? (
               <motion.div key="review" {...slide}>
-                <h1 className="text-[28px] font-normal leading-tight tracking-[-0.04em]">Review and send</h1>
-                <p className="mt-2 text-[13.5px] text-ink-2">Nothing moves until the signed intent is committed.</p>
-                <div className="mt-6 rounded-2xl border border-[var(--line)] px-4">
+                <div>
                   <Row label="To">
                     {to.name}
                     <span className="block font-mono text-[11.5px] text-ink-3">
@@ -835,9 +907,6 @@ export default function TestTransaction() {
                       </span>
                     </Row>
                   ) : null}
-                  <Row label="Amount">
-                    <span className="font-mono">{amount !== null ? euros(amount) : "—"}</span>
-                  </Row>
                   <Row label="Route">
                     {chosen?.name ?? "No route"}
                     <span className="block text-[11.5px] text-ink-3">
@@ -858,57 +927,80 @@ export default function TestTransaction() {
                     <span className="block text-[11.5px] text-ink-3">{quote.approval.required.map((person) => person.name).join(" + ")}</span>
                   </Row>
                 </div>
-                <p className="mt-3 text-[11.5px] text-ink-3">
+                <div className="mt-1 flex items-end justify-between gap-4 border-t border-[var(--line)] pt-4">
+                  <div>
+                    <div className="text-[14px] font-medium tracking-[-0.02em]">You send</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-3">
+                      {chosenCost !== null ? `${money(chosenCost)} all-in fees, priced by the engine` : "No compliant route"}
+                    </div>
+                  </div>
+                  <RollingNumber value={amount !== null ? money(amount) : "€—"} className="text-[22px] tracking-[-0.02em]" />
+                </div>
+                <p className="mt-4 text-[11.5px] text-ink-3">
                   Synthetic data · rails simulated{quote.recorded ? " · engine offline, recorded quote" : ""}
                 </p>
                 {sendError ? <p className="mt-3 text-[12.5px] text-[var(--danger)]">{sendError}</p> : null}
               </motion.div>
             ) : null}
           </AnimatePresence>
+          </div>
+
+          <div className={cx("mt-6 grid gap-2.5", step > 0 && "grid-cols-[2fr_3fr]")}>
+            {step > 0 ? (
+              <button
+                type="button"
+                onClick={() => setStep(step - 1)}
+                className="h-11 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] text-[13px] font-medium text-ink transition-colors hover:bg-[#eceef0]"
+              >
+                Back
+              </button>
+            ) : null}
+            {step < 3 ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.98 }}
+                disabled={!canContinue}
+                onClick={() => setStep(step + 1)}
+                className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[linear-gradient(180deg,#2b2b2b,#0a0a0a)] text-[13px] font-medium tracking-[-0.02em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] transition-opacity hover:opacity-90 disabled:bg-none disabled:bg-[rgba(0,0,0,0.07)] disabled:text-ink-3 disabled:shadow-none"
+              >
+                {step === 1 && quoting ? <Spinner size={14} color="currentColor" /> : null}
+                Continue
+                {canContinue ? <span aria-hidden className="text-white/50">›</span> : null}
+              </motion.button>
+            ) : live || atInvoiceAmount ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.98 }}
+                disabled={sending || !chosen}
+                onClick={() => void send()}
+                className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[linear-gradient(180deg,#2b2b2b,#0a0a0a)] text-[13px] font-medium tracking-[-0.02em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] transition-opacity hover:opacity-90 disabled:bg-none disabled:bg-[rgba(0,0,0,0.07)] disabled:text-ink-3 disabled:shadow-none"
+              >
+                {sending ? <Spinner size={14} color="#fff" /> : null}
+                {chosen ? `Send ${euros(live && amount !== null ? amount : INVOICE_AMOUNT)}` : "No route available"}
+                {chosen && !sending ? <span aria-hidden className="text-white/50">›</span> : null}
+              </motion.button>
+            ) : (
+              <button type="button" onClick={() => setAmountText("85,000")} className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[linear-gradient(180deg,#2b2b2b,#0a0a0a)] text-[13px] font-medium tracking-[-0.02em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] transition-opacity hover:opacity-90 disabled:bg-none disabled:bg-[rgba(0,0,0,0.07)] disabled:text-ink-3 disabled:shadow-none">
+                Use the invoice amount (€85,000) to send
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-6 flex items-center gap-2.5">
-          {step > 0 ? (
+        <nav aria-label="Steps" className="mt-5 flex justify-center gap-1.5">
+          {STEPS.map((label, index) => (
             <button
+              key={label}
               type="button"
-              onClick={() => setStep(step - 1)}
-              className="h-11 rounded-full border border-[var(--line-strong)] px-5 text-[13px] font-medium text-ink transition-colors hover:bg-[var(--surface-2)]"
-            >
-              Back
-            </button>
-          ) : null}
-          {step < 3 ? (
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.98 }}
-              disabled={!canContinue}
-              onClick={() => setStep(step + 1)}
-              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-ink text-[13px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-[#222] disabled:bg-[rgba(0,0,0,0.12)] disabled:text-ink-3"
-            >
-              {step === 1 && quoting ? <Spinner size={14} color="#fff" /> : null}
-              Continue
-            </motion.button>
-          ) : live || atInvoiceAmount ? (
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.98 }}
-              disabled={sending || !chosen}
-              onClick={() => void send()}
-              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent text-[13px] font-medium tracking-[-0.02em] text-white transition-colors hover:bg-[#0023d6] disabled:opacity-60"
-            >
-              {sending ? <Spinner size={14} color="#fff" /> : null}
-              {chosen ? `Send ${euros(live && amount !== null ? amount : INVOICE_AMOUNT)}` : "No route available"}
-            </motion.button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAmountText("85,000")}
-              className="flex h-11 flex-1 items-center justify-center rounded-full bg-ink text-[13px] font-medium text-white"
-            >
-              Use the invoice amount (€85,000) to send
-            </button>
-          )}
-        </div>
+              aria-label={label}
+              aria-current={index === step ? "step" : undefined}
+              disabled={index >= step}
+              onClick={() => setStep(index)}
+              className="h-1.5 rounded-full transition-[width,background-color] duration-300 disabled:cursor-default"
+              style={{ width: index === step ? 18 : 6, background: index <= step ? "var(--ink)" : "rgba(0,0,0,0.15)" }}
+            />
+          ))}
+        </nav>
       </section>
     </main>
   );
