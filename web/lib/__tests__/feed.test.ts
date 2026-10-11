@@ -46,7 +46,9 @@ describe("feed outcome", () => {
 
   it("takes the risk outcome from data.tier", () => {
     expect(describeEvent(first("scene1-legit", "risk.scored")).outcome).toBe("LOW");
-    expect(describeEvent(first("scene2-diverted", "risk.scored")).outcome).toBe("MEDIUM");
+    const diverted = first("scene2-diverted", "risk.scored");
+    expect(describeEvent(diverted).outcome).toBe((diverted.data as { tier: string }).tier);
+    expect(describeEvent(diverted).outcome).not.toBe("LOW");
   });
 
   it("maps verification outcomes to badges", () => {

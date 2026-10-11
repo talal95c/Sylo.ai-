@@ -59,7 +59,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   const showHeld = Boolean(held && state.alertOpen && !terminal);
   const showOutcome = terminal;
   const paymentId = state.payment?.paymentId;
-  const detailsKey = `${paymentId ?? "none"}:${held?.headline ?? "none"}`;
+  const detailsKey = `${state.feed[0]?.seq ?? 0}:${paymentId ?? "none"}:${held?.headline ?? "none"}`;
   const detailsOpen = detailsFor === detailsKey;
 
   const check = verificationChip(state);

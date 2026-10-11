@@ -96,7 +96,6 @@ export default function SyloApp() {
       <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
       <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
 
-
       <AnimatePresence>
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>

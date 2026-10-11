@@ -141,7 +141,7 @@ export function DemoControls({
       : status === "in_transit"
         ? "Payment moving…"
         : status === "held" || status === "awaiting_supplier"
-          ? "Waiting for Kwame"
+          ? `Waiting for ${state.verification.requested?.contactName ?? "the supplier"}`
           : status === "frozen"
             ? "Frozen by the guardian"
           : status === "stopped"
@@ -150,7 +150,7 @@ export function DemoControls({
               ? "Credited"
               : "Ready";
   const captionIsError = status === "stopped" || state.attack.attempted || state.attack.reverted;
-  const showFloatingCaption = !busy && phase !== "supplier";
+  const showFloatingCaption = !busy && phase !== "supplier" && status !== "stopped" && status !== "credited" && !state.attack.reverted;
 
   return (
     <>
@@ -195,7 +195,7 @@ export function DemoControls({
           ) : null}
           {phase === "supplier" ? (
             <>
-              <span className="px-3 text-[12.5px] text-ink-2">Kwame Asante replies</span>
+              <span className="whitespace-nowrap px-3 text-[12.5px] text-ink-2">{state.verification.requested?.contactName ?? "Supplier"} replies</span>
               <Button tone="secondary" onClick={actions.confirm}>“Yes, it’s our account”</Button>
               <Button tone="dark" onClick={actions.deny}>“We never changed it”</Button>
             </>
