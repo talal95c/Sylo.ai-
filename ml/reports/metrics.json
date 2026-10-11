@@ -328,7 +328,7 @@
     "t_high": 0.4510718837561716,
     "t_med": 0.04457334309526271
   },
-  "generatedAt": "2026-10-11T07:04:17.419136+00:00",
+  "generatedAt": "2026-10-11T07:21:10.635433+00:00",
   "integrity": [
     {
       "case": "I1",
@@ -385,6 +385,22 @@
         0.0659266304317205,
         0.06851640811249114
       ],
+      "frictionTotalHardNegatives": [
+        0.4617246338456674,
+        0.49039839272869645
+      ],
+      "frictionTotalLegit": [
+        0.0659266304317205,
+        0.06851640811249114
+      ],
+      "hardBlockRateHardNegatives": [
+        0.005791678252073992,
+        0.010872580332368223
+      ],
+      "hardBlockRateLegit": [
+        0.000532030062398625,
+        0.0007946780813531431
+      ],
       "precisionAtAlertBudget": [
         0.9786666666666667,
         0.9946666666666667
@@ -416,19 +432,33 @@
       "recallT4": [
         0.9025248745267236,
         0.9602654983623019
+      ],
+      "verificationRateHardNegatives": [
+        0.4536881830853698,
+        0.4824124771378211
+      ],
+      "verificationRateLegit": [
+        0.06528860620399626,
+        0.06786076777101319
       ]
     },
     "diversionRate": 5.680753084098305e-05,
     "fprHardNegatives": 0.4757777777777778,
     "fprMediumPlus": 0.06722558922558923,
+    "frictionTotalHardNegatives": 0.4757777777777778,
+    "frictionTotalLegit": 0.06722558922558923,
+    "hardBlockRateHardNegatives": 0.008222222222222223,
+    "hardBlockRateLegit": 0.0006531986531986532,
     "precisionAtAlertBudget": 0.9866666666666667,
     "precisionHigh": 0.8986212489862125,
     "recallAll": 0.9813333333333333,
     "recallT1": 1.0,
     "recallT1Evasive": 1.0,
     "stpRate": 0.9327744107744108,
-    "ttdP95Ms": 2.6039779001621355,
-    "valueStoppedPct": 0.9944670834224548
+    "ttdP95Ms": 0.5854916002135724,
+    "valueStoppedPct": 0.9944670834224548,
+    "verificationRateHardNegatives": 0.46755555555555556,
+    "verificationRateLegit": 0.06657239057239057
   },
   "modelOnlyMetrics": {
     "B": {
@@ -497,6 +527,22 @@
         0.08179520131990847,
         0.08449195231873737
       ],
+      "frictionTotalHardNegatives": [
+        0.45586172386297485,
+        0.4839676936236099
+      ],
+      "frictionTotalLegit": [
+        0.08179520131990847,
+        0.08449195231873737
+      ],
+      "hardBlockRateHardNegatives": [
+        0.007368623730249428,
+        0.012977841573794715
+      ],
+      "hardBlockRateLegit": [
+        0.000330017332646471,
+        0.0005453249165024882
+      ],
       "precisionAtAlertBudget": [
         0.9626666666666667,
         0.9853333333333333
@@ -528,11 +574,23 @@
       "recallT4": [
         0.9624554655653867,
         0.9937323485738132
+      ],
+      "verificationRateHardNegatives": [
+        0.445978848215711,
+        0.47422877670594543
+      ],
+      "verificationRateLegit": [
+        0.08135418370953496,
+        0.08405904131936205
       ]
     },
     "diversionRate": 8.237723587236701e-05,
     "fprHardNegatives": 0.4702222222222222,
     "fprMediumPlus": 0.08315151515151516,
+    "frictionTotalHardNegatives": 0.4702222222222222,
+    "frictionTotalLegit": 0.08315151515151516,
+    "hardBlockRateHardNegatives": 0.01,
+    "hardBlockRateLegit": 0.00043771043771043773,
     "precisionAtAlertBudget": 0.976,
     "precisionHigh": 0.916243654822335,
     "recallAll": 0.99,
@@ -540,9 +598,11 @@
     "recallT1Evasive": 1.0,
     "seed": "C",
     "stpRate": 0.9168484848484848,
-    "ttdP95Ms": 2.5870813999063103,
-    "valueStoppedPct": 0.9921639451858553
+    "ttdP95Ms": 3.9981851999527858,
+    "valueStoppedPct": 0.9921639451858553,
+    "verificationRateHardNegatives": 0.4602222222222222,
+    "verificationRateLegit": 0.08271380471380471
   },
-  "runtimeSeconds": 628.3547129889994,
+  "runtimeSeconds": 443.77160370899946,
   "sample": false
 }

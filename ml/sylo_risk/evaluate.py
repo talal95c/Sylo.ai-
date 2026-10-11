@@ -216,7 +216,11 @@ def _model_only_metrics(frame: pd.DataFrame, scores: np.ndarray) -> dict[str, fl
     }
 
 
-def _metric_conditions(frame: pd.DataFrame, tiers: np.ndarray) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+def _metric_conditions(
+    frame: pd.DataFrame,
+    tiers: np.ndarray,
+    oob_resolvable: np.ndarray | None = None,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     labels = frame["label"].to_numpy(dtype=bool)
     typology = frame["typology"].astype(str).to_numpy()
     evasive = frame["evasive"].to_numpy(dtype=bool)
@@ -224,7 +228,7 @@ def _metric_conditions(frame: pd.DataFrame, tiers: np.ndarray) -> dict[str, tupl
     flagged = tiers >= int(Tier.MEDIUM)
     high = tiers >= int(Tier.HIGH)
     legit = ~labels
-    return {
+    conditions = {
         "recallT1": (flagged & (typology == "T1"), typology == "T1"),
         "recallT1Evasive": (flagged & (typology == "T1") & evasive, (typology == "T1") & evasive),
         "recallAll": (flagged & labels, labels),
@@ -235,6 +239,28 @@ def _metric_conditions(frame: pd.DataFrame, tiers: np.ndarray) -> dict[str, tupl
         "recallT3": (flagged & (typology == "T3"), typology == "T3"),
         "recallT4": (flagged & (typology == "T4"), typology == "T4"),
     }
+    if oob_resolvable is not None:
+        action_tiers = _action_tiers(tiers, oob_resolvable)
+        action_high = action_tiers >= int(Tier.HIGH)
+        action_medium = action_tiers == int(Tier.MEDIUM)
+        action_friction = action_tiers >= int(Tier.MEDIUM)
+        conditions.update(
+            {
+                "hardBlockRateLegit": (action_high & legit, legit),
+                "verificationRateLegit": (action_medium & legit, legit),
+                "frictionTotalLegit": (action_friction & legit, legit),
+                "hardBlockRateHardNegatives": (action_high & hard_negative, hard_negative),
+                "verificationRateHardNegatives": (
+                    action_medium & hard_negative,
+                    hard_negative,
+                ),
+                "frictionTotalHardNegatives": (
+                    action_friction & hard_negative,
+                    hard_negative,
+                ),
+            }
+        )
+    return conditions
 
 
 def _bootstrap_intervals(
@@ -242,9 +268,10 @@ def _bootstrap_intervals(
     tiers: np.ndarray,
     rank_scores: np.ndarray,
     *,
+    oob_resolvable: np.ndarray | None = None,
     seed: int = 0,
 ) -> dict[str, list[float]]:
-    conditions = _metric_conditions(frame, tiers)
+    conditions = _metric_conditions(frame, tiers, oob_resolvable)
     draws: dict[str, list[float]] = {name: [] for name in conditions}
     draws["precisionAtAlertBudget"] = []
     n_rows = len(frame)
@@ -270,10 +297,14 @@ def _bootstrap_intervals(
         draws["precisionAtAlertBudget"].append(float(positive_total / budget))
 
     return {
-        name: [
-            float(np.percentile(values, 2.5)),
-            float(np.percentile(values, 97.5)),
-        ]
+        name: (
+            [
+                float(np.percentile(values, 2.5)),
+                float(np.percentile(values, 97.5)),
+            ]
+            if values
+            else [0.0, 0.0]
+        )
         for name, values in draws.items()
     }
 
@@ -283,6 +314,7 @@ def _evaluate_predictions(
     scores: np.ndarray,
     tiers: np.ndarray,
     *,
+    oob_resolvable: np.ndarray | None = None,
     p95_latency_ms: float | None = None,
     include_ci: bool = True,
 ) -> dict[str, Any]:
@@ -311,10 +343,54 @@ def _evaluate_predictions(
         "alertBudget": int(budget),
         "auc": float(roc_auc_score(labels.astype(int), scores)),
     }
+    if oob_resolvable is not None:
+        action_tiers = _action_tiers(tiers, oob_resolvable)
+        action_high = action_tiers >= int(Tier.HIGH)
+        action_medium = action_tiers == int(Tier.MEDIUM)
+        action_friction = action_tiers >= int(Tier.MEDIUM)
+        metrics.update(
+            {
+                "hardBlockRateLegit": (
+                    float((action_high & legitimate).sum() / legitimate.sum())
+                    if legitimate.any()
+                    else 0.0
+                ),
+                "verificationRateLegit": (
+                    float((action_medium & legitimate).sum() / legitimate.sum())
+                    if legitimate.any()
+                    else 0.0
+                ),
+                "frictionTotalLegit": (
+                    float((action_friction & legitimate).sum() / legitimate.sum())
+                    if legitimate.any()
+                    else 0.0
+                ),
+                "hardBlockRateHardNegatives": (
+                    float((action_high & hard_negative).sum() / hard_negative.sum())
+                    if hard_negative.any()
+                    else 0.0
+                ),
+                "verificationRateHardNegatives": (
+                    float((action_medium & hard_negative).sum() / hard_negative.sum())
+                    if hard_negative.any()
+                    else 0.0
+                ),
+                "frictionTotalHardNegatives": (
+                    float((action_friction & hard_negative).sum() / hard_negative.sum())
+                    if hard_negative.any()
+                    else 0.0
+                ),
+            }
+        )
     if p95_latency_ms is not None:
         metrics["ttdP95Ms"] = float(p95_latency_ms)
     if include_ci:
-        metrics["confidenceIntervals95"] = _bootstrap_intervals(frame, tiers, rank_scores)
+        metrics["confidenceIntervals95"] = _bootstrap_intervals(
+            frame,
+            tiers,
+            rank_scores,
+            oob_resolvable=oob_resolvable,
+        )
     return metrics
 
 
@@ -564,6 +640,13 @@ def _append_benchmark(result: dict[str, Any]) -> None:
 - B: recall T1/all {metrics_b["recallT1"]:.2%}/{metrics_b["recallAll"]:.2%}; precision HIGH {metrics_b["precisionHigh"]:.2%}; FPR MEDIUM+ {metrics_b["fprMediumPlus"]:.2%}; hard-negative FPR {metrics_b["fprHardNegatives"]:.2%}; p95 {metrics_b["ttdP95Ms"]:.3f} ms.
 - C: recall T1/all {metrics_c["recallT1"]:.2%}/{metrics_c["recallAll"]:.2%}; precision HIGH {metrics_c["precisionHigh"]:.2%}; FPR MEDIUM+ {metrics_c["fprMediumPlus"]:.2%}; hard-negative FPR {metrics_c["fprHardNegatives"]:.2%}; p95 {metrics_c["ttdP95Ms"]:.3f} ms.
 - Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+#### Hard blocks (vs PRD ≤2%) / Verifications / Total friction
+
+| Seed | Hard blocks (vs PRD ≤2%) | Verifications | Total friction |
+|---|---:|---:|---:|
+| B | {metrics_b["hardBlockRateLegit"]:.2%} | {metrics_b["verificationRateLegit"]:.2%} | {metrics_b["frictionTotalLegit"]:.2%} |
+| C | {metrics_c["hardBlockRateLegit"]:.2%} | {metrics_c["verificationRateLegit"]:.2%} | {metrics_c["frictionTotalLegit"]:.2%} |
 """
     with path.open("a", encoding="utf-8") as handle:
         handle.write(section)
@@ -588,6 +671,7 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
         main_frame,
         main_result["scores"],
         main_result["tiers"],
+        oob_resolvable=main_result["oobResolvable"],
         p95_latency_ms=float(main_result["p95LatencyMs"][0]),
     )
     interval_values = main_metrics["confidenceIntervals95"]
@@ -597,6 +681,7 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
         ood_frame,
         ood_result["scores"],
         ood_result["tiers"],
+        oob_resolvable=ood_result["oobResolvable"],
         p95_latency_ms=float(ood_result["p95LatencyMs"][0]),
     )
     ood_metrics["seed"] = "C" if seed == "B" else "B"

@@ -151,3 +151,20 @@ MEDIUM+ TPR/FPR cite `metrics.json#/metrics/recallAll` and `#/metrics/fprMediumP
 - B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 2.604 ms.
 - C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 2.587 ms.
 - Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 443.8 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 0.585 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 3.998 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+#### Hard blocks (vs PRD ≤2%) / Verifications / Total friction
+
+| Seed | Hard blocks (vs PRD ≤2%) | Verifications | Total friction |
+|---|---:|---:|---:|
+| B | 0.07% | 6.66% | 6.72% |
+| C | 0.04% | 8.27% | 8.32% |
