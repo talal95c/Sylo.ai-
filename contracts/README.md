@@ -1,6 +1,12 @@
 # Sylo.ai — contracts (Lane C)
 
-Foundry project (solc 0.8.28, EVM Cancun, OpenZeppelin Contracts v5) for the on-chain part of Sylo.ai. v0 runs them in tests and on a local Anvil node only; Fuji comes in v1.
+Foundry project (solc 0.8.28, EVM Cancun, OpenZeppelin Contracts v5) for the on-chain part of Sylo.ai. Deployed and verified on Avalanche Fuji; addresses in [`deployments/43113.json`](deployments/43113.json).
+
+| Fuji (43113) | Address |
+|---|---|
+| `PaymentRegistry` | [`0xea43E7349B9006078335b29d28D8Ac77C976Fad1`](https://testnet.snowtrace.io/address/0xea43E7349B9006078335b29d28D8Ac77C976Fad1) |
+| `PaymentEscrow` | [`0xC54dDE5D3eaBf988bcB4Aaa37bDf24C6CeFD159E`](https://testnet.snowtrace.io/address/0xC54dDE5D3eaBf988bcB4Aaa37bDf24C6CeFD159E) |
+| `MockEURC` (tEURC) | [`0xd1A86C8Fc2a693E9C81E6ddC2924179e82A407bD`](https://testnet.snowtrace.io/address/0xd1A86C8Fc2a693E9C81E6ddC2924179e82A407bD) |
 
 | Contract | Role |
 |---|---|
@@ -21,6 +27,18 @@ make -C .. anvil-deploy                   # deploy to a throwaway Anvil node; wr
 ```
 
 `script/Deploy.s.sol` reads `DEPLOYER_PK` and the role addresses (`RELAYER_ADDRESS`, `ROUTER_SIGNER_ADDRESS`, `VERIFIER_SIGNER_ADDRESS`, `ANALYST_SIGNER_ADDRESS`, `GUARDIAN_ADDRESS`, `EU_CASP_ADDRESS`) from the environment. `make anvil-deploy` fills them with the public Anvil development accounts; never fund those keys on a real network.
+
+## Fuji
+
+```bash
+script/new-wallets.sh                        # role wallets into ../.env (addresses printed, keys never)
+DRY_RUN=1 script/fund-wallets.sh             # then without DRY_RUN: top up the roles from the deployer
+set -a && source ../.env && set +a
+forge script script/Deploy.s.sol --rpc-url fuji --broadcast --slow --verify   # writes deployments/43113.json
+forge script script/Approve.s.sol --rpc-url fuji --broadcast                  # EU CASP lets the escrow pull tEURC
+```
+
+Verification goes through Routescan (configured in `foundry.toml`). After a redeploy, update `REGISTRY_ADDRESS`, `ESCROW_ADDRESS` and `TOKEN_ADDRESS` in every `.env` and the table above.
 
 ## Signatures
 
