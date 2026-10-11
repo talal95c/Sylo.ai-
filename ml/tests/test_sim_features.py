@@ -1,8 +1,15 @@
 import numpy as np
+import pandas as pd
+from sylo_spec.models import PairHistory
+from sylo_spec.scenarios import golden_case
 
-from sylo_risk.features import FEATURE_NAMES, raw_from_order
-from sylo_risk.history import HistoryIndex, history_from_row
+from sylo_risk.features import FEATURES, FEATURE_NAMES, raw_from_order
+from sylo_risk.history import HistoryIndex, build_history, history_from_row
 from sylo_risk.sim import generate_dataset, row_to_order_ctx
+
+
+def test_account_change_is_a_positive_monotone_business_feature():
+    assert ("account_changed_since_last", "B", 1) in FEATURES
 
 
 def test_simulator_features_match_engine_object_feature_pipeline():
@@ -115,12 +122,26 @@ def test_temporal_history_uses_strictly_earlier_days_and_same_day_velocity():
         same_day_before = frame.loc[
             same_pair & (frame["day"] == row["day"]) & (frame.index < index)
         ]
+        temporal_before = frame.loc[
+            same_pair
+            & (
+                (frame["day"] < row["day"])
+                | ((frame["day"] == row["day"]) & (frame.index < index))
+            )
+        ]
         assert row["history_count"] == len(earlier)
         assert row["pair_payments_24h"] == len(same_day_before)
         if len(earlier):
             assert row["history_median_amount"] == np.median(earlier)
         else:
             assert np.isnan(row["history_median_amount"])
+        if temporal_before.empty:
+            assert pd.isna(row["last_account_id"])
+        else:
+            previous = temporal_before.assign(
+                _row_order=temporal_before.index
+            ).sort_values(["day", "_row_order"]).iloc[-1]
+            assert row["last_account_id"] == previous["account_id"]
 
 
 def test_missing_history_keeps_amount_ratio_missing_and_velocity_defaults_to_zero():
@@ -133,3 +154,102 @@ def test_missing_history_keeps_amount_ratio_missing_and_velocity_defaults_to_zer
     assert np.isnan(raw["amount_vs_history"])
     assert raw["pair_payments_24h"] == 0
     assert index.get("payer", "payee").pair_payments_24h == 0
+
+
+def test_account_change_feature_uses_context_history_index_or_established_proxy():
+    order, context = golden_case("legit")
+    assert context.account is not None
+
+    changed_context = context.model_copy(
+        update={
+            "history": PairHistory(
+                median_amount_eur=85_000.0,
+                last_account_id="previous-account",
+            )
+        }
+    )
+    unchanged_context = context.model_copy(
+        update={
+            "history": PairHistory(
+                median_amount_eur=85_000.0,
+                last_account_id=context.account.id,
+            )
+        }
+    )
+    no_prior_context = context.model_copy(
+        update={"history": PairHistory(last_account_id=None)}
+    )
+    no_history_context = context.model_copy(update={"history": None})
+    pair_key = HistoryIndex.key(order.debtor.id, order.payee_id)
+    history = HistoryIndex(
+        {
+            pair_key: {
+                "count": 1,
+                "median_amount": 85_000.0,
+                "last_account_id": "previous-account",
+            }
+        }
+    )
+
+    assert raw_from_order(order, changed_context)["account_changed_since_last"] == 1.0
+    assert raw_from_order(order, unchanged_context)["account_changed_since_last"] == 0.0
+    assert raw_from_order(order, no_prior_context)["account_changed_since_last"] == 0.0
+    assert (
+        raw_from_order(order, no_history_context, history)["account_changed_since_last"]
+        == 1.0
+    )
+    assert (
+        raw_from_order(order, no_history_context, HistoryIndex({}))[
+            "account_changed_since_last"
+        ]
+        == 0.0
+    )
+
+    diverted_order, diverted_context = golden_case("diverted")
+    diverted_context = diverted_context.model_copy(update={"history": None})
+    assert (
+        raw_from_order(diverted_order, diverted_context, HistoryIndex({}))[
+            "account_changed_since_last"
+        ]
+        == 1.0
+    )
+
+
+def test_history_index_persists_latest_pair_account_in_temporal_order():
+    frame = pd.DataFrame(
+        {
+            "payer_id": ["payer", "payer", "payer", "payer"],
+            "payee_id": ["payee", "payee", "payee", "payee"],
+            "day": [2, 1, 2, 1],
+            "amount_eur": [20.0, 10.0, 30.0, 15.0],
+            "account_id": [
+                "same-day-first",
+                "day-one-last",
+                "same-day-last",
+                "day-one-first",
+            ],
+        }
+    )
+    built = build_history(frame)
+    entry = built.get("payer", "payee")
+    assert entry is not None
+    assert entry.last_account_id == "same-day-last"
+    assert (
+        built.to_dict()[HistoryIndex.key("payer", "payee")]["last_account_id"]
+        == "same-day-last"
+    )
+
+    row_history = history_from_row(
+        {
+            "payer_id": "payer",
+            "payee_id": "payee",
+            "history_count": 1,
+            "history_median_amount": 15.0,
+            "pair_payments_24h": 0,
+            "last_account_id": "prior-account",
+        }
+    )
+    assert (
+        row_history[HistoryIndex.key("payer", "payee")]["last_account_id"]
+        == "prior-account"
+    )

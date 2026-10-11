@@ -38,13 +38,15 @@ def _temporal_history(
     amounts: np.ndarray,
     history_mask: np.ndarray | None = None,
     target_mask: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    account_ids: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     size = len(payer_ids)
     history_mask = np.ones(size, dtype=bool) if history_mask is None else history_mask
     target_mask = np.ones(size, dtype=bool) if target_mask is None else target_mask
     history_count = np.zeros(size, dtype=np.int32)
     history_median = np.full(size, np.nan, dtype=float)
     pair_payments_24h = np.zeros(size, dtype=np.int16)
+    last_account_ids = np.full(size, np.nan, dtype=object)
     positions = np.arange(size)
     pairs = pd.DataFrame(
         {"payer_id": payer_ids, "payee_id": payee_ids, "position": positions}
@@ -54,6 +56,15 @@ def _temporal_history(
         targets = pair_positions[target_mask[pair_positions]]
         if not len(targets):
             continue
+        if account_ids is not None:
+            temporal_order = pair_positions[
+                np.lexsort((pair_positions, days[pair_positions]))
+            ]
+            for previous_position, current in zip(
+                temporal_order[:-1], temporal_order[1:]
+            ):
+                if target_mask[current]:
+                    last_account_ids[current] = account_ids[previous_position]
         history = pair_positions[history_mask[pair_positions]]
         target_days = np.unique(days[targets])
         for day in target_days:
@@ -64,7 +75,7 @@ def _temporal_history(
                 history_median[current] = float(np.median(amounts[previous]))
             same_day = np.sort(pair_positions[days[pair_positions] == day])
             pair_payments_24h[current] = np.searchsorted(same_day, current, side="left")
-    return history_count, history_median, pair_payments_24h
+    return history_count, history_median, pair_payments_24h, last_account_ids
 
 
 def _truncated_beta(rng: np.random.Generator, size: int, minimum: float) -> np.ndarray:
@@ -486,7 +497,7 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
         amount[~is_t4 & ~declared_split] *= 1.5
 
     # T2 account-takeover amounts are scaled against actual prior pair history when available.
-    _, t2_history_median, _ = _temporal_history(
+    _, t2_history_median, _, _ = _temporal_history(
         payer_ids,
         payee_ids,
         day,
@@ -506,8 +517,13 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
         mean=np.log(80_000), sigma=0.45, size=len(no_t2_history)
     ) * (1.5 if seed == "C" else 1.0)
 
-    history_count, history_median, pair_payments_24h = _temporal_history(
-        payer_ids, payee_ids, day, amount
+    (
+        history_count,
+        history_median,
+        pair_payments_24h,
+        last_account_id,
+    ) = _temporal_history(
+        payer_ids, payee_ids, day, amount, account_ids=account_ids
     )
     amount_vs_history = amount / np.where(history_median > 0, history_median, np.nan)
     payer_id_array = payer_ids.astype(object)
@@ -546,6 +562,7 @@ def generate_dataset(seed: str = "A", small: bool = False) -> pd.DataFrame:
             "history_median_amount": history_median,
             "amount_vs_history": amount_vs_history,
             "pair_payments_24h": pair_payments_24h,
+            "last_account_id": last_account_id,
             "label": label,
             "typology": typology,
             "evasive": evasive,

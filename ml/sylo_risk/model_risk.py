@@ -36,6 +36,13 @@ def _reason_text(feature: str, value: float, order: PaymentOrder, ctx: RiskConte
     if feature == "account_owned_by_payee":
         state = "not recorded as supplier-owned" if value < 0.5 else "recorded as supplier-owned"
         return "B", f"Beneficiary bank account is {state}"
+    if feature == "account_changed_since_last":
+        if value < 0.5:
+            return None
+        return (
+            "B",
+            "The bank account differs from the one used for the previous payment to this supplier.",
+        )
     if feature == "log1p_successful_payments":
         return "B", f"Only {account.successful_payments if account else 0} successful payments on this account"
     if feature == "log1p_account_age_days":

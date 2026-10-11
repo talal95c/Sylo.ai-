@@ -18,6 +18,7 @@ from .geo import geography_features
 # (name, family, monotone direction); zero means no declared monotonicity.
 FEATURES: list[tuple[str, str, int]] = [
     ("account_owned_by_payee", "B", -1),
+    ("account_changed_since_last", "B", 1),
     ("log1p_successful_payments", "B", -1),
     ("log1p_account_age_days", "B", -1),
     ("first_payment", "B", 1),
@@ -101,6 +102,9 @@ def _derive(values: Mapping[str, Any]) -> dict[str, float]:
     sender_differs = bool(sender_domain and known_domain and sender_domain.lower() != known_domain.lower())
     return {
         "account_owned_by_payee": float(bool(values.get("account_owned_by_payee", False))),
+        "account_changed_since_last": float(
+            bool(values.get("account_changed_since_last", False))
+        ),
         "log1p_successful_payments": math.log1p(max(0.0, float(values.get("successful_payments") or 0))),
         "log1p_account_age_days": math.log1p(max(0.0, float(values.get("account_age_days") or 0))),
         "first_payment": float(float(values.get("successful_payments") or 0) == 0),
@@ -138,15 +142,34 @@ def raw_from_order(
     if ctx.history is not None:
         history_median_amount = ctx.history.median_amount_eur
         pair_payments_24h = ctx.history.payments_24h
+        prior_account_id = ctx.history.last_account_id
+        account_changed_since_last = float(
+            prior_account_id is not None
+            and (account is None or prior_account_id != account.id)
+        )
     else:
         entry = _history_entry(history, order.debtor.id, order.payee_id)
         history_median_amount = _history_value(entry, "median_amount")
         pair_payments_24h = _history_value(entry, "pair_payments_24h", 0)
+        prior_account_id = _history_value(entry, "last_account_id")
+        if prior_account_id is not None and not pd.isna(prior_account_id):
+            account_changed_since_last = float(
+                account is None or str(prior_account_id) != account.id
+            )
+        else:
+            established_owned_account = (
+                account is not None
+                and payee is not None
+                and payee.owns(account.id)
+                and account.successful_payments >= 1
+            )
+            account_changed_since_last = float(not established_owned_account)
     age_days = max(0.0, float(ctx.account_age_hours) / 24.0)
     provenance = order.provenance.get("creditorAccount", "")
     return _derive(
         {
             "account_owned_by_payee": bool(payee and account and payee.owns(account.id)),
+            "account_changed_since_last": account_changed_since_last,
             "successful_payments": account.successful_payments if account else 0,
             "account_age_days": age_days,
             "name_match": ctx.name_match,
@@ -173,6 +196,13 @@ def features_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Vectorized equivalent of ``raw_from_order`` for synthetic raw-input columns."""
     output = pd.DataFrame(index=frame.index)
     output["account_owned_by_payee"] = frame["account_owned_by_payee"].astype(float)
+    if "last_account_id" in frame and "account_id" in frame:
+        output["account_changed_since_last"] = (
+            frame["last_account_id"].notna()
+            & frame["last_account_id"].ne(frame["account_id"])
+        ).astype(float)
+    else:
+        output["account_changed_since_last"] = 0.0
     output["log1p_successful_payments"] = np.log1p(frame["successful_payments"].clip(lower=0))
     output["log1p_account_age_days"] = np.log1p(frame["account_age_days"].clip(lower=0))
     output["first_payment"] = (frame["successful_payments"] == 0).astype(float)

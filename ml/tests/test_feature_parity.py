@@ -57,7 +57,7 @@ def test_online_features_match_frame_features_across_seed_b_strata():
 
 def test_row_context_carries_optional_pair_history_account_id():
     row = generate_dataset("B", small=True).iloc[0].copy()
-    _, context = row_to_order_ctx(row)
+    _, context = row_to_order_ctx(row.drop(labels=["last_account_id"]))
     assert context.history.last_account_id is None
 
     row["last_account_id"] = "prior-account"
