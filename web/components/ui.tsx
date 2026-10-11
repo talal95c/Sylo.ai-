@@ -26,7 +26,7 @@ export function Tag({
     >
       {icon}
       {index ? <span className="font-mono text-[10.5px] text-ink-3">{index}</span> : null}
-      {index ? <span className="text-ink-3">•</span> : null}
+      {index ? <span className="text-ink-3">·</span> : null}
       {children}
     </span>
   );
@@ -73,28 +73,6 @@ export function PanelHeaderButton({
         <path d="m3.5 5.25 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
-  );
-}
-
-export function Metric({
-  label,
-  value,
-  sub,
-  color = "var(--accent)",
-}: {
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  color?: string;
-}) {
-  return (
-    <div className="border-l-2 pl-3" style={{ borderColor: color }}>
-      <div className="text-[17px] font-medium leading-tight tracking-[-0.03em] tabular-nums">
-        {value}
-      </div>
-      <div className="mt-0.5 text-[12px] text-ink-2">{label}</div>
-      {sub ? <div className="mt-0.5 text-[11px] text-ink-3">{sub}</div> : null}
-    </div>
   );
 }
 
