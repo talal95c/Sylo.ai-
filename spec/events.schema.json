@@ -79,7 +79,20 @@
     { "if": { "properties": { "type": { "const": "payment.credited" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentCredited" } } } },
     { "if": { "properties": { "type": { "const": "payment.stopped" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PaymentStopped" } } } },
     { "if": { "properties": { "type": { "const": "attack.attempted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AttackAttempted" } } } },
-    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } }
+    { "if": { "properties": { "type": { "const": "tx.reverted" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TxReverted" } } } },
+    { "if": { "properties": { "type": { "const": "approval.required" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ApprovalRequired" } } } },
+    { "if": { "properties": { "type": { "const": "leg.rejected" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/LegRejected" } } } },
+    { "if": { "properties": { "type": { "const": "case.ready" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/CaseReady" } } } },
+    { "if": { "properties": { "type": { "const": "case.action" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/CaseAction" } } } },
+    { "if": { "properties": { "type": { "const": "alert.raised" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/AlertRaised" } } } },
+    { "if": { "properties": { "type": { "const": "cluster.detected" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ClusterDetected" } } } },
+    { "if": { "properties": { "type": { "const": "breaker.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/BreakerOn" } } } },
+    { "if": { "properties": { "type": { "const": "breaker.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/BreakerOff" } } } },
+    { "if": { "properties": { "type": { "const": "rail.down" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailDown" } } } },
+    { "if": { "properties": { "type": { "const": "rail.up" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailUp" } } } },
+    { "if": { "properties": { "type": { "const": "killswitch.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/KillSwitchOn" } } } },
+    { "if": { "properties": { "type": { "const": "guardian.incident" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/GuardianIncident" } } } },
+    { "if": { "properties": { "type": { "const": "traffic.sample" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TrafficSample" } } } }
   ],
   "$defs": {
     "InstitutionId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
@@ -134,7 +147,7 @@
       "required": ["scenario", "speed", "auto"],
       "additionalProperties": true,
       "properties": {
-        "scenario": { "enum": ["legit", "diverted"] },
+        "scenario": { "enum": ["legit", "diverted", "diverted_simswap", "outage", "mule_wave"] },
         "speed": { "type": "number", "exclusiveMinimum": 0 },
         "auto": { "type": "boolean" }
       }
@@ -227,7 +240,8 @@
         "tier": { "$ref": "#/$defs/Tier" },
         "rulesFired": { "type": "array", "items": { "type": "string" } },
         "reasons": { "type": "array", "items": { "$ref": "#/$defs/Reason" } },
-        "model": { "type": "string" }
+        "model": { "type": "string" },
+        "oobResolvable": { "type": "boolean", "description": "v1, optional. True when an out-of-band confirmation by the real supplier can lift the risk (beneficiary identity only). Absent means false." }
       }
     },
     "RouteSelected": {
@@ -343,7 +357,7 @@
         "contactName": { "type": "string" },
         "contactMasked": { "type": "string" },
         "contactSince": { "type": "string" },
-        "channel": { "enum": ["SMS"] },
+        "channel": { "enum": ["SMS", "ANALYST"] },
         "simSwapChecked": { "const": true },
         "simSwapRecent": { "type": "boolean" }
       }
@@ -404,7 +418,7 @@
       "required": ["attack", "description", "by"],
       "additionalProperties": true,
       "properties": {
-        "attack": { "enum": ["release_revoked"] },
+        "attack": { "enum": ["release_revoked", "swap_beneficiary", "replay"] },
         "description": { "type": "string" },
         "by": { "const": "attacker" }
       }
@@ -418,6 +432,286 @@
         "reason": { "type": "string" },
         "txHash": { "oneOf": [{ "$ref": "#/$defs/Hash32" }, { "type": "null" }] },
         "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "ApprovalRequired": {
+      "description": "v1. Emitted when the payer must approve, and again after each approval while one is still missing.",
+      "type": "object",
+      "required": ["required", "conditional", "note"],
+      "additionalProperties": true,
+      "properties": {
+        "required": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "additionalProperties": true,
+            "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "role": { "type": "string" } }
+          }
+        },
+        "received": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "role"],
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "role": { "type": "string" },
+              "at": { "$ref": "#/$defs/Timestamp" }
+            }
+          }
+        },
+        "pending": { "type": "array", "items": { "type": "string" } },
+        "method": { "enum": ["SCA", "DUAL_CONTROL"] },
+        "conditional": { "type": "boolean" },
+        "note": { "type": "string" },
+        "warning": { "type": "string" }
+      }
+    },
+    "LegRejected": {
+      "description": "v1. A rail adapter refused a leg before sending it.",
+      "type": "object",
+      "required": ["hop", "rail", "reason"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "rail": { "type": "string" },
+        "reason": {
+          "enum": ["INTENT_HASH_MISMATCH", "NONCE_USED", "REVOKED", "EXPIRED", "NOT_CONFIRMED", "RAIL_DOWN", "KILL_SWITCH"]
+        },
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "text": { "type": "string" }
+      }
+    },
+    "CaseReady": {
+      "description": "System 2 case file (Lane B CasePort). Advisory: the web draws it, no decision reads it.",
+      "type": "object",
+      "required": ["summary", "citations", "llm"],
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "sentences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "refs"],
+            "additionalProperties": true,
+            "properties": { "text": { "type": "string", "minLength": 1 }, "refs": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["at", "eventId", "text"],
+            "additionalProperties": true,
+            "properties": { "at": { "$ref": "#/$defs/Timestamp" }, "eventId": { "type": "string" }, "text": { "type": "string" } }
+          }
+        },
+        "typology": { "type": "string" },
+        "recommendedAction": { "enum": ["CONFIRM_REVOCATION", "RELEASE_AFTER_CONFIRMATION", "ESCALATE_AML", "NO_ACTION"] },
+        "explanation": { "type": "string" },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "source"],
+            "additionalProperties": true,
+            "properties": { "ref": { "type": "string" }, "source": { "type": "string" } }
+          }
+        },
+        "reportDraft": { "type": ["string", "null"] },
+        "llm": { "enum": ["off", "cached", "live"] },
+        "promptVersion": { "type": "string" },
+        "model": { "type": "string" }
+      }
+    },
+    "CaseAction": {
+      "description": "v1. A decision of the analyst on a held payment.",
+      "type": "object",
+      "required": ["action", "by"],
+      "additionalProperties": true,
+      "properties": {
+        "action": { "enum": ["CONFIRM_REVOCATION", "RELEASE", "FREEZE"] },
+        "by": { "type": "string" },
+        "detail": { "type": "string" },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" }
+      }
+    },
+    "AlertRaised": {
+      "description": "v1. A person or an institution is told something. There is no e-mail channel: payers and suppliers are reached in the app or by SMS.",
+      "type": "object",
+      "required": ["audience", "to", "channel", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "audience": { "enum": ["payer", "supplier", "analyst", "beneficiary_bank"] },
+        "to": { "type": "string" },
+        "channel": { "enum": ["IN_APP", "SMS", "NETWORK"] },
+        "headline": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 },
+        "uetr": { "type": "string" }
+      }
+    },
+    "LatLng": {
+      "type": "object",
+      "required": ["lat", "lng"],
+      "additionalProperties": true,
+      "properties": { "lat": { "type": "number", "minimum": -90, "maximum": 90 }, "lng": { "type": "number", "minimum": -180, "maximum": 180 } }
+    },
+    "BreakerScope": {
+      "type": "object",
+      "required": ["region", "corridor"],
+      "additionalProperties": true,
+      "properties": {
+        "region": { "type": "string" },
+        "regionName": { "type": "string" },
+        "corridor": { "type": "string" },
+        "institutions": { "type": "array", "items": { "$ref": "#/$defs/InstitutionId" } }
+      }
+    },
+    "ClusterDetected": {
+      "description": "v2. A mule cluster was found among recent payments. Coordinates are coarse, region-level points.",
+      "type": "object",
+      "required": ["clusterId", "accounts", "agents", "region", "centroid", "points", "linkedPayments"],
+      "additionalProperties": true,
+      "properties": {
+        "clusterId": { "type": "string" },
+        "accounts": { "type": "integer", "minimum": 0 },
+        "agents": { "type": "integer", "minimum": 0 },
+        "region": { "type": "string" },
+        "regionName": { "type": "string" },
+        "institutions": { "type": "array", "items": { "$ref": "#/$defs/InstitutionId" } },
+        "centroid": { "$ref": "#/$defs/LatLng" },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["lat", "lng", "weight"],
+            "additionalProperties": true,
+            "properties": { "lat": { "type": "number" }, "lng": { "type": "number" }, "weight": { "type": "number", "minimum": 0 } }
+          }
+        },
+        "linkedPayments": { "type": "array", "items": { "type": "string" } },
+        "detector": { "type": "string" },
+        "proposedBreaker": {
+          "type": "object",
+          "required": ["breakerId", "scope", "thresholdsDelta"],
+          "additionalProperties": true,
+          "properties": {
+            "breakerId": { "type": "string" },
+            "scope": { "$ref": "#/$defs/BreakerScope" },
+            "thresholdsDelta": { "type": "integer", "maximum": 0 },
+            "hours": { "type": "number", "exclusiveMinimum": 0 },
+            "text": { "type": "string" }
+          }
+        }
+      }
+    },
+    "BreakerOn": {
+      "description": "v2. A regional circuit breaker is active: payments in scope are at least MEDIUM and thresholds are lowered.",
+      "type": "object",
+      "required": ["breakerId", "scope", "thresholdsDelta", "expiresAt", "confirmedBy"],
+      "additionalProperties": true,
+      "properties": {
+        "breakerId": { "type": "string" },
+        "clusterId": { "type": "string" },
+        "scope": { "$ref": "#/$defs/BreakerScope" },
+        "thresholdsDelta": { "type": "integer", "maximum": 0 },
+        "expiresAt": { "$ref": "#/$defs/Timestamp" },
+        "confirmedBy": { "type": "string" },
+        "text": { "type": "string" }
+      }
+    },
+    "BreakerOff": {
+      "type": "object",
+      "required": ["breakerId", "reason"],
+      "additionalProperties": true,
+      "properties": {
+        "breakerId": { "type": "string" },
+        "reason": { "enum": ["LIFTED", "EXPIRED"] },
+        "by": { "type": "string" }
+      }
+    },
+    "RailDown": {
+      "type": "object",
+      "required": ["routeId", "reason"],
+      "additionalProperties": true,
+      "properties": { "routeId": { "type": "string" }, "name": { "type": "string" }, "reason": { "type": "string" } }
+    },
+    "RailUp": {
+      "type": "object",
+      "required": ["routeId"],
+      "additionalProperties": true,
+      "properties": { "routeId": { "type": "string" }, "name": { "type": "string" } }
+    },
+    "KillSwitchOn": {
+      "description": "v2. Repeated integrity refusals cut a rail adapter: nothing more goes through it until it is restored.",
+      "type": "object",
+      "required": ["adapter", "reason", "refusals"],
+      "additionalProperties": true,
+      "properties": {
+        "adapter": { "type": "string" },
+        "name": { "type": "string" },
+        "reason": { "type": "string" },
+        "refusals": { "type": "integer", "minimum": 1 },
+        "windowSeconds": { "type": "number" },
+        "revoked": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "TrafficSample": {
+      "description": "v2. Payments seen on the network that this engine does not route: background arcs, and the payments of the mule wave (wave: true).",
+      "type": "object",
+      "required": ["arcs"],
+      "additionalProperties": true,
+      "properties": {
+        "arcs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "additionalProperties": true,
+            "properties": {
+              "from": { "$ref": "#/$defs/InstitutionId" },
+              "to": { "$ref": "#/$defs/InstitutionId" },
+              "kind": { "enum": ["bank", "chain", "wallet"] }
+            }
+          }
+        },
+        "wave": { "type": "boolean" },
+        "text": { "type": "string" }
+      }
+    },
+    "GuardianIncident": {
+      "description": "v2. An on-chain incident reported by the guardian, with the fields of a DORA incident draft.",
+      "type": "object",
+      "required": ["incidentId", "rule", "txHash", "action", "dora"],
+      "additionalProperties": true,
+      "properties": {
+        "incidentId": { "type": "string" },
+        "rule": { "type": "string" },
+        "txHash": { "oneOf": [{ "$ref": "#/$defs/Hash32" }, { "type": "null" }] },
+        "explorerUrl": { "$ref": "#/$defs/ExplorerUrl" },
+        "action": { "type": "string" },
+        "dora": {
+          "type": "object",
+          "required": ["clientsAffected", "amountEur", "durationMinutes", "geographicSpread", "criticality", "thirdParties"],
+          "additionalProperties": true,
+          "properties": {
+            "clientsAffected": { "type": "integer", "minimum": 0 },
+            "amountEur": { "type": "number", "minimum": 0 },
+            "durationMinutes": { "type": "number", "minimum": 0 },
+            "geographicSpread": { "type": "array", "items": { "type": "string" } },
+            "criticality": { "type": "string" },
+            "thirdParties": { "type": "array", "items": { "type": "string" } },
+            "major": { "type": "boolean" },
+            "draft": { "const": true }
+          }
+        }
       }
     }
   }

@@ -1,0 +1,99 @@
+{
+  "n": 180,
+  "answered": 180,
+  "change": {
+    "jev": {
+      "recall": 1.0,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 1.0
+    },
+    "keyword": {
+      "recall": 0.8333,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 0.8889
+    }
+  },
+  "pressure": {
+    "jev": {
+      "recall": 1.0,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 1.0
+    },
+    "keyword": {
+      "recall": 1.0,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 1.0
+    }
+  },
+  "becVsGenuineChange": {
+    "n": 120,
+    "jev": {
+      "recall": 1.0,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 1.0
+    },
+    "keyword": {
+      "recall": 1.0,
+      "fpr": 0.0,
+      "precision": 1.0,
+      "acc": 1.0
+    }
+  },
+  "byCategory": {
+    "bec_evasive": {
+      "jevChangeMean": 1.0,
+      "jevPressureMean": 0.993,
+      "kwPressureMean": 1.0
+    },
+    "bec_injection": {
+      "jevChangeMean": 1.0,
+      "jevPressureMean": 0.999,
+      "kwPressureMean": 1.0
+    },
+    "bec_urgent_en": {
+      "jevChangeMean": 1.0,
+      "jevPressureMean": 0.999,
+      "kwPressureMean": 1.0
+    },
+    "bec_urgent_fr": {
+      "jevChangeMean": 0.999,
+      "jevPressureMean": 1.0,
+      "kwPressureMean": 1.0
+    },
+    "legit_change_formal": {
+      "jevChangeMean": 1.0,
+      "jevPressureMean": 0.0,
+      "kwPressureMean": 0.0
+    },
+    "legit_change_fr": {
+      "jevChangeMean": 0.999,
+      "jevPressureMean": 0.001,
+      "kwPressureMean": 0.0
+    },
+    "legit_reminder": {
+      "jevChangeMean": 0.0,
+      "jevPressureMean": 0.0,
+      "kwPressureMean": 0.0
+    },
+    "legit_usual_en": {
+      "jevChangeMean": 0.0,
+      "jevPressureMean": 0.0,
+      "kwPressureMean": 0.0
+    },
+    "legit_usual_fr": {
+      "jevChangeMean": 0.0,
+      "jevPressureMean": 0.004,
+      "kwPressureMean": 0.0
+    }
+  },
+  "latencyS": {
+    "p50": 0.185,
+    "p95": 0.348,
+    "calls": 360
+  }
+}

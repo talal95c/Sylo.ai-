@@ -1,0 +1,26 @@
+[
+  {
+    "paymentId": "PAY-2026-0001",
+    "amountEur": 85000,
+    "via": "cli",
+    "txs": {
+      "deposit": "0x40352f4fe095e8f37be722e730d041dfafa6b3daa09a75186df24394bf93933c",
+      "transfer": "0x137f2ebe5cab9fe1d50eb59411bfc7da669c3caffc20942f5c22ebf4b4482d3e",
+      "withdraw": "0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1"
+    },
+    "auditorDecryptedAmountEur": 85000,
+    "receiverMetadata": { "paymentId": "PAY-2026-0001" }
+  },
+  {
+    "paymentId": "PAY-2026-0002",
+    "amountEur": 1250.5,
+    "via": "POST /transfer",
+    "txs": {
+      "deposit": "0x8a7b7ab975ee5feb161635761a13d27551106e5dbf486f1a264b66c78b0358e9",
+      "transfer": "0x83aaaaf767679afeb0698ddbcbd78f656222126220a06b5085b20eaa2773f02a",
+      "withdraw": "0x3b395e53ab5c6e1e7346badd1a9dcba3816ea5fcad63fc558ee559220b1a94c2"
+    },
+    "auditorDecryptedAmountEur": 1250.5,
+    "receiverMetadata": { "paymentId": "PAY-2026-0002" }
+  }
+]

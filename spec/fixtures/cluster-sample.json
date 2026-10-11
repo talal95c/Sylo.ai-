@@ -1,0 +1,102 @@
+{
+  "$comment": "Synthetic. Used by the engine's stub ClusterPort until Lane B's detector (B2.1) is installed, and by the web as a sample for the hexagons. Coordinates are coarse, region-level points near Aflao and the Togo border; they are not real locations of anyone.",
+  "clusterId": "CL-AFLAO-01",
+  "region": "GH-TV",
+  "regionName": "Volta Region (Aflao border)",
+  "institutions": [
+    "mule_bank"
+  ],
+  "accounts": [
+    "acc-mensah-aflao",
+    "acc-aflao-02",
+    "acc-aflao-03",
+    "acc-aflao-04",
+    "acc-aflao-05",
+    "acc-aflao-06"
+  ],
+  "agents": [
+    "agent-aflao-a",
+    "agent-aflao-b",
+    "agent-denu-c"
+  ],
+  "centroid": {
+    "lat": 6.12,
+    "lng": 1.19
+  },
+  "points": [
+    {
+      "lat": 6.12,
+      "lng": 1.19,
+      "weight": 1.0
+    },
+    {
+      "lat": 6.09,
+      "lng": 1.15,
+      "weight": 0.7
+    },
+    {
+      "lat": 6.16,
+      "lng": 1.21,
+      "weight": 0.6
+    },
+    {
+      "lat": 6.1,
+      "lng": 1.1,
+      "weight": 0.5
+    },
+    {
+      "lat": 6.2,
+      "lng": 1.14,
+      "weight": 0.4
+    },
+    {
+      "lat": 6.05,
+      "lng": 1.05,
+      "weight": 0.3
+    }
+  ],
+  "wave": [
+    {
+      "paymentId": "PAY-2026-0101",
+      "uetr": "7a0d3c55-1e2f-4a6b-8c9d-0e1f2a3b4c01",
+      "payer": {
+        "id": "payer_atelier",
+        "name": "Atelier Verdier SARL"
+      },
+      "accountId": "acc-aflao-02",
+      "accountHolder": "E. AGBEKO TRADING",
+      "accountMasked": "GH•• •••• 4410",
+      "payeeName": "Keta Cocoa Traders Ltd",
+      "amount": "23400.00",
+      "invoiceRef": "KCT-2026-041"
+    },
+    {
+      "paymentId": "PAY-2026-0102",
+      "uetr": "7a0d3c55-1e2f-4a6b-8c9d-0e1f2a3b4c02",
+      "payer": {
+        "id": "payer_maison",
+        "name": "Maison Lenoir SAS"
+      },
+      "accountId": "acc-aflao-04",
+      "accountHolder": "D. KPODO ENTERPRISE",
+      "accountMasked": "GH•• •••• 7726",
+      "payeeName": "Volta Pineapple Growers",
+      "amount": "41250.00",
+      "invoiceRef": "VPG-2026-233"
+    },
+    {
+      "paymentId": "PAY-2026-0103",
+      "uetr": "7a0d3c55-1e2f-4a6b-8c9d-0e1f2a3b4c03",
+      "payer": {
+        "id": "payer_garonne",
+        "name": "Garonne Négoce SA"
+      },
+      "accountId": "acc-aflao-05",
+      "accountHolder": "S. DOGBE GLOBAL",
+      "accountMasked": "GH•• •••• 1958",
+      "payeeName": "Ho Timber Exports Ltd",
+      "amount": "18900.00",
+      "invoiceRef": "HTE-2026-077"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,6 +15,11 @@ class EventBus:
         self._events: list[dict[str, Any]] = []
         self._seq = 0
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
+
+    def add_listener(self, listener: Callable[[dict[str, Any]], None]) -> None:
+        """Called synchronously with every published event (used by the decision log)."""
+        self._listeners.append(listener)
 
     @property
     def events(self) -> list[dict[str, Any]]:
@@ -44,6 +50,8 @@ class EventBus:
             "data": data,
         }
         self._events.append(event)
+        for listener in self._listeners:
+            listener(event)
         for queue in list(self._subscribers):
             queue.put_nowait(event)
         return event

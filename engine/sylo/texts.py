@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from sylo_spec.models import Account, Payee
 
 # --- Norms -----------------------------------------------------------------------------------
@@ -66,6 +68,7 @@ REASON_NOT_NOMINATED = (
     "Ghanaian rules require export payments to reach the exporter's nominated bank. This account is not it."
 )
 REASON_SANCTIONS = "A party matches the sanctions list (synthetic list)."
+REASON_MODEL_UNAVAILABLE = "Risk model unavailable: held for verification as a precaution."
 REASON_VERIFIED_REGISTRY = "Bank details come from the verified supplier registry."
 
 
@@ -102,12 +105,30 @@ def route_reason_medium(
     )
 
 
+RAIL_UNAVAILABLE = {"RAIL_DOWN": "its rail is down", "KILL_SWITCH": "its adapter was cut by the kill switch"}
+
+
+def rails_unavailable(unavailable: Mapping[str, str]) -> str:
+    """Sentence added to the route reason when a rail could not be considered. Empty when all rails are up."""
+    return "".join(
+        f" {route_id} is not available: {RAIL_UNAVAILABLE.get(why, why)}." for route_id, why in sorted(unavailable.items())
+    )
+
+
 NO_ROUTE_HEADLINE = "Payment blocked: no route is allowed at this risk level"
+NO_ROUTE_RAILS = (
+    "No usable route is left ({routes} unavailable). The payment is not sent and a case is opened for the analyst."
+)
 NO_ROUTE_DETAIL = "Risk is {tier}. The payment is blocked before any money moves and a case is opened for the analyst."
 
 # --- Approval --------------------------------------------------------------------------------
 
 APPROVER_ROLES = {"claire": "CFO (strong customer authentication)", "marc": "Second approver (dual control, ≥ €20,000)"}
+APPROVAL_NOTE_CONDITIONAL = "Funds are released only after the supplier confirms on a known contact"
+APPROVAL_NOTE_DIRECT = "The payment is sent as soon as it is approved"
+APPROVAL_WARNING_UNTRUSTED = "Account seen for the first time, details from an emailed invoice: verification required."
+APPROVAL_AUTHOR_FIRST = "{author} created this payment and approves first"
+APPROVAL_AUTHOR_TWICE = "The author of a payment cannot be its second approver"
 
 # --- Hold, verification, outcome -------------------------------------------------------------
 
@@ -120,9 +141,13 @@ NEXT_STEP = (
     "We are asking Savanna Shea on the number already on file for Kwame Asante, after checking that it was "
     "not SIM-swapped."
 )
+HIGH_IDENTITY_ONLY_HOLD = (
+    "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
+)
 ANSWER_DENY = 'Kwame Asante: "We have not changed our bank details. Do not pay this account."'
 ANSWER_CONFIRM = 'Kwame Asante: "Yes, this is our new account."'
-REVOKED_BY = "Analyst (auto-confirmed in v0)"
+REVOKED_BY = "Analyst (auto-confirmed)"
+ANALYST = "Julien (fraud analyst)"
 STOPPED_HEADLINE = "Payment stopped. EUR 85,000 returned to Rhône Cosmétiques."
 STOPPED_DETAIL = (
     "The supplier denied the new bank details. The payment was revoked on-chain and refunded from escrow. "
@@ -130,10 +155,127 @@ STOPPED_DETAIL = (
 )
 CHAIN_REFUSED_HEADLINE = "Payment stopped: the smart contract refused a step"
 CHAIN_REFUSED_DETAIL = "The chain rejected {function} with {reason}. No money moved beyond the last confirmed step."
+CHAIN_DOWN_HEADLINE = "Chain unavailable: the payment stays where it is"
+CHAIN_DOWN_DETAIL = (
+    "The chain did not answer during {step}. Nothing is released by default: the payment stays held "
+    "until the chain is back and an analyst decides."
+)
+
+# Bank hold (R1, when the escrow route cannot be used)
+PROTECTION_BANK = (
+    "EUR {amount} is held at {bank} before it leaves France. It can only go to the account fixed in the "
+    "signed payment or stay with {payer}. The hold ends in 24 h if nobody confirms."
+)
+STOPPED_DETAIL_BANK = (
+    "The supplier denied the new bank details. The payment was revoked on-chain and the bank hold was lifted: "
+    "the money never left {bank}. A case was opened for the analyst."
+)
+
+# Out-of-band check when the known contact cannot be trusted (rule R-OOB-01)
+NEXT_STEP_ANALYST = (
+    "The SIM card behind Kwame Asante's number changed {hours:.0f} hours ago, so we do not text it (rule R-OOB-01). "
+    "The analyst decides."
+)
+STOPPED_DETAIL_ANALYST = (
+    "The out-of-band check could not be trusted, and the analyst revoked the payment. It was refunded from escrow."
+)
+STOPPED_DETAIL_ANALYST_BANK = (
+    "The analyst revoked the payment and the bank hold was lifted: the money never left {bank}."
+)
+FROZEN_DETAIL = "The analyst froze this payment: it cannot be released. Only a refund to the payer is possible."
+
+# --- Alerts (payer and supplier are told in the app or by SMS, never by e-mail) ---------------
+
+ALERT_CHANNELS = ("IN_APP", "SMS", "NETWORK")
+ALERT_HELD = "Payment held: we are checking the new bank details with your supplier. Your money is protected."
+ALERT_STOPPED = "Payment stopped: the supplier did not confirm the new account. Funds returned."
+ALERT_STOPPED_ANALYST = "Payment stopped by your bank's fraud team. Funds returned."
+ALERT_FREEZE_REQUEST = (
+    "Fraud alert on UETR {uetr}: please freeze account {account} ({holder}). A payment to it was revoked "
+    "after the real supplier denied the bank details."
+)
+
+# --- Rails -----------------------------------------------------------------------------------
+
+LEG_REJECTED = {
+    "INTENT_HASH_MISMATCH": "The leg does not match the payment sealed in the registry.",
+    "NONCE_USED": "This leg was already executed: a replay is refused.",
+    "REVOKED": "The payment was revoked: no leg can be sent.",
+    "EXPIRED": "The payment's validity window has passed.",
+    "NOT_CONFIRMED": "The supplier has not confirmed: money cannot move towards the beneficiary.",
+    "RAIL_DOWN": "The rail is down.",
+    "KILL_SWITCH": "The adapter was cut by the kill switch.",
+}
+LEG_REJECTED_HEADLINE = "Payment stopped: a rail refused a leg"
+LEG_REJECTED_DETAIL = "{rail} refused hop {hop} ({reason}). Nothing was sent on this leg."
+
+# --- Network defence and incidents (v2) -------------------------------------------------------
+
+BREAKER_PROPOSED = (
+    "Proposed circuit breaker: for {hours} h, payments to {region} are at least MEDIUM and thresholds drop by 20 points."
+)
+BREAKER_ON = (
+    "Circuit breaker on {region}: payments there are at least MEDIUM and thresholds are {points} points lower for {hours} h."
+)
+REASON_BREAKER = (
+    "A circuit breaker is active on {region} after a wave of linked payments: at least MEDIUM, thresholds {points} points lower."
+)
+REASON_DEGRADED = "A dependency is down ({what}): a payment to an account that is not on file is at least MEDIUM."
+RAIL_DOWN_REASON = "Off-ramp unavailable (simulated outage)"
+WAVE_PAYMENT = "Seen on the network: {payer} pays EUR {amount} to a new account held by {holder}."
+KILL_SWITCH_REASON = "{refusals} legs changed or replayed on this adapter within {minutes:.0f} minutes"
+KILL_SWITCH_BY = "Kill switch (automatic)"
+STOPPED_DETAIL_KILL = (
+    "The adapter of this route was cut by the kill switch. The payment was revoked on-chain and refunded from escrow."
+)
+STOPPED_DETAIL_KILL_BANK = (
+    "The adapter of this route was cut by the kill switch. The payment was revoked and the money never left {bank}."
+)
+ALERT_STOPPED_KILL = "Payment stopped for safety: the route it was using was cut. Funds returned."
+GUARDIAN_HEADLINE = "On-chain incident: {rule}"
+DORA_CRITICALITY = "Payment execution (critical function)"
+
+# --- Case file built from the rules (used when no case writer is available) -----------------
+
+CASE_OPENING = "{payment}: EUR {amount} to {payee} is rated {tier} (score {score}/100)"
+CASE_CLOSING_HELD = "The money is stopped before it reaches the beneficiary, until the supplier answers on a known contact"
+CASE_CLOSING_ANALYST = "The supplier's known number cannot be trusted, so the decision is the analyst's"
+CASE_CLOSING_BLOCKED = "No route is allowed at this risk level: nothing was sent"
+CASE_EXPLANATION_NEUTRAL = "No risk rule fired for this payment."
+CASE_TIMELINE = {
+    "payment.created": "Payment order received.",
+    "risk.scored": "Risk scored {tier} ({score}/100).",
+    "route.selected": "Route {routeId} selected.",
+    "intent.committed": "Signed intent committed to the registry.",
+    "escrow.deposited": "Funds locked in escrow.",
+    "payment.held": "Payment held.",
+    "payment.stopped": "Payment stopped.",
+}
+CASE_EXPLANATION = (
+    "We paused this payment because the bank details changed and do not match your supplier's verified records. "
+    "Your money is protected while we check with the supplier on a number we already know. "
+    "You do not need to do anything; we will tell you the result in the app."
+)
+CASE_REPORT_DRAFT = (
+    "DRAFT for the analyst, not filed. Possible supplier impersonation on {payment} (UETR {uetr}). "
+    "Payer: {payer}. Amount: EUR {amount}. Expected beneficiary: {payee}. Requested account: {account} at {bank}, "
+    "held by {holder}. Rules fired: {rules}. To file with TRACFIN if the supplier denies the change."
+)
 
 # --- Attacks ---------------------------------------------------------------------------------
 
 ATTACK_RELEASE_REVOKED = "An attacker calls release() on the revoked payment to push the money to the mule account."
+ATTACK_SWAP_BENEFICIARY = (
+    "An attacker changes the beneficiary of a leg in transit to their own account, then tries to fund the escrow "
+    "with the modified payment."
+)
+ATTACK_REPLAY = "An attacker replays the signed payment to commit it a second time."
+ATTACK_DESCRIPTIONS = {
+    "release_revoked": ATTACK_RELEASE_REVOKED,
+    "swap_beneficiary": ATTACK_SWAP_BENEFICIARY,
+    "replay": ATTACK_REPLAY,
+}
+ATTACKER_ACCOUNT = {"name": "K. MENSAH VENTURES (attacker)", "account": "GH•• •••• 6660", "bank": "mule_bank"}
 REVERTED = "Rejected by the smart contract: {reason}."
 
 # --- Tax -------------------------------------------------------------------------------------

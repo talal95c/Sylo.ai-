@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sylo.ai/spec/metrics.schema.json",
+  "title": "Sylo.ai risk metrics (Lane B, ml/reports/metrics.json)",
+  "description": "Measured on synthetic data. Additive changes only. `sample: true` means placeholder numbers that the web must label as a sample.",
+  "type": "object",
+  "required": ["dataset", "metrics", "baselines", "ablations", "modelVersion", "generatedAt", "sample"],
+  "additionalProperties": true,
+  "properties": {
+    "dataset": {
+      "type": "object",
+      "required": ["seedTrain", "seedEval", "payments", "days"],
+      "additionalProperties": true,
+      "properties": {
+        "seedTrain": { "type": "string" },
+        "seedEval": { "type": "string" },
+        "payments": { "type": "integer", "minimum": 0 },
+        "days": { "type": "integer", "minimum": 1 },
+        "synthetic": { "const": true }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["recallT1", "recallAll", "precisionHigh", "fprMediumPlus", "ttdP95Ms", "valueStoppedPct", "diversionRate", "stpRate"],
+      "additionalProperties": true,
+      "properties": {
+        "recallT1": { "$ref": "#/$defs/Rate" },
+        "recallT1Evasive": { "$ref": "#/$defs/Rate" },
+        "recallAll": { "$ref": "#/$defs/Rate" },
+        "precisionHigh": { "$ref": "#/$defs/Rate" },
+        "fprMediumPlus": { "$ref": "#/$defs/Rate" },
+        "ttdP95Ms": { "type": "number", "minimum": 0 },
+        "valueStoppedPct": { "$ref": "#/$defs/Rate" },
+        "diversionRate": { "$ref": "#/$defs/Rate" },
+        "stpRate": { "$ref": "#/$defs/Rate" },
+        "precisionAtAlertBudget": { "$ref": "#/$defs/Rate" },
+        "alertBudget": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "byTypology": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["typology", "count", "recall"],
+        "additionalProperties": true,
+        "properties": { "typology": { "type": "string" }, "count": { "type": "integer", "minimum": 0 }, "recall": { "$ref": "#/$defs/Rate" } }
+      }
+    },
+    "outOfDistribution": {
+      "type": "object",
+      "required": ["seed", "recallAll", "fprMediumPlus"],
+      "additionalProperties": true,
+      "properties": { "seed": { "type": "string" }, "recallAll": { "$ref": "#/$defs/Rate" }, "recallT1": { "$ref": "#/$defs/Rate" }, "recallT1Evasive": { "$ref": "#/$defs/Rate" }, "fprMediumPlus": { "$ref": "#/$defs/Rate" } }
+    },
+    "degraded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["mode", "recallAll", "fprMediumPlus", "neverLooser"],
+        "additionalProperties": true,
+        "properties": { "mode": { "type": "string" }, "recallAll": { "$ref": "#/$defs/Rate" }, "fprMediumPlus": { "$ref": "#/$defs/Rate" }, "neverLooser": { "type": "boolean" } }
+      }
+    },
+    "baselines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "recallAll", "fprMediumPlus"],
+        "additionalProperties": true,
+        "properties": { "name": { "type": "string" }, "recallAll": { "$ref": "#/$defs/Rate" }, "fprMediumPlus": { "$ref": "#/$defs/Rate" } }
+      }
+    },
+    "ablations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "recallAtFpr"],
+        "additionalProperties": true,
+        "properties": { "step": { "type": "string" }, "recallAtFpr": { "$ref": "#/$defs/Rate" } }
+      }
+    },
+    "modelVersion": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "sample": { "type": "boolean" },
+    "limits": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "Rate": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

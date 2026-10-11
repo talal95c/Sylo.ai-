@@ -19,6 +19,13 @@ ignore = ["test/*.sol", "script/*.sol"]
 [fuzz]
 runs = 256
 
+[invariant]
+runs = 256
+depth = 100
+# The handler catches every expected revert itself, so any revert reaching Foundry is a handler bug.
+fail_on_revert = true
+show_metrics = true
+
 [rpc_endpoints]
 fuji = "${FUJI_RPC_URL}"
 

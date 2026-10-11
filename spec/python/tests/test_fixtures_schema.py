@@ -7,7 +7,21 @@ from sylo_spec import SPEC_DIR
 
 SCHEMA = json.loads((SPEC_DIR / "events.schema.json").read_text(encoding="utf-8"))
 VALIDATOR = Draft202012Validator(SCHEMA)
-FIXTURES = ["scene1-legit", "scene2-diverted", "scene2-deny", "scene2-confirm", "scene2b-release-revoked"]
+FIXTURES = [
+    "scene1-legit",
+    "scene2-diverted",
+    "scene2-deny",
+    "scene2-confirm",
+    "scene2-simswap",
+    "scene2b-release-revoked",
+    "scene2b-swap-beneficiary",
+    "scene2b-replay",
+    "samples-v1",
+    "samples-scene3-mule-wave",
+    "samples-scene4-guardian",
+    "samples-scene5-outage",
+]
+V1_TYPES = {"approval.required", "leg.rejected", "case.ready", "case.action", "alert.raised"}
 
 
 def load(name: str) -> list[dict]:
@@ -44,6 +58,43 @@ def test_scene2_diverted_ends_at_the_supplier_question():
     assert load("scene2-diverted")[-1]["type"] == "verification.requested"
 
 
+def test_every_attack_fixture_continues_the_deny_branch():
+    after_deny = load("scene2-deny")[-1]["seq"] + 1
+    for name in ("scene2b-release-revoked", "scene2b-swap-beneficiary", "scene2b-replay"):
+        events = load(name)
+        assert events[0]["seq"] == after_deny and events[0]["type"] == "attack.attempted", name
+        assert events[-1]["type"] == "tx.reverted", name
+
+
+def test_the_v1_sample_shows_every_v1_event_and_every_attack():
+    sample = load("samples-v1")
+    assert sample[0]["seq"] == 1 and V1_TYPES <= {e["type"] for e in sample}
+    assert [e["data"]["attack"] for e in sample if e["type"] == "attack.attempted"] == [
+        "release_revoked",
+        "swap_beneficiary",
+        "replay",
+    ]
+    asked = [e["data"]["pending"] for e in sample if e["type"] == "approval.required"]
+    assert asked == [["claire", "marc"], ["marc"]]
+
+
+def test_no_alert_in_any_fixture_uses_email():
+    for name in FIXTURES:
+        for event in load(name):
+            if event["type"] == "alert.raised":
+                assert event["data"]["channel"] in ("IN_APP", "SMS", "NETWORK"), name
+
+
+def test_schema_rejects_an_alert_by_email_and_an_unknown_leg_rejection_reason():
+    base = {"v": 1, "seq": 1, "id": "evt-000001", "ts": "2026-10-11T09:00:00.000Z", "paymentId": "PAY-1", "simulated": True}
+    alert = {**base, "type": "alert.raised", "data": {"audience": "payer", "to": "Claire", "channel": "EMAIL", "text": "x"}}
+    assert list(VALIDATOR.iter_errors(alert))
+    rejected = {**base, "type": "leg.rejected", "data": {"hop": 3, "rail": "R3", "reason": "BECAUSE"}}
+    assert list(VALIDATOR.iter_errors(rejected))
+    rejected["data"]["reason"] = "INTENT_HASH_MISMATCH"
+    assert not list(VALIDATOR.iter_errors(rejected))
+
+
 def test_schema_rejects_a_held_event_without_headline():
     bad = {
         "v": 1,
@@ -71,3 +122,40 @@ def test_schema_accepts_unknown_extra_fields():
         "futureEnvelopeField": True,
     }
     assert not list(VALIDATOR.iter_errors(event))
+
+
+def types_of(name: str) -> list[str]:
+    return [event["type"] for event in load(name)]
+
+
+def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_held_payment():
+    kinds = types_of("samples-scene3-mule-wave")
+    assert kinds[:6] == ["scenario.started", "traffic.sample", "traffic.sample", "traffic.sample", "cluster.detected", "breaker.on"]
+    assert "payment.held" in kinds[6:] and kinds[-1] == "payment.stopped"
+    scored = next(e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "risk.scored")
+    assert scored["rulesFired"][-1] == "R-CB-01"
+    stamps = [e["ts"] for e in load("samples-scene3-mule-wave")]
+    assert stamps == sorted(stamps), "one timeline, even with two scenarios in the file"
+
+
+def test_scene_4_sample_shows_the_incident_then_the_refused_release():
+    kinds = types_of("samples-scene4-guardian")
+    assert kinds.index("payment.held") < kinds.index("guardian.incident") < kinds.index("tx.reverted")
+    assert "escrow.released" not in kinds and kinds[-1] == "payment.stopped"
+
+
+def test_scene_5_sample_reroutes_then_restores_the_rail():
+    events = load("samples-scene5-outage")
+    kinds = [e["type"] for e in events]
+    assert kinds[1] == "rail.down" and kinds[-1] == "rail.up"
+    assert next(e["data"]["routeId"] for e in events if e["type"] == "route.selected") == "R1"
+
+
+def test_the_cluster_sample_is_a_valid_cluster_with_coarse_points():
+    from sylo_spec.models import Cluster
+
+    raw = json.loads((SPEC_DIR / "fixtures" / "cluster-sample.json").read_text(encoding="utf-8"))
+    cluster = Cluster.model_validate(raw)
+    assert len(cluster.accounts) == 6 and len(cluster.agents) == 3 and len(raw["wave"]) == 3
+    assert all(abs(point.lat - cluster.centroid.lat) < 0.5 and abs(point.lng - cluster.centroid.lng) < 0.5 for point in cluster.points)
+    assert all(round(point.lat, 2) == point.lat and round(point.lng, 2) == point.lng for point in cluster.points)

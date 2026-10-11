@@ -1,0 +1,47 @@
+{
+  "simulated": true,
+  "chain": "mock",
+  "seed": 42,
+  "cases": 300,
+  "byKind": {
+    "I1_substitution": {
+      "cases": 100,
+      "refusedByAdapter": 100,
+      "revertedOnChain": 100,
+      "adapterReasons": [
+        "INTENT_HASH_MISMATCH"
+      ],
+      "chainReasons": [
+        "CommitmentMismatch"
+      ],
+      "diverted": 0
+    },
+    "I2_replay": {
+      "cases": 100,
+      "refusedByAdapter": 100,
+      "revertedOnChain": 100,
+      "adapterReasons": [
+        "NONCE_USED"
+      ],
+      "chainReasons": [
+        "InvalidTransition"
+      ],
+      "diverted": 0
+    },
+    "I3_modified_amount": {
+      "cases": 100,
+      "refusedByAdapter": 100,
+      "revertedOnChain": 100,
+      "adapterReasons": [
+        "INTENT_HASH_MISMATCH"
+      ],
+      "chainReasons": [
+        "CommitmentMismatch"
+      ],
+      "diverted": 0
+    }
+  },
+  "diverted": 0,
+  "diversionRate": 0.0,
+  "note": "Mock chain and simulated rail adapters. A case is diverted when the adapter sends the leg or the chain accepts the call."
+}

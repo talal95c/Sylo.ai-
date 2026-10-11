@@ -110,6 +110,10 @@ export function describe(
       family = "alert";
       label = text(data.headline, "Payment held for review");
       break;
+    case "case.ready":
+      family = "alert";
+      label = `Analyst case file ready · ${text(data.typology, "case")}`;
+      break;
     case "verification.requested":
       family = "alert";
       label = `Known-contact check requested for ${text(data.contactName)}`;

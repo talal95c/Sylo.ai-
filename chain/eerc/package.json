@@ -1,0 +1,12 @@
+{
+	"name": "sylo-eerc",
+	"private": true,
+	"type": "module",
+	"description": "Sylo.ai C2.2 - eERC confidential leg (EncryptedERC converter over MockEURC, Fuji). Deps come from vendor/EncryptedERC/node_modules (see setup.sh).",
+	"scripts": {
+		"check": "node src/check-local.mjs",
+		"deploy": "node src/deploy.mjs",
+		"demo": "node src/cli.mjs",
+		"serve": "node src/server.mjs"
+	}
+}

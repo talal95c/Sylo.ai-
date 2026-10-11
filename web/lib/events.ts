@@ -80,6 +80,27 @@ export interface RiskScoredData {
   rulesFired: string[];
   reasons: { ref: string; text: string }[];
   model: string;
+  oobResolvable?: boolean;
+}
+
+export type RecommendedAction =
+  | "CONFIRM_REVOCATION"
+  | "RELEASE_AFTER_CONFIRMATION"
+  | "ESCALATE_AML"
+  | "NO_ACTION";
+
+export interface CaseReadyData {
+  summary: string;
+  sentences?: { text: string; refs: string[] }[];
+  timeline?: { at: string; eventId: string; text: string }[];
+  typology: string;
+  recommendedAction: RecommendedAction;
+  explanation: string;
+  citations: { ref: string; source: string }[];
+  reportDraft?: string | null;
+  llm: "off" | "cached" | "live";
+  promptVersion: string;
+  model: string;
 }
 
 export interface RouteSelectedData {
@@ -219,6 +240,7 @@ export type SyloEvent =
   | EventEnvelope<"leg.settled", LegSettledData>
   | EventEnvelope<"escrow.deposited", EscrowDepositedData>
   | EventEnvelope<"payment.held", PaymentHeldData>
+  | EventEnvelope<"case.ready", CaseReadyData>
   | EventEnvelope<"verification.requested", VerificationRequestedData>
   | EventEnvelope<"verification.recorded", VerificationRecordedData>
   | EventEnvelope<"intent.revoked", IntentRevokedData>
