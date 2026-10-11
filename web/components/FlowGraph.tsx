@@ -271,7 +271,7 @@ function laneValue<T>(lane: Lane | null, own: Lane, value: T): T | null {
   return lane === own ? value : null;
 }
 
-export function FlowGraph({ state }: { state: ViewState }) {
+export function FlowGraph({ state, speed = 1 }: { state: ViewState; speed?: number }) {
   const statuses = flowStatuses(state);
   const lane = flowLane(state);
   const p = state.payment;
@@ -294,7 +294,7 @@ export function FlowGraph({ state }: { state: ViewState }) {
     if (!frame) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      setScale(Math.min(1, width / CANVAS_W, height / CANVAS_H));
+      setScale(Math.min(1.15, width / CANVAS_W, height / CANVAS_H));
     });
     observer.observe(frame);
     document.fonts?.ready.then(remeasure).catch(() => undefined);
@@ -392,8 +392,16 @@ export function FlowGraph({ state }: { state: ViewState }) {
                     <>
                       <path d={d} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeDasharray="6 8" className="flow-dash" />
                       {reduced ? null : (
-                        <circle r={3.5} fill="var(--accent)">
-                          <animateMotion dur="1.4s" repeatCount="indefinite" path={d} />
+                        <circle key={`${edge.id}-${status}`} r={3.5} fill="var(--accent)">
+                          <animateMotion
+                            ref={(node: SVGAnimateMotionElement | null) => {
+                              node?.beginElement();
+                            }}
+                            begin="indefinite"
+                            dur={`${1.4 / speed}s`}
+                            repeatCount="indefinite"
+                            path={d}
+                          />
                         </circle>
                       )}
                     </>

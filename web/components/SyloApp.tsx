@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { loadGeo, type Institution } from "@/lib/geo";
 import { riskModeForSource } from "@/lib/store";
 import { useSylo } from "@/lib/useSylo";
@@ -29,6 +29,20 @@ export default function SyloApp() {
   const [incidentOpen, setIncidentOpen] = useState(false);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
+  const autoRunRef = useRef(false);
+
+  useEffect(() => {
+    if (!sylo.ready || autoRunRef.current) return;
+    const url = new URL(window.location.href);
+    const run = url.searchParams.get("run");
+    if (run !== "legit" && run !== "diverted") return;
+    autoRunRef.current = true;
+    url.searchParams.delete("run");
+    window.history.replaceState(null, "", url);
+    if (run === "legit") void sylo.actions.runLegit();
+    else void sylo.actions.runDiverted();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sylo.ready]);
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +102,7 @@ export default function SyloApp() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45, ease }}
           >
-            <FlowGraph state={sylo.state} />
+            <FlowGraph state={sylo.state} speed={sylo.speed} />
           </motion.div>
         )}
       </AnimatePresence>
