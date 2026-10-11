@@ -116,6 +116,7 @@ def _score_engine(
     scores = np.zeros(len(frame), dtype=np.int16)
     tiers = np.zeros(len(frame), dtype=np.int8)
     rule_tiers = np.zeros(len(frame), dtype=np.int8)
+    rule_ids = np.empty(len(frame), dtype=object)
     oob = np.zeros(len(frame), dtype=bool)
 
     columns = list(ROW_FIELDS)
@@ -128,6 +129,7 @@ def _score_engine(
         scores[index] = result.score
         tiers[index] = int(result.tier)
         rule_tiers[index] = int(rules.last_result.tier)
+        rule_ids[index] = tuple(rules.last_result.rules_fired)
         oob[index] = result.oob_resolvable
         if index and index % 50_000 == 0:
             print(f"Scored {index:,}/{len(frame):,} rows", flush=True)
@@ -155,6 +157,7 @@ def _score_engine(
         "scores": scores,
         "tiers": tiers,
         "ruleTiers": rule_tiers,
+        "ruleIds": rule_ids,
         "oobResolvable": oob,
         "p95LatencyMs": np.asarray([np.percentile(latency_ms, 95)]),
     }
@@ -292,6 +295,42 @@ def _typology_breakdown(frame: pd.DataFrame, tiers: np.ndarray, intervals: dict[
             }
         )
     return result
+
+
+def _legitimate_hold_breakdown(
+    frame: pd.DataFrame, tiers: np.ndarray, rule_ids: np.ndarray
+) -> dict[str, Any]:
+    legitimate = ~frame["label"].to_numpy(dtype=bool)
+    held = legitimate & (tiers >= int(Tier.MEDIUM))
+    has_guarantee_rule = np.fromiter(
+        (bool({"R-PV-01", "R-FL-01"}.intersection(ids)) for ids in rule_ids),
+        dtype=bool,
+        count=len(frame),
+    )
+    has_any_rule = np.fromiter(
+        (bool(ids) for ids in rule_ids), dtype=bool, count=len(frame)
+    )
+    categories = {
+        "guarantee": held & has_guarantee_rule,
+        "otherRules": held & ~has_guarantee_rule & has_any_rule,
+        "modelOnly": held & ~has_any_rule,
+    }
+    hold_count = int(held.sum())
+    legitimate_count = int(legitimate.sum())
+    return {
+        "legitimateCount": legitimate_count,
+        "heldCount": hold_count,
+        "byCause": {
+            name: {
+                "count": int(mask.sum()),
+                "shareOfHolds": float(mask.sum() / hold_count) if hold_count else 0.0,
+                "shareOfLegitimate": (
+                    float(mask.sum() / legitimate_count) if legitimate_count else 0.0
+                ),
+            }
+            for name, mask in categories.items()
+        },
+    }
 
 
 def _fit_lightgbm(
@@ -526,36 +565,45 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
     ood_metrics["byTypology"] = _typology_breakdown(ood_frame, ood_result["tiers"], ood_metrics["confidenceIntervals95"])
 
     rules_tiers_b = result_by_seed["B"]["ruleTiers"]
-    degraded_rules = _score_engine(frame_b, strict_rules=True, rules_only=True)
-    degraded_rules_metrics = _evaluate_predictions(
-        frame_b,
-        degraded_rules["scores"],
-        degraded_rules["tiers"],
-        include_ci=False,
-    )
-    history_missing = _score_engine(frame_b, no_history=True, strict_rules=True)
-    history_metrics = _evaluate_predictions(frame_b, history_missing["scores"], history_missing["tiers"], include_ci=False)
-    normal_tiers = result_by_seed["B"]["tiers"]
-    history_permissive = float(np.mean(history_missing["tiers"] < normal_tiers))
-    rules_permissive = float(np.mean(degraded_rules["tiers"] < normal_tiers))
-    degraded = [
-        {
-            "mode": "model_missing_rules_only",
-            "recallAll": degraded_rules_metrics["recallAll"],
-            "fprMediumPlus": degraded_rules_metrics["fprMediumPlus"],
-            "neverLooser": rules_permissive == 0.0,
-            "permissivePct": rules_permissive,
-            "metrics": degraded_rules_metrics,
-        },
-        {
-            "mode": "history_missing",
-            "recallAll": history_metrics["recallAll"],
-            "fprMediumPlus": history_metrics["fprMediumPlus"],
-            "neverLooser": history_permissive == 0.0,
-            "permissivePct": history_permissive,
-            "metrics": history_metrics,
-        },
-    ]
+    degraded = []
+    for name, degraded_frame in (("B", frame_b), ("C", frame_c)):
+        rules_only = _score_engine(
+            degraded_frame, strict_rules=True, rules_only=True
+        )
+        rules_only_metrics = _evaluate_predictions(
+            degraded_frame,
+            rules_only["scores"],
+            rules_only["tiers"],
+            include_ci=False,
+        )
+        history_missing = _score_engine(
+            degraded_frame, no_history=True, strict_rules=True
+        )
+        history_metrics = _evaluate_predictions(
+            degraded_frame,
+            history_missing["scores"],
+            history_missing["tiers"],
+            include_ci=False,
+        )
+        normal_tiers = result_by_seed[name]["tiers"]
+        for mode, degraded_result, degraded_metrics in (
+            ("model_missing_rules_only", rules_only, rules_only_metrics),
+            ("history_missing", history_missing, history_metrics),
+        ):
+            permissive_pct = float(
+                np.mean(degraded_result["tiers"] < normal_tiers)
+            )
+            degraded.append(
+                {
+                    "seed": name,
+                    "mode": mode,
+                    "recallAll": degraded_metrics["recallAll"],
+                    "fprMediumPlus": degraded_metrics["fprMediumPlus"],
+                    "neverLooser": permissive_pct == 0.0,
+                    "permissivePct": permissive_pct,
+                    "metrics": degraded_metrics,
+                }
+            )
 
     artifact = json.loads((ROOT / "models" / "model.json").read_text(encoding="utf-8"))
     baselines = _baseline_models(seed_a, frame_b, rules_tiers_b)
@@ -574,6 +622,11 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
         "baselines": baselines,
         "ablations": ablations,
         "degraded": degraded,
+        "legitimateHoldBreakdown": _legitimate_hold_breakdown(
+            frame_b,
+            result_by_seed["B"]["tiers"],
+            result_by_seed["B"]["ruleIds"],
+        ),
         "integrity": _integrity_replay(),
         "modelVersion": str(artifact["version"]),
         "generatedAt": datetime.now(timezone.utc).isoformat(),

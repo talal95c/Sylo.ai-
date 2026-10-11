@@ -22,27 +22,26 @@ All evaluation data are synthetic. Model iterations are historical; the final ar
 
 The pass-3 A-val results were: recall all 96.15%, T1 89.09%, evasive T1 68.42%, T2 100%, T3 98.33%, T4 96.36%, FPR 1.00%, and HIGH precision 90.40%.
 
-### Current evaluation
+## Pass 4 — skew + rule + degraded fixes
 
-The full B/C run appends dataset sizes, measured runtime, headline metrics, and the decision here.
+- Command: `make eval SEED=B`; 150,000 payments per seed (B and C), 30 days; runtime 511.5 s. “Before” is the prior full-engine report (`347aa6e`). No retraining; frozen thresholds remain `t_med=0.0406830`, `t_high=0.4682278`.
 
+| Metric | Before B | Pass 4 B | Before C | Pass 4 C |
+|---|---:|---:|---:|---:|
+| Recall all | 94.60% | 98.20% | 95.40% | 98.87% |
+| T1 | 100.00% | 100.00% | 100.00% | 100.00% |
+| T1 evasive | 100.00% | 100.00% | 100.00% | 100.00% |
+| T2 | 97.33% | 97.67% | 99.00% | 98.00% |
+| T3 | 98.44% | 98.22% | 98.44% | 98.67% |
+| T4 | 78.00% | 96.00% | 80.33% | 98.33% |
+| Precision HIGH+ | 93.73% | 89.45% | 86.92% | 91.25% |
+| FPR MEDIUM+ | 17.30% | 6.79% | 19.01% | 8.37% |
+| FPR hard negatives | 64.76% | 47.56% | 64.47% | 47.00% |
+| STP | 82.70% | 93.21% | 80.99% | 91.63% |
+| p95 | 0.726 ms | 0.659 ms | 0.716 ms | 0.672 ms |
+| Degraded permissivePct (rules-only / no history) | 1.175% / 0.413% | 0.757% / 0.148% | not measured | 0.746% / 0.122% |
 
-## Evaluation harness — B / C
-
-- Command: `make eval SEED=B`.
-- Dataset: 150,000 payments per seed, 30 days.
-- Runtime: 351.7 s.
-- B: recall T1/all 100.00%/94.60%; precision HIGH 93.73%; FPR MEDIUM+ 17.30%; hard-negative FPR 64.76%; p95 0.726 ms.
-- C: recall T1/all 100.00%/95.40%; precision HIGH 86.92%; FPR MEDIUM+ 19.01%; hard-negative FPR 64.47%; p95 0.716 ms.
-- Frozen raw-probability thresholds: `t_med=0.0406830`, `t_high=0.4682278`.
-- Typology recall B (T1/T2/T3/T4): 100.00%/97.33%/98.44%/78.00%; T1-evasive 100.00%. C: 100.00%/99.00%/98.44%/80.33%; T1-evasive 100.00%.
-- B: AUC 0.99796; STP 82.70%; value stopped 98.76%; diversion 0.0127%; precision at top 0.5% (`k=750`) 99.33%.
-- C: AUC 0.99771; STP 80.99%; value stopped 99.05%; diversion 0.0100%; precision at top 0.5% (`k=750`) 95.07%.
-- 95% CIs (1,000 row resamples, seed 0), B: recall all 93.33–95.74%, T1/T1-evasive 100%, T2 95.20–98.96%, T3 97.08–99.54%, T4 73.06–82.51%; HIGH precision 92.17–95.21%; MEDIUM+ FPR 17.11–17.49%; hard-negative FPR 63.44–66.18%; precision@750 98.53–99.87%.
-- 95% CIs, C: recall all 94.41–96.40%, T1/T1-evasive 100%, T2 97.86–100%, T3 97.27–99.51%, T4 75.74–84.70%; HIGH precision 84.81–88.86%; MEDIUM+ FPR 18.81–19.22%; hard-negative FPR 63.18–65.81%; precision@750 93.07–96.80%.
-- B baselines (recall all / HIGH precision / MEDIUM+ FPR / AUC): logistic regression 94.33% / 95.33% / 17.54% / 0.99497; LightGBM without B/G 86.00% / 95.48% / 17.70% / 0.96630; rules-only 61.40% / 100.00% / 17.00% / 0.72207.
-- Ablations (recall all / T1-evasive / MEDIUM+ FPR / AUC): drop B 90.87% / 100% / 17.65% / 0.97684; V 98.33% / 100% / 17.43% / 0.99808; P 98.07% / 100% / 17.41% / 0.99806; G 98.67% / 100% / 17.43% / 0.99803; H 94.13% / 100% / 17.42% / 0.99648; S 93.20% / 100% / 17.49% / 0.99719; R 97.33% / 100% / 17.39% / 0.99801.
-- Degraded B: model missing/rules-only recall 61.40%, MEDIUM+ FPR 17.00%, `permissivePct=1.175%`; history missing recall 82.13%, FPR 18.07%, `permissivePct=0.413%`.
-- Integrity replay refused 100/100 I1, 100/100 I2, and 100/100 I3 cases.
-- Limits: synthetic project-generated data; value-stopped assumes flagged identity-risk transfers are held until the real supplier denies out of band; C is shifted but same-family; latency is measured single-threaded on this VM.
-- Decision: retain the frozen model and report the high B/C and hard-negative false-positive rates without retuning.
+- Degraded details (all `neverLooser=false`): B model missing recall/FPR/permissivePct 77.20%/16.04%/0.757%; history missing 99.53%/17.00%/0.148%. C: model missing 76.80%/17.45%/0.746%; history missing 99.67%/18.41%/0.122%. The nonzero permissive rates are reported without tuning; pass 3 degraded metrics were evaluated on B only.
+- B legitimate MEDIUM+ holds: 10,077 of 148,500 (6.79%). Guarantee rules R-PV-01 and/or R-FL-01: 8,035 (79.74% of holds); other rules: 1,287 (12.77%); model-only: 755 (7.49%).
+- Pass 4 95% CIs: B recall all 97.41–98.83%, HIGH precision 87.55–91.21%, MEDIUM+ FPR 6.66–6.92%, hard-negative FPR 46.13–49.02%; C 98.23–99.34%, 89.55–92.90%, 8.24–8.51%, 45.56–48.38%, respectively.
+- Decision: keep the model frozen, document the feature-parity and rule fixes, and report remaining hard-negative FPR and nonzero degraded permissive rates as measured.
