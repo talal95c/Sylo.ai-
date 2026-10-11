@@ -12,7 +12,7 @@ from sylo_spec.ports import ClusterPort
 from sylo import texts
 from sylo.breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from sylo.clusters import SampleClusterPort, cluster_sample
-from sylo.orchestrator import ActionNotAllowed, UnknownBreaker, UnknownRoute
+from sylo.orchestrator import ActionNotAllowed, NotWaiting, UnknownBreaker, UnknownRoute
 
 from .conftest import LEGIT_SEQUENCE, events_of, make_orchestrator, types, until
 
@@ -97,9 +97,9 @@ async def test_scene_3_three_linked_payments_propose_a_breaker_and_the_next_paym
     await orchestrator.run_wave()
     assert types(orchestrator) == WAVE_SEQUENCE
     detected = events_of(orchestrator, "cluster.detected")[0]["data"]
-    assert (detected["accounts"], detected["agents"], detected["region"]) == (3, 0, "GH-TV")
+    assert (detected["accounts"], detected["agents"], detected["region"]) == (6, 3, "GH-TV")
     assert detected["linkedPayments"] == ["PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"]
-    assert detected["proposedBreaker"]["breakerId"] == "CB-CL-AFLAO-01" and detected["detector"] == "sylo_risk.clusters"
+    assert detected["proposedBreaker"]["breakerId"] == "CB-CL-AFLAO-01" and detected["detector"] == "cluster-sample"
     on = events_of(orchestrator, "breaker.on")[0]["data"]
     assert on["thresholdsDelta"] == -20 and on["scope"] == detected["proposedBreaker"]["scope"]
     assert on["scope"]["institutions"] == ["mule_bank"] and on["expiresAt"].startswith("2026-10-12T09:00")
@@ -298,12 +298,15 @@ async def test_a_guardian_incident_is_shown_drafted_for_dora_and_freezes_the_pay
     draft = json.loads((tmp_path / "incidents" / "INC-20261011-001.json").read_text(encoding="utf-8"))
     assert draft["status"] == "DRAFT, not filed" and draft["paymentId"] == DIVERTED and draft["dora"]["draft"] is True
 
-    assert run.frozen
-    orchestrator.supplier_response(DIVERTED, "confirm")
-    await orchestrator._task  # the release reverts, then the analyst (played by the engine here) revokes
-    assert events_of(orchestrator, "tx.reverted")[0]["data"]["reason"] == "PaymentNotReleasable"
+    assert run.frozen and run.incident_id == "INC-20261011-001"
+    # The corridor is paused, so its escrow route is closed until a person reopens it.
+    assert events_of(orchestrator, "rail.down")[0]["data"]["routeId"] == "R3" and not orchestrator.rails.adapter("R3").available
+    await orchestrator._task  # the supplier is no longer waited for: the analyst (played by the engine here) revokes
     assert run.status == "stopped" and not events_of(orchestrator, "escrow.released")
     assert events_of(orchestrator, "intent.revoked")[0]["data"]["reasonCode"] == "ANALYST_DECISION"
+    assert events_of(orchestrator, "escrow.refunded") and orchestrator.chain.status(run.chain_pid) == Status.REVOKED
+    with pytest.raises(NotWaiting):
+        orchestrator.supplier_response(DIVERTED, "confirm")
     valid(orchestrator, event_validator)
 
 

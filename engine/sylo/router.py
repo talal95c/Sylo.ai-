@@ -16,6 +16,18 @@ from . import texts
 from .norms import PASS, NormsResult, RouteDef, RouteEval, RouteModel
 
 CONDITIONAL_SETTLEMENTS = frozenset({"ONCHAIN_ESCROW", "FIAT_HOLD"})
+PAYER_LIMIT = "PAYER_LIMIT"
+
+
+@dataclass(frozen=True)
+class RerouteLimits:
+    """What the payer accepts without being asked when its usual route cannot be used (PRD §11.3, §12.2)."""
+
+    max_fees_eur: float
+    max_days: float
+
+    def exceeded_by(self, route: RouteDef, amount: float) -> bool:
+        return route.fees(amount) > self.max_fees_eur or route.days > self.max_days
 
 
 def route_cost(route: RouteDef, amount: float, model: RouteModel, route_risk: float = 0.0) -> float:
@@ -47,6 +59,8 @@ class RouteDecision:
     s_selected: float | None
     s_swift: float | None
     price_of_safety: float
+    blocked_by: str | None = None
+    """Why no route was chosen: ``TIER``, ``RAILS`` or ``PAYER_LIMIT``. None when a route was chosen."""
 
     @property
     def route(self) -> RouteDef | None:
@@ -76,52 +90,71 @@ def choose_route(
     model: RouteModel,
     oob_resolvable: bool = False,
     unavailable: Mapping[str, str] | None = None,
+    limits: RerouteLimits | None = None,
+    symbol: str = "€",
 ) -> RouteDecision:
     """``oob_resolvable``: the doubt is about the beneficiary's identity only, so a HIGH payment may still
     use a route that can hold the money (it is then handled like MEDIUM, never paid directly).
 
     ``unavailable`` maps a route id to why its rail cannot be used now (``RAIL_DOWN``, ``KILL_SWITCH``).
     Rerouting answers an operational problem only: a rail that is down never changes the tier.
+
+    ``limits`` apply only when the route the payer would normally get is unavailable: the replacement
+    must stay within the fees and the delay the payer accepts, otherwise the payment waits.
     """
     action_tier = Tier.MEDIUM if tier == Tier.HIGH and oob_resolvable else tier
     unavailable = unavailable or {}
+    cost_by_id = {
+        e.route.id: round(route_cost(e.route, amount, model), 2) for e in norms.routes if e.status == PASS
+    }
+    permitted = [e.route.id for e in norms.routes if e.status == PASS and tier_exclusion(action_tier, e.route) is None]
+    usual = min(permitted, key=lambda route_id: (cost_by_id[route_id], route_id), default=None)
+    rerouting = limits is not None and usual is not None and usual in unavailable
+
     scores: list[dict[str, Any]] = []
     allowed: list[tuple[float, str, RouteEval]] = []
     legal: list[tuple[float, str, RouteEval]] = []
-    cost_by_id: dict[str, float] = {}
-
+    over_limit: list[str] = []
     for evaluation in norms.routes:
         route = evaluation.route
         if evaluation.status != PASS:
             scores.append({"routeId": route.id, "s": None, "excludedBy": evaluation.excluded_by})
             continue
-        s = round(route_cost(route, amount, model), 2)
-        cost_by_id[route.id] = s
+        s = cost_by_id[route.id]
         if route.id in unavailable:
             scores.append({"routeId": route.id, "s": s, "excludedBy": unavailable[route.id]})
             continue
         legal.append((s, route.id, evaluation))
         exclusion = tier_exclusion(action_tier, route)
+        if exclusion is None and rerouting and limits.exceeded_by(route, amount):
+            exclusion = PAYER_LIMIT
+            over_limit.append(route.id)
         scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion})
         if exclusion is None:
             allowed.append((s, route.id, evaluation))
 
     swift = cost_by_id.get("R1")
     if not allowed:
+        if over_limit:
+            blocked_by = PAYER_LIMIT
+            reason = texts.NO_ROUTE_LIMITS.format(
+                usual=usual, routes=", ".join(over_limit), fees=limits.max_fees_eur, days=limits.max_days, symbol=symbol
+            )
+        elif action_tier >= Tier.HIGH or not unavailable:
+            blocked_by, reason = "TIER", texts.NO_ROUTE_DETAIL.format(tier=action_tier.name)
+        else:
+            blocked_by, reason = "RAILS", texts.NO_ROUTE_RAILS.format(routes=", ".join(sorted(unavailable)))
         return RouteDecision(
             tier=action_tier,
             route_eval=None,
             scores=scores,
-            reason=(
-                texts.NO_ROUTE_DETAIL.format(tier=action_tier.name)
-                if action_tier >= Tier.HIGH or not unavailable
-                else texts.NO_ROUTE_RAILS.format(routes=", ".join(sorted(unavailable)))
-            ),
+            reason=reason,
             settlement=None,
             fees_eur=None,
             s_selected=None,
             s_swift=swift,
             price_of_safety=0.0,
+            blocked_by=blocked_by,
         )
 
     best_s, best_id, best = min(allowed, key=lambda c: (c[0], c[1]))
@@ -129,11 +162,11 @@ def choose_route(
     price_of_safety = round(best_s - cheapest_legal, 2)
     if action_tier == Tier.LOW:
         excluded = [(e.route.id, e.excluded_by or "") for e in norms.routes if e.status != PASS]
-        reason = texts.route_reason_low(best_id, best_s, swift, excluded)
+        reason = texts.route_reason_low(best_id, best_s, swift, excluded, symbol)
         settlement = "DIRECT"
     else:
         holding = [(c[2].route.id, c[2].route.settlement) for c in sorted(allowed, key=lambda c: c[1])]
-        reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety)
+        reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety, symbol)
         settlement = best.route.settlement
     reason += texts.rails_unavailable(unavailable)
     return RouteDecision(
