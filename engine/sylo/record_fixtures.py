@@ -183,22 +183,24 @@ async def _record() -> dict[str, list[dict[str, Any]]]:
     await legit.run_to_end("legit", auto=True)
 
     deny_events, release_attack = await _denied_then("release_revoked")
-    split = next(i for i, e in enumerate(deny_events) if e["type"] == "verification.requested") + 1
+    verification_index = next(i for i, e in enumerate(deny_events) if e["type"] == "verification.requested")
+    case_ready_index = next(i for i, e in enumerate(deny_events) if e["type"] == "case.ready")
+    if case_ready_index <= verification_index:
+        raise RuntimeError("the case must be ready after verification is requested")
+    split = case_ready_index + 1
 
     confirmed = await _diverted_answer("confirm")
     confirm_events = confirmed.bus.events
     if confirm_events[:split] != deny_events[:split]:
-        raise RuntimeError("the diverted scenario is not deterministic up to verification.requested")
+        raise RuntimeError("the diverted scenario is not deterministic up to case.ready")
 
     simswap = _orchestrator()
     simswap_run = await simswap.run_to_end("diverted_simswap", auto=True)
     await _await_case_ready(simswap_run)
 
-    case_ready_split = next(i for i, e in enumerate(deny_events) if e["type"] == "case.ready") + 1
-
     recorded = {
         "scene1-legit": legit.bus.events,
-        "scene2-diverted": deny_events[:case_ready_split],
+        "scene2-diverted": deny_events[:split],
         "scene2-deny": deny_events[split:],
         "scene2-confirm": confirm_events[split:],
         "scene2-simswap": simswap.bus.events,

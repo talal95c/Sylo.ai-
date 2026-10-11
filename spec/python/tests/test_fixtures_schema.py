@@ -46,7 +46,7 @@ def test_numbering_starts_at_one_and_branches_continue():
     legit, diverted = load("scene1-legit"), load("scene2-diverted")
     deny, confirm, attack = load("scene2-deny"), load("scene2-confirm"), load("scene2b-release-revoked")
     assert legit[0]["seq"] == 1 and diverted[0]["seq"] == 1
-    assert deny[0]["seq"] == diverted[-1]["seq"] == confirm[0]["seq"]
+    assert deny[0]["seq"] == diverted[-1]["seq"] + 1 == confirm[0]["seq"]
     assert attack[0]["seq"] == deny[-1]["seq"] + 1
     for events in (legit, diverted, deny, confirm, attack):
         seqs = [e["seq"] for e in events]
@@ -54,18 +54,22 @@ def test_numbering_starts_at_one_and_branches_continue():
         assert all(e["id"] == f"evt-{e['seq']:06d}" for e in events)
 
 
-def test_scene2_case_is_ready_before_each_supplier_response():
-    for name in ("scene2-diverted", "scene2-deny", "scene2-confirm"):
-        events = load(name)
-        case_ready = [event for event in events if event["type"] == "case.ready"]
+def test_scene2_branches_start_after_the_shared_case_ready():
+    diverted = load("scene2-diverted")
+    deny, confirm = load("scene2-deny"), load("scene2-confirm")
+    case_ready = diverted[-1]
+    verification = [event for event in diverted if event["type"] == "verification.requested"]
+    assert case_ready["type"] == "case.ready"
+    assert verification and verification[-1]["seq"] < case_ready["seq"]
+    for branch in (deny, confirm):
+        assert branch[0]["seq"] == case_ready["seq"] + 1
+        assert not any(event["type"] == "case.ready" for event in branch)
         responses = [
             event
-            for event in events
+            for event in branch
             if event["type"].startswith("supplier.") or event["type"] == "verification.recorded"
         ]
-        assert len(case_ready) == 1, name
-        assert all(case_ready[0]["seq"] < event["seq"] for event in responses), name
-    assert load("scene2-diverted")[-1]["type"] == "case.ready"
+        assert all(case_ready["seq"] < event["seq"] for event in responses)
 
 
 def test_every_attack_fixture_continues_the_deny_branch():
@@ -147,7 +151,7 @@ def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_stopped_paym
     assert scored["score"] == 77 and scored["tier"] == "CRITICAL"
     assert "R-CB-01" in scored["rulesFired"]
     detected = [e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "cluster.detected"]
-    assert detected and all(event["detector"] == "networkx-mule-clusters" for event in detected)
+    assert detected and all(event["detector"] == "sylo_risk.clusters" for event in detected)
     stamps = [e["ts"] for e in load("samples-scene3-mule-wave")]
     assert stamps == sorted(stamps), "one timeline, even with two scenarios in the file"
 

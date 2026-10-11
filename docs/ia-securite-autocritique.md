@@ -10,6 +10,8 @@ Ce document recense ce que nos chiffres ne prouvent pas, ce qui manque, et ce qu
 
 **1.3 Pas de boucle de labels.** En réalité, une fraude est confirmée des jours ou des semaines plus tard, et le modèle dérive. Nous n'avons ni labels retardés, ni suivi de dérive, ni procédure de ré-entraînement ou de rollback. *Parade (à faire) :* suivi de la population par feature (PSI), score mesuré sur une fenêtre glissante, seuils re-gelés après validation humaine.
 
+**1.4 Rappel T1 à 100 % : circulaire.** Le simulateur donne à chaque T1, même « évasif », une provenance non fiable et un nouveau compte : la règle de garantie R-PV-01 les attrape par construction (la baseline rules_only fait aussi 100 % sur T1). Ce chiffre prouve que la garantie est câblée, pas que le modèle détecte le faux fournisseur. *Parade :* générer des T1 vers un compte déjà payé ou avec une provenance fiable (mule « vieillie », registre fournisseur compromis) et mesurer. <!-- metrics.json: /byTypology/0/recall, /baselines/2/recallT1 -->
+
 ## 2. Cibles du PRD manquées
 
 | Mesure | Résultat | Cible |
@@ -46,9 +48,9 @@ C'est sûr mais peu exploitable. Sans modèle, 43 % des paiements légitimes son
 - La campagne synthétique de « fan-in » est facile. On obtient 30/30 détections, mais aussi 30/30 faux clusters sur les comptes légitimes jeunes et populaires.
 - Les agents de retrait (cash-out) ne sont pas modélisés (`agents = []`), alors que la roadmap les cite.
 - La vue réseau suppose que plusieurs banques partagent des données. La faisabilité juridique (RGPD, secret bancaire, ghanaian Data Protection Act) n'est pas démontrée.
-- Jusqu'à `devin/scene2-fixes`, la scène 3 tournait en silence sur le cluster d'exemple, parce que le détecteur ne lisait pas les `WindowPayment`. C'est corrigé, mais le nouveau déclencheur « fan-in banque frontalière » ajoute 1 faux cluster légitime par seed (de 0 à 1 sur B et sur C). Nous l'avons accepté parce que le coupe-circuit n'est qu'une proposition qu'un analyste doit confirmer.
+- Le détecteur du moteur (`WindowClusterDetector`) ne connaît pas le payeur : 3 paiements d'un même payeur vers 3 comptes jeunes d'une banque frontalière déclenchent aussi un cluster ; sa précision n'est mesurée que par le test de la scène 3, pas par le benchmark hors ligne.
 - La fenêtre du moteur couvre 1 h et fixe `day = 0`, alors que le benchmark travaille par jours : la scène 3 et le benchmark ne testent pas exactement la même fenêtre.
-- Quand l'âge d'un compte ou son nombre de paiements est inconnu, il est mis à 0, donc le compte est jugé suspect. C'est le choix prudent, mais il génère des faux clusters sur les comptes absents du registre.
+- Les comptes inconnus, dont l'âge ou le nombre de paiements n'est pas connu, sont traités comme suspects. C'est le choix prudent, mais il peut générer des faux clusters sur les comptes absents du registre.
 
 ## 7. LLM (Jev, Mistral)
 

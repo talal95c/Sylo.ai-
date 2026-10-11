@@ -28,8 +28,8 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 |---|---|
 | `scene1-legit.jsonl` | Scene 1: the legitimate payment, from `scenario.started` to `payment.credited` |
 | `scene2-diverted.jsonl` | Scene 2 through `case.ready`: the money is held in escrow and the analyst dossier is ready while awaiting the supplier |
-| `scene2-deny.jsonl` | Continues Scene 2 from the shared `case.ready` event through the supplier's "deny" answer: revoked, refunded, stopped |
-| `scene2-confirm.jsonl` | Continues Scene 2 from the shared `case.ready` event through the supplier's "confirm" answer: released, credited |
+| `scene2-deny.jsonl` | Continues Scene 2 after the shared `case.ready` event and the supplier's "deny" answer: revoked, refunded, stopped |
+| `scene2-confirm.jsonl` | Continues Scene 2 after the shared `case.ready` event and the supplier's "confirm" answer: released, credited |
 | `scene2b-release-revoked.jsonl` | Continues `scene2-deny`: the attacker's `release()` is rejected |
 | `scene2b-swap-beneficiary.jsonl` | v1. Continues `scene2-deny`: a leg with a changed beneficiary is refused by the rail adapter, then `deposit` of the modified intent reverts |
 | `scene2b-replay.jsonl` | v1. Continues `scene2-deny`: the signed intent is committed a second time and reverts |

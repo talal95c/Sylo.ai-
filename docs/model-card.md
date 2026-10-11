@@ -31,7 +31,7 @@ These are synthetic results only; they should not be interpreted as estimates of
 
 Typology recall is reported separately for T1–T4; per-typology counts, intervals, and values are in `ml/reports/metrics.json`. <!-- metrics.json: /byTypology -->
 
-The border-institution cluster evaluation detects `30/30` campaigns for B and `30/30` for C, with legitimate false-cluster counts of `1` for each seed. <!-- metrics.json: /clusters/results/B/campaignsDetected, /clusters/results/B/campaignCount, /clusters/results/C/campaignsDetected, /clusters/results/C/campaignCount, /clusters/results/B/falseClusters/legit, /clusters/results/C/falseClusters/legit -->
+The offline `NetworkXClusterDetector` benchmark detects `30/30` campaigns for each seed, with `0` false clusters among original legitimate payments for both seeds. The engine uses a separate `WindowClusterDetector`; its runtime behavior is not measured by the offline benchmark. <!-- metrics.json: /clusters/results/B/campaignsDetected, /clusters/results/B/campaignCount, /clusters/results/C/campaignsDetected, /clusters/results/C/campaignCount, /clusters/results/B/falseClusters/legit, /clusters/results/C/falseClusters/legit -->
 
 The cluster benchmark also records `30` young-popular legitimate false clusters per seed; popular-supplier false clusters are `0` for both seeds. These are evaluation-only hard negatives, not evidence of deployment behavior. <!-- metrics.json: /clusters/results/B/falseClusters/youngPopular, /clusters/results/C/falseClusters/youngPopular, /clusters/results/B/falseClusters/popularSupplier, /clusters/results/C/falseClusters/popularSupplier -->
 
