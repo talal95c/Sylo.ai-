@@ -178,6 +178,14 @@ def _final_tiers(
     return scores, np.maximum(rule_tiers, bands).astype(np.int8)
 
 
+def _action_tiers(tiers: np.ndarray, oob_resolvable: np.ndarray) -> np.ndarray:
+    return np.where(
+        (tiers == int(Tier.HIGH)) & oob_resolvable,
+        int(Tier.MEDIUM),
+        tiers,
+    ).astype(np.int8)
+
+
 def _metric_conditions(frame: pd.DataFrame, tiers: np.ndarray) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     labels = frame["label"].to_numpy(dtype=bool)
     typology = frame["typology"].astype(str).to_numpy()
@@ -586,6 +594,9 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
             include_ci=False,
         )
         normal_tiers = result_by_seed[name]["tiers"]
+        normal_action_tiers = _action_tiers(
+            normal_tiers, result_by_seed[name]["oobResolvable"]
+        )
         for mode, degraded_result, degraded_metrics in (
             ("model_missing_rules_only", rules_only, rules_only_metrics),
             ("history_missing", history_missing, history_metrics),
@@ -593,6 +604,32 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
             permissive_pct = float(
                 np.mean(degraded_result["tiers"] < normal_tiers)
             )
+            degraded_action_tiers = _action_tiers(
+                degraded_result["tiers"], degraded_result["oobResolvable"]
+            )
+            permissive_action_pct = float(
+                np.mean(degraded_action_tiers < normal_action_tiers)
+            )
+            risk_tier_transitions = {
+                "highToMedium": int(
+                    np.count_nonzero(
+                        (normal_tiers == int(Tier.HIGH))
+                        & (degraded_result["tiers"] == int(Tier.MEDIUM))
+                    )
+                ),
+                "highToLow": int(
+                    np.count_nonzero(
+                        (normal_tiers == int(Tier.HIGH))
+                        & (degraded_result["tiers"] == int(Tier.LOW))
+                    )
+                ),
+                "mediumToLow": int(
+                    np.count_nonzero(
+                        (normal_tiers == int(Tier.MEDIUM))
+                        & (degraded_result["tiers"] == int(Tier.LOW))
+                    )
+                ),
+            }
             degraded.append(
                 {
                     "seed": name,
@@ -601,6 +638,8 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
                     "fprMediumPlus": degraded_metrics["fprMediumPlus"],
                     "neverLooser": permissive_pct == 0.0,
                     "permissivePct": permissive_pct,
+                    "permissiveActionPct": permissive_action_pct,
+                    "riskTierTransitions": risk_tier_transitions,
                     "metrics": degraded_metrics,
                 }
             )

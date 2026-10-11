@@ -43,6 +43,26 @@ class RulesRisk:
         structuring_cause = (
             9_000 <= ctx.amount_eur < 10_000 and order.purpose != "DECLARED_SPLIT"
         )
+        velocity_cause = ctx.history is not None and ctx.history.payments_24h > 2
+        spike_cause = (
+            ctx.history is not None
+            and ctx.history.median_amount_eur is not None
+            and ctx.amount_eur > 3 * ctx.history.median_amount_eur
+        )
+        degraded_cause = (
+            session_cause or structuring_cause or velocity_cause or spike_cause
+        )
+        allowlisted = (
+            not untrusted
+            and account is not None
+            and ctx.payee is not None
+            and ctx.payee.owns(account.id)
+            and account.successful_payments >= 3
+            and ctx.account_age_hours >= 720
+            and ctx.history is not None
+            and ctx.history.median_amount_eur is not None
+            and not degraded_cause
+        )
 
         if untrusted:
             fired.append(("R-PV-01", 20, "V", texts.reason_untrusted_provenance(provenance, ctx.payee)))
@@ -63,13 +83,7 @@ class RulesRisk:
             fired.append(("R-FL-03", 12, "B", texts.reason_name_mismatch(holder, payee_name, ctx.name_match)))
         if "R1" in ctx.norm_signals:
             fired.append(("R-NM-01", 7, "R", texts.REASON_NOT_NOMINATED))
-        if self.strict and (
-            session_cause
-            or account is None
-            or account.successful_payments == 0
-            or ctx.account_age_hours < 72
-            or structuring_cause
-        ):
+        if self.strict and not allowlisted:
             fired.append(
                 (
                     "R-DG-01",
@@ -83,6 +97,10 @@ class RulesRisk:
         bonus = 10 if self.strict and fired else 0
         score = min(100, 10 + sum(rule[1] for rule in fired) + bonus)
         floor = Tier.MEDIUM if fired else Tier.LOW
+        if self.strict and any(rule[0] == "R-DG-01" for rule in fired):
+            floor = Tier(max(floor, Tier.MEDIUM))
+        if self.strict and degraded_cause:
+            floor = Tier(max(floor, Tier.HIGH))
         tier = Tier(max(floor, band(score)))
 
         reasons = [RiskReason(ref=ref, text=text, rule_id=rule_id) for rule_id, _, ref, text in fired]
@@ -102,7 +120,7 @@ class RulesRisk:
                 in {"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01", "R-DG-01"}
                 for rule in fired
             )
-            and not (self.strict and (session_cause or structuring_cause)),
+            and not (self.strict and degraded_cause),
             model=self.name,
         )
 

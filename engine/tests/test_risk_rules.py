@@ -1,7 +1,7 @@
 import sys
 from types import ModuleType
 
-from sylo_spec.models import RiskReason, RiskResult, Tier
+from sylo_spec.models import PairHistory, RiskReason, RiskResult, Tier
 from sylo_spec.scenarios import build_risk_context, golden_case
 
 from sylo.config import Settings
@@ -74,7 +74,81 @@ def test_young_account_fires_r_fl_02():
 
 def test_strict_mode_is_stricter():
     assert RulesRisk(strict=True).score(*golden_case("diverted")).score == 74
-    assert RulesRisk(strict=True).score(*golden_case("legit")).score == 10
+
+
+def test_strict_mode_holds_legit_golden_when_history_is_missing():
+    order, ctx = golden_case("legit")
+    assert ctx.history is None
+
+    result = RulesRisk(strict=True).score(order, ctx)
+
+    assert result.tier == Tier.MEDIUM
+    assert result.floor_tier == Tier.MEDIUM
+    assert result.score == 20
+    assert "R-DG-01" in result.rules_fired
+
+
+def test_strict_mode_allows_established_trusted_history_known_legit():
+    order, ctx = golden_case("legit")
+    assert ctx.account is not None and ctx.payee is not None
+    established_context = ctx.model_copy(
+        update={
+            "history": PairHistory(
+                successful_count=ctx.account.successful_payments,
+                median_amount_eur=85_000.0,
+                payments_24h=0,
+                last_account_id=ctx.account.id,
+            )
+        }
+    )
+
+    result = RulesRisk(strict=True).score(order, established_context)
+
+    assert result.tier == Tier.LOW
+    assert "R-DG-01" not in result.rules_fired
+
+
+def test_strict_mode_session_and_velocity_causes_force_high_non_oob():
+    order, ctx = golden_case("legit")
+    session = ctx.payer_session.model_copy(update={"sim_swap_72h": True})
+    session_result = RulesRisk(strict=True).score(
+        order, ctx.model_copy(update={"payer_session": session})
+    )
+    velocity_result = RulesRisk(strict=True).score(
+        order,
+        ctx.model_copy(
+            update={
+                "history": PairHistory(
+                    successful_count=14,
+                    median_amount_eur=85_000.0,
+                    payments_24h=3,
+                )
+            }
+        ),
+    )
+
+    assert session_result.tier >= Tier.HIGH
+    assert session_result.floor_tier == Tier.HIGH
+    assert not session_result.oob_resolvable
+    assert velocity_result.tier >= Tier.HIGH
+    assert velocity_result.floor_tier == Tier.HIGH
+    assert not velocity_result.oob_resolvable
+
+
+def test_strict_mode_spike_cause_forces_high_non_oob():
+    order, ctx = golden_case("legit")
+    context = ctx.model_copy(
+        update={
+            "amount_eur": 260_000.0,
+            "history": PairHistory(successful_count=14, median_amount_eur=85_000.0),
+        }
+    )
+
+    result = RulesRisk(strict=True).score(order, context)
+
+    assert result.tier >= Tier.HIGH
+    assert result.floor_tier == Tier.HIGH
+    assert not result.oob_resolvable
 
 
 def test_strict_mode_adds_nonresolvable_degraded_rule_for_session_causes():
@@ -90,7 +164,8 @@ def test_strict_mode_adds_nonresolvable_degraded_rule_for_session_causes():
         )
         reason = next(reason for reason in result.reasons if reason.rule_id == "R-DG-01")
 
-        assert result.score == 20 and result.tier == Tier.MEDIUM
+        assert result.score == 20 and result.tier == Tier.HIGH
+        assert result.floor_tier == Tier.HIGH
         assert reason.ref == "P"
         assert reason.text == "Risk model unavailable: held for verification as a precaution."
         assert not result.oob_resolvable
@@ -108,16 +183,24 @@ def test_strict_mode_degraded_account_causes_remain_resolvable_but_structuring_d
         assert reason.ref == "B"
         assert result.oob_resolvable
 
+    history = PairHistory(successful_count=14, median_amount_eur=85_000.0)
     result = RulesRisk(strict=True).score(
-        order, ctx.model_copy(update={"amount_eur": 9_500.0})
+        order,
+        ctx.model_copy(
+            update={"amount_eur": 9_500.0, "history": history}
+        ),
     )
     reason = next(reason for reason in result.reasons if reason.rule_id == "R-DG-01")
     assert reason.ref == "B"
+    assert result.floor_tier == Tier.HIGH
     assert not result.oob_resolvable
 
     declared_split = order.model_copy(update={"purpose": "DECLARED_SPLIT"})
     result = RulesRisk(strict=True).score(
-        declared_split, ctx.model_copy(update={"amount_eur": 9_500.0})
+        declared_split,
+        ctx.model_copy(
+            update={"amount_eur": 9_500.0, "history": history}
+        ),
     )
     assert "R-DG-01" not in result.rules_fired
 
