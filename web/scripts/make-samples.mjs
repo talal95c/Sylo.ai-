@@ -134,7 +134,7 @@ const routeReasons = {
 };
 const taxNotices = [
   {
-    text: "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention (1993) in force.",
+    text: "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention signed in Accra on 5 April 1993, in force since 1 April 1997 (BOFiP BOI-INT-CVB-GHA).",
     reference: "FR-GH-DTC-1993",
   },
   {
