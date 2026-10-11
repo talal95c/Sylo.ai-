@@ -58,6 +58,7 @@ from .bus import EventBus
 from .case import CaseService, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
+from .intake import extract, match_order
 from .config import Settings
 from .journal import Journal
 from .norms import NormsEngine, NormsResult, load_pack
@@ -729,6 +730,17 @@ class Orchestrator:
         if idempotency_key:
             self._submitted[idempotency_key] = answer
         return answer
+
+    def intake(self, text: str, sender_domain: str | None = None) -> dict[str, Any]:
+        """Read an invoice or an e-mail into the fixed fields, find the recorded order it is about, and give
+        the engine's decision for that order. The text itself never reaches a rule (documents are data)."""
+        result = extract(text, sender_domain)
+        order = match_order(result)
+        return {
+            "intake": result.to_json(),
+            "matchedOrder": order.id if order is not None else None,
+            "decision": self._decision(self._verified_order(order)) if order is not None else None,
+        }
 
     def cases(self) -> list[dict[str, Any]]:
         """The analyst's queue: every payment that was held, blocked or touched by an incident."""

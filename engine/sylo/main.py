@@ -103,6 +103,11 @@ class SimEventBody(BaseModel):
     auto: bool = False
 
 
+class IntakeBody(BaseModel):
+    text: str = Field(min_length=1, max_length=40_000)
+    senderDomain: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
+
+
 class WebhookBody(BaseModel):
     idempotencyKey: str = Field(min_length=1, max_length=120)
     status: str = Field(min_length=1, max_length=20)
@@ -291,6 +296,10 @@ def create_app(settings: Settings | None = None, orchestrator: Orchestrator | No
             raise HTTPException(409, str(err)) from None
         except ScenarioBusy:
             raise HTTPException(409, "a payment is running; wait for it to finish or POST /v1/reset") from None
+
+    @app.post("/v1/intake")
+    async def intake(body: IntakeBody, request: Request) -> dict[str, Any]:
+        return orch(request).intake(body.text, body.senderDomain)
 
     @app.get("/v1/cases")
     async def cases(request: Request) -> dict[str, Any]:
