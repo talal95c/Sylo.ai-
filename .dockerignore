@@ -1,0 +1,16 @@
+.git
+.github
+**/node_modules
+web
+contracts
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.next
+**/out
+.env*
+**/.env*
+engine/data
+ml/data
