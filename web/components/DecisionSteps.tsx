@@ -171,7 +171,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
   const completed = steps.filter((step) => step.state === "done" || step.state === "warn" || step.state === "fail").length;
   const summary = decisionSummary(state);
   return (
-    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="shrink-0" panelClassName="overflow-clip" aria-label="Engine decisions">
+    <GlowingShadow layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.2 }} className="min-h-0" panelClassName="flex min-h-0 flex-col overflow-clip" aria-label="Engine decisions">
       <PanelHeaderButton
         index="02"
         title="Engine decisions"
@@ -191,7 +191,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease }}
-            className="overflow-hidden"
+            className="thin-scrollbar min-h-0 shrink basis-auto overflow-y-auto overscroll-contain"
           >
       <ol className="px-4 py-1">
         {steps.map((step, index) => (

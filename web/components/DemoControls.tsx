@@ -175,6 +175,7 @@ export function DemoControls({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease, delay: 0.3 }}
         aria-label="Demo controls"
+        data-globe-occluder="bottom"
         className="glass absolute bottom-4 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
       >
       <AnimatePresence mode="popLayout" initial={false}>
