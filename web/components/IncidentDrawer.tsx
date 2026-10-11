@@ -69,7 +69,7 @@ export function IncidentDrawer({ incident, open, onClose }: { incident: Incident
             <div>
               <div className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-[var(--danger)]" />
-                <span className="font-mono text-[9px] uppercase text-[var(--danger)]">Draft, not filed</span>
+                <span className="font-mono text-[11px] uppercase text-[var(--danger)]">Draft, not filed</span>
                 {incident.simulated ? <span className="rounded border border-[var(--line-strong)] px-1.5 py-0.5 font-mono text-[8px] uppercase text-ink-3">Simulated</span> : null}
               </div>
               <h2 id="incident-drawer-title" className="mt-2 text-[18px] font-semibold">DORA incident draft</h2>

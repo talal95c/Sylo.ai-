@@ -32,8 +32,15 @@ export default function SyloApp() {
   const [feedUserOpen, setFeedUserOpen] = useState(false);
   const [feedClosedAtStart, setFeedClosedAtStart] = useState<number | null>(null);
   const [incidentOpen, setIncidentOpen] = useState(false);
+  useEffect(() => {
+    const lastEvent = sylo.state.lastEvent;
+    if (lastEvent?.type === "session.reset" || lastEvent?.type === "scenario.started") setIncidentOpen(false);
+  }, [sylo.state.lastEvent]);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
+  const [geoLoadFailed, setGeoLoadFailed] = useState(false);
+  const [geoAssetsFailed, setGeoAssetsFailed] = useState(false);
+  const [geoRetryKey, setGeoRetryKey] = useState(0);
   const autoRunRef = useRef(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [mobileDemoOpen, setMobileDemoOpen] = useState(false);
@@ -84,13 +91,18 @@ export default function SyloApp() {
     let alive = true;
     loadGeo()
       .then((value) => {
-        if (alive) setGeo({ institutions: value.institutions, chainAltitude: value.chain.arcAltitude });
+        if (alive) {
+          setGeo({ institutions: value.institutions, chainAltitude: value.chain.arcAltitude });
+          setGeoLoadFailed(false);
+        }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (alive) setGeoLoadFailed(true);
+      });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [geoRetryKey]);
 
   const setView = useCallback((next: DemoView) => {
     setViewState(next);
@@ -127,8 +139,18 @@ export default function SyloApp() {
           chainAltitude={geo?.chainAltitude ?? 0.45}
           speed={sylo.speed}
           visible={globe}
+          geoRetryKey={geoRetryKey}
+          onGeoLoad={setGeoAssetsFailed}
         />
       </motion.div>
+      {globe && (geoLoadFailed || geoAssetsFailed) ? (
+        <div role="alert" className="glass absolute left-1/2 top-[140px] z-30 flex -translate-x-1/2 items-center gap-3 rounded-xl px-4 py-2.5 text-[12px] text-ink">
+          <span>Map data failed to load</span>
+          <button type="button" onClick={() => setGeoRetryKey((attempt) => attempt + 1)} className="rounded-full bg-[var(--accent-soft)] px-3 py-1 font-medium text-accent hover:bg-[color-mix(in_srgb,var(--accent)_12%,white)]">
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <AnimatePresence>
         {globe ? null : (
@@ -161,12 +183,12 @@ export default function SyloApp() {
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>
             <aside data-globe-occluder="left" className="absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-hidden 2xl:w-[372px]">
-              <PaymentCard state={sylo.state} panelOpen={decisionsOpen} />
-              <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} />
+              <PaymentCard state={sylo.state} panelOpen={decisionsOpen} onViewAlert={sylo.actions.openAlert} />
+              <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} sourceKind={sylo.sourceKind} />
             </aside>
 
             <aside data-globe-occluder="right" className={cx("absolute right-4 top-[76px] z-10 flex min-h-0 w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden 2xl:w-[360px]", feedOpen ? "bottom-[88px]" : "bottom-auto")}>
-              <EventFeed feed={sylo.state.feed} expanded={feedOpen} onExpandedChange={setFeedOpen} onOpenIncident={() => setIncidentOpen(true)} />
+              <EventFeed feed={sylo.state.feed} expanded={feedOpen} onExpandedChange={setFeedOpen} onOpenIncident={() => setIncidentOpen(true)} sourceKind={sylo.sourceKind} />
             </aside>
 
           </motion.div>

@@ -195,7 +195,7 @@ export function Onboarding({
                   exit={{ opacity: 0, y: reduced ? 0 : -6, filter: "blur(4px)" }}
                   transition={{ duration: reduced ? 0 : 0.22, ease }}
                 >
-                  <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">{step.eyebrow}</div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">{step.eyebrow}</div>
                   <h2 id="onboarding-title" className="mt-1.5 text-[16px] font-semibold leading-snug tracking-[-0.01em]">
                     {step.title}
                   </h2>

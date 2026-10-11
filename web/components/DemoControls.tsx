@@ -160,7 +160,7 @@ function MoreScenes({ actions, available, sourceKind, state }: { actions: Action
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12.5px] text-ink transition-colors hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:text-ink-3"
               >
                 <span>{entry.label}</span>
-                {entry.suffix ? <span className="font-mono text-[9px] uppercase text-ink-3">{entry.suffix}</span> : null}
+                {entry.suffix ? <span className="font-mono text-[11px] uppercase text-ink-3">{entry.suffix}</span> : null}
               </button>
             ))}
           </motion.div>
