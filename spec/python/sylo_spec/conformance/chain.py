@@ -1,6 +1,6 @@
 """Chain conformance suite (v0 spec §4.7).
 
-``run_chain_conformance(make_chain, token=..., payer=...)`` runs seven steps, each on a fresh
+``run_chain_conformance(make_chain, token=..., payer=...)`` runs nine steps, each on a fresh
 chain from ``make_chain()``. Payment ids and nonces are random, so the suite can also run
 against a persistent chain (Anvil or Fuji) where earlier runs left state behind.
 """
@@ -169,6 +169,33 @@ def _step7_low_executed(run: _Run) -> None:
     assert run.status(intent) == Status.EXECUTED, "mark_executed must set status EXECUTED"
 
 
+def _confirmed_hold(run: _Run, corridor: str | None = None) -> PaymentIntent:
+    intent = run.intent(Tier.MEDIUM)
+    if corridor is not None:
+        intent = intent.model_copy(update={"corridor_id": corridor})
+    run.commit(intent)
+    run.chain.deposit(intent, run.payer)
+    run.attest(intent, VerificationResult.CONFIRMED)
+    return intent
+
+
+def _step8_freeze_blocks_release(run: _Run) -> None:
+    _expect_revert("NoHold", run.chain.freeze, keccak_text(f"CONFORMANCE-NO-HOLD-{uuid.uuid4()}"))
+    intent = _confirmed_hold(run)
+    run.chain.freeze(run.pid(intent))
+    _expect_revert("PaymentNotReleasable", run.chain.release, run.pid(intent))
+    assert run.status(intent) == Status.CONFIRMED, "a frozen release must leave status CONFIRMED"
+
+
+def _step9_pause_blocks_release(run: _Run) -> None:
+    # A throwaway corridor: pausing FR-GH on a shared chain would block the demo until an admin unpauses it.
+    corridor = to_hex(keccak_text(f"CONFORMANCE-CORRIDOR-{uuid.uuid4()}"))
+    intent = _confirmed_hold(run, corridor)
+    run.chain.pause_corridor(corridor)
+    _expect_revert("PaymentNotReleasable", run.chain.release, run.pid(intent))
+    assert run.status(intent) == Status.CONFIRMED, "a paused release must leave status CONFIRMED"
+
+
 STEPS: tuple[Callable[[_Run], None], ...] = (
     _step1_commit_once,
     _step2_router_only,
@@ -177,6 +204,8 @@ STEPS: tuple[Callable[[_Run], None], ...] = (
     _step5_deny_revoke_refund,
     _step6_confirm_release,
     _step7_low_executed,
+    _step8_freeze_blocks_release,
+    _step9_pause_blocks_release,
 )
 
 
