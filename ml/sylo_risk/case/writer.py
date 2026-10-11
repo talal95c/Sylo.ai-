@@ -14,7 +14,7 @@ from sylo_spec.ports import CasePort
 
 from .template import event_dict, template_case
 from .text_screen import TEXT_SCREEN_REFS, TextScreen, TextSignals
-from .validation import validate_case
+from .validation import validate_case, validate_case_with_reason
 
 log = logging.getLogger("sylo.case_writer")
 
@@ -35,7 +35,19 @@ Rules:
 2. Do not state any fact, number, name or date that is not in <events>.
 3. recommended_action must be one of ESCALATE_AML, CONFIRM_REVOCATION, RELEASE_AFTER_CONFIRMATION, NO_ACTION. Never recommend releasing money unless the events contain a confirmed out-of-band verification; prefer the stricter action when unsure.
 4. explanation: plain English for a bank analyst, at most 120 words, no speculation.
-5. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommended_action, explanation, citations[{ref, source}]."""
+5. citations must contain exactly one item per distinct sentence ref. The source must be event:<id> for an event id, rule:<id> for a rule id, and reason:<ref> for a reason or TX-* text-screen ref.
+6. Answer with one JSON object only, with keys: summary, sentences[{text, refs}], typology, recommended_action, explanation, citations[{ref, source}]."""
+
+
+def _safe_exception_message(error: Exception, document: str | None, api_key: str | None) -> str:
+    message = str(error)
+    sensitive = [api_key]
+    if document:
+        sensitive.extend((document, re.sub(r"\s", "ˆ", document)))
+        sensitive.extend(line for line in document.splitlines() if line)
+    for value in sorted((item for item in sensitive if item), key=len, reverse=True):
+        message = message.replace(value, "[redacted]")
+    return message
 
 
 def _placeholder_events(events: list[Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -129,6 +141,72 @@ def _allowed_refs(
             if ref in TEXT_SCREEN_REFS
         )
     return sorted(refs)
+
+
+def _canonicalize_citations(
+    output: dict[str, Any], events: list[Any], template: CaseFile
+) -> dict[str, Any]:
+    sentences = output.get("sentences")
+    if not isinstance(sentences, list):
+        return output
+
+    allowed = set(_allowed_refs([event_dict(event) for event in events], template))
+    sentence_refs: set[str] = set()
+    for sentence in sentences:
+        if not isinstance(sentence, Mapping):
+            return output
+        refs = sentence.get("refs")
+        if not isinstance(refs, list):
+            return output
+        for ref in refs:
+            if not isinstance(ref, str) or ref not in allowed:
+                raise ValueError("Mistral output cited an unknown reference")
+            sentence_refs.add(ref)
+
+    citations = output.get("citations", [])
+    if not isinstance(citations, list):
+        raise ValueError("Mistral output citations are malformed")
+    for citation in citations:
+        if not isinstance(citation, Mapping) or not isinstance(citation.get("ref"), str):
+            raise ValueError("Mistral output citations are malformed")
+        ref = citation["ref"]
+        if ref not in allowed:
+            raise ValueError("Mistral output cited an unknown reference")
+        if ref not in sentence_refs:
+            raise ValueError("Mistral citation has no matching sentence")
+
+    normalized = [event_dict(event) for event in events]
+    event_ids = {str(event.get("id")) for event in normalized if event.get("id")}
+    risk_data = next(
+        (event.get("data", {}) for event in normalized if event.get("type") == "risk.scored"),
+        {},
+    )
+    rules = {str(rule) for rule in risk_data.get("rulesFired", [])}
+    provided_sources = {citation["ref"]: citation.get("source") for citation in citations}
+    repaired_citations = []
+    corrected_sources = 0
+    added_citations = 0
+    for ref in sorted(sentence_refs):
+        source = (
+            f"event:{ref}"
+            if ref in event_ids
+            else f"rule:{ref}"
+            if ref in rules
+            else f"reason:{ref}"
+        )
+        if ref not in provided_sources:
+            added_citations += 1
+        elif provided_sources[ref] != source:
+            corrected_sources += 1
+        repaired_citations.append({"ref": ref, "source": source})
+    log.info(
+        "Mistral citation normalization: refs=%d corrected_sources=%d added_citations=%d",
+        len(sentence_refs),
+        corrected_sources,
+        added_citations,
+    )
+    output["citations"] = repaired_citations
+    return output
 
 
 def _bind_event_refs(raw: dict[str, Any], events: list[Any], template: CaseFile) -> dict[str, Any]:
@@ -343,14 +421,15 @@ class CaseWriter:
                 "model": self.model,
             }
         )
-        case = validate_case(output, pseudonymized, template)
+        _canonicalize_citations(output, pseudonymized, template)
+        case, failure = validate_case_with_reason(output, pseudonymized, template)
         if case is None:
-            raise ValueError("Mistral output failed case validation")
+            raise ValueError(f"Mistral output failed case validation: {failure}")
         case = _restore_case(case, replacements)
         case = self._with_text_screen(case, template)
-        validated = validate_case(case, events, template)
+        validated, failure = validate_case_with_reason(case, events, template)
         if validated is None:
-            raise ValueError("Mistral output failed text-screen validation")
+            raise ValueError(f"Mistral output failed text-screen validation: {failure}")
         return validated
 
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
@@ -360,6 +439,16 @@ class CaseWriter:
             if isinstance(document, str) and document.strip()
             else None
         )
+        if document and text_signals is not None:
+            withheld = text_signals.injection is not None and text_signals.injection >= 0.5
+            log.info(
+                "Jev screening: source=%s change=%s pressure=%s injection=%s mistral_document_withheld=%s",
+                text_signals.source,
+                text_signals.change,
+                text_signals.pressure,
+                text_signals.injection,
+                withheld,
+            )
         template = template_case(payment_id, events, text_signals=text_signals)
         if self.mode == "off":
             return template
@@ -381,5 +470,6 @@ class CaseWriter:
         try:
             return self._request(payment_id, events, template, text_signals, document)
         except Exception as error:
-            log.warning("CaseWriter live generation failed (%s); using the template", type(error).__name__)
+            message = _safe_exception_message(error, document, self.api_key)
+            log.warning("CaseWriter live generation failed: %s; using the template", message)
             return template

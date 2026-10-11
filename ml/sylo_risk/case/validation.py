@@ -31,17 +31,17 @@ def _strip_refs(value: str, refs: set[str]) -> str:
     return value
 
 
-def validate_case(
+def validate_case_with_reason(
     value: CaseFile | Mapping[str, Any],
     events: list[Any],
     template: CaseFile,
-) -> CaseFile | None:
+) -> tuple[CaseFile | None, str | None]:
     try:
         case = value if isinstance(value, CaseFile) else CaseFile.model_validate(value)
     except (ValidationError, TypeError, ValueError):
-        return None
+        return None, "invalid case shape"
     if len(case.explanation.split()) > 120:
-        return None
+        return None, "explanation exceeds 120 words"
 
     normalized = [event_dict(event) for event in events]
     event_ids = {str(event.get("id")) for event in normalized if event.get("id")}
@@ -60,12 +60,12 @@ def validate_case(
 
     for sentence in case.sentences:
         if not sentence.refs or any(ref not in allowed for ref in sentence.refs):
-            return None
+            return None, "a sentence is uncited or uses an unknown reference"
 
     distinct_refs = {ref for sentence in case.sentences for ref in sentence.refs}
     citations = {citation.ref: citation.source for citation in case.citations}
     if set(citations) != distinct_refs or len(citations) != len(case.citations):
-        return None
+        return None, "citation references do not match sentence references"
     for ref, source in citations.items():
         expected = (
             f"event:{ref}"
@@ -75,7 +75,7 @@ def validate_case(
             else f"reason:{ref}"
         )
         if ref not in allowed or source != expected:
-            return None
+            return None, "a citation source does not match its reference"
 
     events_json = json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
     available_numbers = _numbers(events_json)
@@ -91,10 +91,19 @@ def validate_case(
     for text in [case.summary, case.explanation, *(sentence.text for sentence in case.sentences)]:
         text_numbers = _numbers(_strip_refs(text, allowed))
         if not text_numbers.issubset(available_numbers):
-            return None
+            return None, "case text contains an unsupported number"
 
     if ACTION_RANK[case.recommended_action] < ACTION_RANK[template.recommended_action]:
-        return None
+        return None, "recommended action is less strict than the template"
     if case.typology not in TYPOLOGIES:
         case = case.model_copy(update={"typology": template.typology})
+    return case, None
+
+
+def validate_case(
+    value: CaseFile | Mapping[str, Any],
+    events: list[Any],
+    template: CaseFile,
+) -> CaseFile | None:
+    case, _ = validate_case_with_reason(value, events, template)
     return case
