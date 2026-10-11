@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { wakeEngine } from "../lib/engine";
+import { CORRIDOR_LABEL } from "@/lib/corridor";
 import { cx, ease } from "./ui";
 
 const LandingGlobe = dynamic(() => import("./LandingGlobe"), { ssr: false });
@@ -57,7 +58,7 @@ export default function Landing() {
           </span>
           <span className="text-[16px] font-semibold tracking-[-0.04em]">Sylo.ai</span>
         </Link>
-        <span className="font-mono text-[11px] text-ink-3">FR → GH · Avalanche Fuji</span>
+        <span className="font-mono text-[11px] text-ink-3">{CORRIDOR_LABEL} · Avalanche Fuji</span>
       </motion.header>
 
       <section className="relative z-10 mt-[11vh] flex flex-col items-center px-6 text-center">
@@ -72,9 +73,12 @@ export default function Landing() {
           <br />
           before it moves
         </motion.h1>
+        <motion.p {...reveal(0.3)} className="mt-4 max-w-xl text-[14px] leading-relaxed text-ink-2">
+          Sylo checks the law, scores fraud and seals each cross-border payment on Avalanche before money moves.
+        </motion.p>
         <motion.div {...reveal(0.35)} className="mt-9 flex items-center gap-2.5">
-          <Cta href="/test" tone="light">Test the project</Cta>
-          <Cta href="/demo" tone="dark">Watch the demo</Cta>
+          <Cta href="/test" tone="light">Try a payment</Cta>
+          <Cta href="/demo" tone="dark">Watch the 3-minute demo</Cta>
         </motion.div>
       </section>
 
