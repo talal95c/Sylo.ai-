@@ -469,7 +469,10 @@ export function closeAlert(state: ViewState): ViewState {
   return { ...state, alertOpen: false };
 }
 
-export function availableActions(state: ViewState): {
+export function availableActions(
+  state: ViewState,
+  sourceKind: "live" | "replay" = "replay",
+): {
   runLegit: boolean;
   runDiverted: boolean;
   runMuleWave: boolean;
@@ -491,12 +494,14 @@ export function availableActions(state: ViewState): {
     state.payment.status === "credited" ||
     state.payment.status === "stopped";
   const awaitingSupplier = state.payment?.status === "awaiting_supplier";
+  // Live, Scene 4 is an attack on the payment held in escrow; in replay it is a recorded scene.
+  const heldInEscrow = awaitingSupplier && state.held?.at === "escrow" && !state.attack.attempted;
 
   return {
     runLegit: canRun,
     runDiverted: canRun,
     runMuleWave: canRun,
-    runGuardian: canRun,
+    runGuardian: sourceKind === "live" ? heldInEscrow : canRun,
     runOutage: canRun,
     runSimSwap: canRun,
     runHoldExpiry: canRun,

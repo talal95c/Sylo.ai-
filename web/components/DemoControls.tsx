@@ -68,7 +68,7 @@ function MoreScenes({ actions, available, sourceKind, state }: { actions: Action
     (state.mode?.confidential !== undefined && state.mode.confidential !== "off");
   const entries = [
     { label: "Mule wave", action: actions.runMuleWave, enabled: available.runMuleWave },
-    { label: "Guardian incident", action: actions.runGuardian, enabled: available.runGuardian && sourceKind === "replay", suffix: sourceKind === "live" ? "Replay" : undefined },
+    { label: "Guardian incident", action: actions.runGuardian, enabled: available.runGuardian, suffix: sourceKind === "live" && !available.runGuardian ? "Needs a hold" : undefined },
     { label: "Rail outage", action: actions.runOutage, enabled: available.runOutage },
     { label: "SIM swap", action: actions.runSimSwap, enabled: available.runSimSwap },
     { label: "Hold expiry", action: actions.runHoldExpiry, enabled: available.runHoldExpiry },

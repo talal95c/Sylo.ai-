@@ -51,7 +51,7 @@ Suggested order:
   - The reducer ignores `traffic.sample`, `cluster.detected` and `breaker.on`, so no wave arcs, cluster ring or breaker zone is drawn on the globe.
   - **Fix:** keep the feed on a second `scenario.started` within the same run, map `mule_wave` to its own scenario, draw the three `bank_fr → mule_bank` arcs plus a ring or zone around Aflao, and fly the camera there.
 
-- [ ] **[Youssef] Scene 4 (guardian and stolen key) cannot be run live.** `components/DemoControls.tsx:71` enables "Guardian incident" only when `sourceKind === "replay"`. The engine runs it fine in mock and Fuji modes (`POST /v1/attacks/stolen_verifier_key`; `make demo-check` passes). Enable it in live mode after a diverted payment is held.
+- [x] **[Youssef] Scene 4 (guardian and stolen key) cannot be run live.** Done: live, "Guardian incident" runs the stolen-key attack on the payment held in escrow (Diverted invoice, wait for the hold, then More scenes, Guardian incident). `components/DemoControls.tsx:71` enables "Guardian incident" only when `sourceKind === "replay"`. The engine runs it fine in mock and Fuji modes (`POST /v1/attacks/stolen_verifier_key`; `make demo-check` passes). Enable it in live mode after a diverted payment is held.
 
 - [ ] **"Simulated" gets cut off.** The project rules require simulated things to be labelled, but:
   - `components/PaymentCard.tsx` ~90/183 puts `Signed intent 0x…abcde · Simulated` in a 9.5px truncated line, so "Simulated" is always the part that disappears;

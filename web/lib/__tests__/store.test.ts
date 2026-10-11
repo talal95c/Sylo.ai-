@@ -246,6 +246,16 @@ describe("store reducer", () => {
     expect(available.runDiverted).toBe(false);
   });
 
+  it("enables the live guardian scene only on a payment held in escrow", () => {
+    expect(availableActions(initialState, "live").runGuardian).toBe(false);
+    expect(availableActions(initialState, "replay").runGuardian).toBe(true);
+
+    const held = replay(...fixture("scene2-diverted"));
+    expect(held.held?.at).toBe("escrow");
+    expect(availableActions(held, "live").runGuardian).toBe(true);
+    expect(availableActions(held, "replay").runGuardian).toBe(false);
+  });
+
   it("stores the guardian DORA draft and clears it on reset", () => {
     const events = fixture("samples-scene4-guardian");
     const incidentIndex = events.findIndex((event) => event.type === "guardian.incident");
