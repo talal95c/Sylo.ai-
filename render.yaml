@@ -35,8 +35,44 @@ services:
       - key: LIVE_INVOICE
         value: "on"
       - key: CHAIN_MODE
-        value: mock
+        value: "fuji"
+      - key: FUJI_RPC_URL
+        value: https://api.avax-test.network/ext/bc/C/rpc
+      - key: CHAIN_ID
+        value: "43113"
       - key: DEMO_PUBLIC
         value: "1"
       - key: MISTRAL_API_KEY
+        sync: false
+      - key: RELAYER_PK
+        sync: false
+      - key: ROUTER_SIGNER_PK
+        sync: false
+      - key: VERIFIER_SIGNER_PK
+        sync: false
+      - key: ANALYST_SIGNER_PK
+        sync: false
+      - key: GUARDIAN_PK
+        sync: false
+      - key: ATTACKER_PK
+        sync: false
+      - key: DEPLOYER_PK
+        sync: false
+      - key: DEPLOYER_ADDRESS
+        sync: false
+      - key: RELAYER_ADDRESS
+        sync: false
+      - key: ROUTER_SIGNER_ADDRESS
+        sync: false
+      - key: VERIFIER_SIGNER_ADDRESS
+        sync: false
+      - key: ANALYST_SIGNER_ADDRESS
+        sync: false
+      - key: GUARDIAN_ADDRESS
+        sync: false
+      - key: EU_CASP_ADDRESS
+        sync: false
+      - key: GH_VASP_ADDRESS
+        sync: false
+      - key: OPERATOR_TOKEN
         sync: false

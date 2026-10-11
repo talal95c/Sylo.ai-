@@ -46,6 +46,7 @@ COPY scripts/start-render.sh ./scripts/start-render.sh
 
 WORKDIR /app/engine
 RUN uv sync --frozen --no-dev --all-extras
+RUN /app/engine/.venv/bin/python -c "import sylo_chain, web3"
 
 ENV PATH=/app/engine/.venv/bin:$PATH
 ENV RISK_MODE=model

@@ -103,13 +103,42 @@ class EngineRecords:
         self.timeout = timeout
         ids = list(order_ids) if order_ids is not None else [order.id for order in ORDERS.values()]
         self._labels: dict[str, str] = {}
+        self._last_payment_refresh: float | None = None
         for order_id in ids:
             for run in range(1, MAX_RUNS_PER_ORDER + 1):
                 label = order_id if run == 1 else f"{order_id}#{run}"
                 self._labels[to_hex(keccak_text(label)).lower()] = order_id
 
     def order_id(self, chain_pid: str) -> str | None:
-        return self._labels.get(chain_pid.lower())
+        normalized = chain_pid.lower()
+        if normalized not in self._labels:
+            self._refresh_payment_labels()
+        return self._labels.get(normalized)
+
+    def _refresh_payment_labels(self) -> None:
+        now = time.monotonic()
+        if self._last_payment_refresh is not None and now - self._last_payment_refresh < 5.0:
+            return
+        self._last_payment_refresh = now
+        try:
+            response = requests.get(f"{self.base_url}/v1/payments", timeout=self.timeout)
+            if not response.ok:
+                return
+            payload = response.json()
+            if not isinstance(payload, Mapping):
+                return
+            payments = payload.get("payments", [])
+            if not isinstance(payments, list):
+                return
+        except (requests.RequestException, ValueError, TypeError, AttributeError):
+            return
+        for payment in payments:
+            if not isinstance(payment, Mapping):
+                continue
+            payment_id = payment.get("paymentId")
+            chain_payment_id = payment.get("chainPaymentId")
+            if isinstance(payment_id, str) and isinstance(chain_payment_id, str):
+                self._labels[chain_payment_id.lower()] = payment_id
 
     def attestation_digests(self, chain_pid: str) -> set[str]:
         order_id = self.order_id(chain_pid)
@@ -133,7 +162,10 @@ class EngineRecords:
         }
 
     def post_incident(self, body: Mapping[str, Any]) -> None:
-        response = requests.post(f"{self.base_url}/v1/guardian/incidents", json=dict(body), timeout=self.timeout)
+        kwargs: dict[str, Any] = {"json": dict(body), "timeout": self.timeout}
+        if token := os.environ.get("OPERATOR_TOKEN"):
+            kwargs["headers"] = {"X-Sylo-Operator": token}
+        response = requests.post(f"{self.base_url}/v1/guardian/incidents", **kwargs)
         response.raise_for_status()
 
 

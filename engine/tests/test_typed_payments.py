@@ -130,3 +130,23 @@ def test_an_expired_typed_quote_cannot_be_executed():
     orchestrator.advance_clock(1)
     with pytest.raises(Exception, match="expired"):
         orchestrator.submit(quote_id=quote["quoteId"])
+
+
+def test_the_invoice_text_of_a_typed_payment_reaches_the_run_as_data():
+    orchestrator = make_orchestrator(live_invoice=True, llm_mode="off")
+    quote = orchestrator.quote_payment(payment(typed(), invoiceText="Please pay\x07 our new account.\x00"))
+    _, payment_run = run(orchestrator, quote)
+    assert payment_run.invoice_text == "Please pay our new account."
+
+
+def test_the_short_custom_form_and_a_typed_payment_are_published_as_one_custom_scenario():
+    orchestrator = make_orchestrator()
+    validator = Draft202012Validator(SCHEMA)
+    for ask in (
+        lambda: orchestrator.quote_custom({"amount": "12000", "invoiceRef": "SSE-VER-120", "account": "verified"}),
+        lambda: orchestrator.quote_payment(payment({"accountId": "acc-ssx-nominated"}, detailsSource="saved")),
+    ):
+        run(orchestrator, ask())
+        started = [e for e in orchestrator.bus.events if e["type"] == "scenario.started"][-1]
+        assert started["data"]["scenario"] == "custom"
+        validator.validate(started)
