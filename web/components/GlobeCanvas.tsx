@@ -33,6 +33,7 @@ import {
   scaleAnimationDuration,
   type ParticleSizeBucket,
 } from "@/lib/globeZoom";
+import { LruObjectCache } from "@/lib/lruObjectCache";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -41,7 +42,41 @@ export interface GlobeCanvasProps {
   atmosphereColor: string;
   speed: number;
   visible: boolean;
+  geoRetryKey: number;
+  onGeoLoad: (failed: boolean) => void;
   onFrame?: (cx: number, cy: number) => void;
+}
+
+function disposeThreeObject(value: object) {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const seen = new Set<object>();
+  const visit = (item: unknown) => {
+    if (typeof item !== "object" || item === null || seen.has(item)) return;
+    seen.add(item);
+    if (item instanceof THREE.BufferGeometry) {
+      geometries.add(item);
+      return;
+    }
+    if (item instanceof THREE.Material) {
+      materials.add(item);
+      return;
+    }
+    if (item instanceof THREE.Object3D) {
+      item.traverse((child) => {
+        const node = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
+        if (node.geometry) geometries.add(node.geometry);
+        if (Array.isArray(node.material)) node.material.forEach((material) => materials.add(material));
+        else if (node.material) materials.add(node.material);
+      });
+      return;
+    }
+    if (Array.isArray(item)) item.forEach(visit);
+    else Object.values(item).forEach(visit);
+  };
+  visit(value);
+  geometries.forEach((geometry) => geometry.dispose?.());
+  materials.forEach((material) => material.dispose());
 }
 
 interface ArcDatum {
@@ -213,6 +248,8 @@ export default function GlobeCanvas({
   atmosphereColor,
   speed,
   visible,
+  geoRetryKey,
+  onGeoLoad,
   onFrame,
 }: GlobeCanvasProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
@@ -231,7 +268,7 @@ export default function GlobeCanvas({
   const [coastlines, setCoastlines] = useState<PathPoint[][]>([]);
   const [particleSize, setParticleSize] = useState(BASE_PARTICLE_SIZE);
   const particleSizeBucketRef = useRef<ParticleSizeBucket | null>(null);
-  const [cache] = useState(() => new Map<string, object>());
+  const [cache] = useState(() => new LruObjectCache<object>(200, disposeThreeObject));
   const speedRef = useRef(speed);
   const cameraTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   const processedCameraSeqRef = useRef<number | null>(null);
@@ -244,8 +281,9 @@ export default function GlobeCanvas({
     () => () => {
       cameraTimersRef.current.forEach(clearTimeout);
       cameraTimersRef.current.clear();
+      cache.clear();
     },
-    [],
+    [cache],
   );
 
   const material = useMemo(
@@ -265,19 +303,22 @@ export default function GlobeCanvas({
     let alive = true;
     Promise.all([fetch("/geo/land-dots.json"), fetch("/geo/coastline-50m.json")])
       .then(async ([dotsResponse, coastlineResponse]) => {
-        if (!dotsResponse.ok || !coastlineResponse.ok) return null;
+        if (!dotsResponse.ok || !coastlineResponse.ok) throw new Error("Map data request failed");
         return Promise.all([dotsResponse.json(), coastlineResponse.json()]);
       })
       .then((data) => {
         if (!alive || !data) return;
         setLandDots(data[0] as LandDot[]);
         setCoastlines(data[1] as PathPoint[][]);
+        onGeoLoad(false);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (alive) onGeoLoad(true);
+      });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [geoRetryKey, onGeoLoad]);
 
   function stable<T extends object>(id: string, signature: string, make: () => T): T {
     const key = `${id}|${signature}`;
