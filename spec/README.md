@@ -30,13 +30,18 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 | `scene2-deny.jsonl` | Continues Scene 2 after the supplier answers "deny": revoked, refunded, stopped |
 | `scene2-confirm.jsonl` | Continues Scene 2 after "confirm": released, credited |
 | `scene2b-release-revoked.jsonl` | Continues `scene2-deny`: the attacker's `release()` is rejected |
+| `scene2b-swap-beneficiary.jsonl` | v1. Continues `scene2-deny`: a leg with a changed beneficiary is refused by the rail adapter, then `deposit` of the modified intent reverts |
+| `scene2b-replay.jsonl` | v1. Continues `scene2-deny`: the signed intent is committed a second time and reverts |
+| `scene2-simswap.jsonl` | v1. Scenario `diverted_simswap`, complete: the known number was SIM-swapped, nobody is texted, the analyst revokes |
+| `samples-v1.jsonl` | v1. The diverted scenario with `HUMAN_STEPS=manual`: two approvals, the supplier's denial, the analyst's confirmation, then the three attacks. One example of every v1 event |
 
-Recorded with a virtual clock starting `2026-10-11T09:00:00.000Z`, seed 42, speed 1. Recording twice gives identical files (`make fixtures-check`).
+Recorded with a virtual clock starting `2026-10-11T09:00:00.000Z`, seed 42, speed 1. Recording twice gives identical files (`make fixtures-check`). The scenes are recorded with `auto: true`; from v1 they contain `approval.required`, `alert.raised`, `case.ready` and `case.action` (see [`api.md`](api.md)). The three `scene2b-*` files each start right after `scene2-deny`, so they can be replayed in any order.
 
 ## Ports
 
 - `RiskPort.score(order, ctx) -> RiskResult` — implemented by `RulesRisk` (engine) and `ModelRisk` (Lane B, v1). Must pass `sylo_spec.conformance.run_risk_conformance`.
-- `ChainPort` — implemented by `MockChain` (engine) and `FujiChain` (Lane C, v1). Must pass `sylo_spec.conformance.run_chain_conformance`.
+- `ChainPort` — implemented by `MockChain` (engine) and `FujiChain` (Lane C, v1). Must pass `sylo_spec.conformance.run_chain_conformance`. The engine also calls `freeze(payment_id)` when the chain client has it (analyst action `FREEZE`).
+- `CasePort.write(payment_id, events) -> CaseFile` — Lane B's case writer (`sylo_risk.case.CaseWriter`), called by the engine for `LLM_MODE=cached|live`. The engine checks the answer (summary of at most 120 words, every citation is a rule, signal or event of the payment) and otherwise builds the case file from the rules.
 
 `sylo_spec.devkeys` holds the **public** Anvil keys (mnemonic `test test … junk`). Use them only in mock and local mode; never fund them on Fuji.
 

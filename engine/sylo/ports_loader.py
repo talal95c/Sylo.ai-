@@ -1,13 +1,15 @@
 """Pick the RiskPort and ChainPort implementations from the flags, with fail-safe fallbacks (v0 spec §5.2).
 
-If the model or the Fuji client cannot be loaded, the engine uses the rules (made stricter) or the
-mock chain, and reports the dependency in ``system.mode.degraded`` so the banner turns amber.
+If the model, the Fuji client or the case writer cannot be loaded, the engine uses the rules (made
+stricter), the mock chain or a case file built from the rules, and reports the dependency in
+``system.mode.degraded`` so the banner turns amber.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from sylo_spec.ports import ChainPort, RiskPort
 
@@ -53,8 +55,21 @@ def load_ports(settings: Settings, *, signer: Signer, clock: Callable[[], float]
             clock=clock,
         )
 
-    if settings.llm_mode != "off":
-        log.warning("LLM_MODE=%s is not available in v0; running without LLM", settings.llm_mode)
-        degraded.append("llm")
-
     return risk, chain, degraded
+
+
+def load_case_writer(settings: Settings) -> tuple[Any | None, bool]:
+    """Lane B's case writer for ``LLM_MODE=cached|live``. Returns (writer or None, degraded).
+
+    The writer (``sylo_risk.case.CaseWriter``, the Mistral investigator) is optional: without it the
+    engine builds the case file from the rules and reports ``llm`` as degraded.
+    """
+    if settings.llm_mode == "off":
+        return None, False
+    try:
+        from sylo_risk.case import CaseWriter
+
+        return CaseWriter(), False
+    except Exception as err:
+        log.warning("LLM_MODE=%s but the case writer is unavailable (%s); case files come from the rules", settings.llm_mode, err)
+        return None, True

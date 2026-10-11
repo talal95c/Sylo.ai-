@@ -1,15 +1,10 @@
-import asyncio
 from datetime import datetime
 
 import pytest
 
 from sylo.orchestrator import AttackNotApplicable, NotWaiting, UnknownPayment
 
-from .conftest import ATTACK_SEQUENCE, CONFIRM_SEQUENCE, DENY_SEQUENCE, DIVERTED_PREFIX, LEGIT_SEQUENCE
-
-
-def types(orchestrator):
-    return [e["type"] for e in orchestrator.bus.events]
+from .conftest import ATTACK_SEQUENCE, CONFIRM_SEQUENCE, DENY_SEQUENCE, DIVERTED_PREFIX, LEGIT_SEQUENCE, types, until
 
 
 def assert_valid(orchestrator, validator):
@@ -31,8 +26,9 @@ async def test_legit_sequence_and_timeline(orchestrator, event_validator):
     start = datetime.fromisoformat(events[0]["ts"].replace("Z", "+00:00"))
     by_type = {e["type"]: e for e in events}
     assert offset_ms(by_type["payment.created"], start) == 400
-    assert offset_ms(by_type["intent.committed"], start) == 5000
-    assert offset_ms(by_type["payment.credited"], start) == 15000
+    assert offset_ms(by_type["approval.granted"], start) == 5300
+    assert offset_ms(by_type["intent.committed"], start) == 6200
+    assert offset_ms(by_type["payment.credited"], start) == 16200
     assert by_type["payment.credited"]["data"]["at"] == "supplier_ssx"
 
 
@@ -67,13 +63,10 @@ async def test_supplier_answer_through_the_api_path(orchestrator):
     payment_id = orchestrator.start("diverted", auto=False)
     with pytest.raises(NotWaiting):
         orchestrator.supplier_response(payment_id, "deny")
-    for _ in range(10_000):
-        await asyncio.sleep(0)
-        if orchestrator._runs[payment_id].status == "awaiting_supplier":
-            break
+    await until(orchestrator, payment_id, "awaiting_supplier")
     orchestrator.supplier_response(payment_id, "deny")
     await orchestrator._task
-    assert types(orchestrator)[-4:] == DENY_SEQUENCE
+    assert types(orchestrator)[-len(DENY_SEQUENCE) :] == DENY_SEQUENCE
     with pytest.raises(UnknownPayment):
         orchestrator.supplier_response("PAY-0000", "deny")
 

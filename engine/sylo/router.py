@@ -6,6 +6,7 @@ input: the tier only filters which settlement modes are allowed.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,7 +69,18 @@ class RouteDecision:
         }
 
 
-def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteModel) -> RouteDecision:
+def choose_route(
+    norms: NormsResult,
+    tier: Tier,
+    amount: float,
+    model: RouteModel,
+    unavailable: Mapping[str, str] | None = None,
+) -> RouteDecision:
+    """``unavailable`` maps a route id to why its rail cannot be used now (``RAIL_DOWN``, ``KILL_SWITCH``).
+
+    Rerouting answers an operational problem only: a rail that is down never changes the tier.
+    """
+    unavailable = unavailable or {}
     scores: list[dict[str, Any]] = []
     allowed: list[tuple[float, str, RouteEval]] = []
     legal: list[tuple[float, str, RouteEval]] = []
@@ -81,6 +93,9 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
             continue
         s = round(route_cost(route, amount, model), 2)
         cost_by_id[route.id] = s
+        if route.id in unavailable:
+            scores.append({"routeId": route.id, "s": s, "excludedBy": unavailable[route.id]})
+            continue
         legal.append((s, route.id, evaluation))
         exclusion = tier_exclusion(tier, route)
         scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion})
@@ -93,7 +108,11 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
             tier=tier,
             route_eval=None,
             scores=scores,
-            reason=texts.NO_ROUTE_DETAIL.format(tier=tier.name),
+            reason=(
+                texts.NO_ROUTE_DETAIL.format(tier=tier.name)
+                if tier >= Tier.HIGH or not unavailable
+                else texts.NO_ROUTE_RAILS.format(routes=", ".join(sorted(unavailable)))
+            ),
             settlement=None,
             fees_eur=None,
             s_selected=None,
@@ -112,6 +131,7 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
         holding = [(c[2].route.id, c[2].route.settlement) for c in sorted(allowed, key=lambda c: c[1])]
         reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety)
         settlement = best.route.settlement
+    reason += texts.rails_unavailable(unavailable)
     return RouteDecision(
         tier=tier,
         route_eval=best,

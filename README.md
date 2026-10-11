@@ -26,11 +26,27 @@ Open <http://localhost:3000> and use the demo buttons at the bottom left:
 
 Without a running engine, the page replays recorded events (`spec/fixtures`) and says so in the banner.
 
+### Engine v1 (Lane A)
+
+The engine now also runs the human steps and the integrity checks of v1 ([`spec/api.md`](spec/api.md)):
+
+- **Payer approval with dual control** (Claire, then Marc from EUR 20,000), **analyst actions** (confirm the revocation, release, freeze) and the supplier's answer. By default the approvals and the analyst are played by the engine (`HUMAN_STEPS=auto`); set `HUMAN_STEPS=manual` in `.env` when the payer panel and the analyst drawer call the API.
+- **Rail adapters**: every leg is checked against the sealed intent before it is sent. Three attacks fail visibly: `release_revoked`, `swap_beneficiary`, `replay`.
+- **SIM-swap check** before the supplier is texted (scenario `diverted_simswap`: nobody is texted, the analyst decides).
+- **Case file** for the analyst (`case.ready`), **alerts** in the app or by SMS, never by e-mail (`alert.raised`).
+- **Decision log** chained by hash in `engine/data/log.jsonl` and `GET /v1/payments/{id}/proof`.
+
+```bash
+make demo-check   # scenes 1, 2, 2b and the proof against the running engine (or a temporary one)
+make verify-log   # recompute the hash chain of the decision log; an edited line makes it fail
+```
+
 ## Tests
 
 ```bash
 make test            # spec, engine, ml, chain, contracts (forge test) and web (typecheck, tests, build)
 make fixtures-check  # recorded events still match the engine
+make demo-check      # the demo scenes and the three attacks, end to end over HTTP
 make anvil-deploy    # deploy the contracts to a throwaway local Anvil node
 ```
 
