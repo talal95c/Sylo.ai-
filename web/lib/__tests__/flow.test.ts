@@ -136,5 +136,30 @@ describe("payment flow", () => {
 
     expect(narration.tone).toBe("low");
     expect(narration.text).toContain("PaymentNotReleasable");
+    expect(narration.text).toContain("release()");
+  });
+
+  it("narrates each attack by its own name", () => {
+    const swap = narrate(replay(...fixture("scene2-diverted"), ...fixture("scene2b-swap-beneficiary")));
+    expect(swap.text).toContain("CommitmentMismatch");
+    expect(swap.text).not.toContain("release()");
+
+    const replayed = narrate(replay(...fixture("scene2-diverted"), ...fixture("scene2b-replay")));
+    expect(replayed.text).toContain("replayed");
+    expect(replayed.text).not.toContain("release()");
+  });
+
+  it("takes the lane from the selected settlement, not from the tier", () => {
+    const events = fixture("scene2-diverted");
+    const scored = events.findIndex((event) => event.type === "risk.scored");
+    const beforeRoute = replay(...events.slice(0, scored + 1));
+    expect(beforeRoute.risk?.tier).not.toBe("LOW");
+    expect(flowLane(beforeRoute)).toBeNull();
+    expect(narrate(beforeRoute).text).not.toContain("escrow");
+
+    const selected = events.findIndex((event) => event.type === "route.selected");
+    const routed = replay(...events.slice(0, selected + 1));
+    expect(flowLane(routed)).toBe("escrow");
+    expect(narrate(routed).text).toContain("on-chain escrow");
   });
 });

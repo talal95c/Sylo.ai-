@@ -1,10 +1,11 @@
 """Rail adapters: the checks made before a leg is sent (roadmap A1.5, PRD §13.5)."""
 
 import dataclasses
+from decimal import Decimal
 
 import pytest
 
-from sylo_spec.models import Status
+from sylo_spec.models import Money, Status
 
 from sylo.rails import EXPIRED, INTENT_HASH_MISMATCH, NONCE_USED, NOT_CONFIRMED, REVOKED, LegRejected
 
@@ -60,6 +61,24 @@ async def test_a_changed_leg_is_refused_before_it_is_sent():
         {"salt": "0x" + "11" * 32},
         {"intent": genuine.intent.model_copy(update={"amount": genuine.intent.amount + 1})},
         {"intent": genuine.intent.model_copy(update={"beneficiary": "0x" + "ab" * 20})},
+    ):
+        assert refused(adapter, dataclasses.replace(genuine, **change)) == INTENT_HASH_MISMATCH, change
+
+
+async def test_a_pay_out_leg_must_carry_the_signed_amount_rail_and_hop():
+    orchestrator, run, adapter = await finished("diverted", auto_answer="confirm")
+    assert orchestrator.chain.status(run.chain_pid) == Status.EXECUTED
+    genuine = leg(orchestrator, run, 3)
+    ten_times = Money(value=str(Decimal(genuine.amount.value) * 10), currency="EUR")
+    for change in (
+        {"amount": ten_times},
+        {"hop": 99, "amount": ten_times},
+        {"hop": 99},
+        {"hop": -1},
+        {"amount": Money(value=genuine.amount.value, currency="USD")},
+        {"rail": "R1"},
+        {"receiver": "momo_gh"},
+        {"hop": len(run.hops), "sender": run.hops[-1]["to"], "receiver": "gcb_gh", "kind": "bank"},
     ):
         assert refused(adapter, dataclasses.replace(genuine, **change)) == INTENT_HASH_MISMATCH, change
 

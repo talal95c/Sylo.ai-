@@ -253,16 +253,40 @@ def test_a_model_can_only_make_the_decision_stricter():
     assert strict.reasons[-1].text == "Model reason."
 
 
-def test_a_failing_model_falls_back_to_the_rules():
-    class Broken:
-        name = "broken"
+class _Broken:
+    name = "broken"
 
-        def score(self, order, ctx):
-            raise RuntimeError("model down")
+    def score(self, order, ctx):
+        raise RuntimeError("model down")
 
-    result = CombinedRisk(RulesRisk(), Broken()).score(*golden_case("diverted"))
-    assert result.score == 64 and result.model == "rules-v0"
+
+def test_a_failing_model_falls_back_to_the_strict_rules_and_says_so():
+    combined = CombinedRisk(RulesRisk(), _Broken())
+    assert not combined.failed
+    result = combined.score(*golden_case("diverted"))
+    lenient = RulesRisk().score(*golden_case("diverted"))
+    assert combined.failed
+    assert result.model == "rules-v0" and "R-DG-01" in result.rules_fired
+    assert result.score > lenient.score and result.tier >= lenient.tier
     assert result.oob_resolvable
+
+
+def test_a_lower_model_score_never_lowers_the_rules_tier():
+    rules = RulesRisk(strict=True)
+    alone = rules.score(*golden_case("diverted"))
+    assert alone.tier == Tier.HIGH
+    combined = CombinedRisk(rules, _FakeModel(50)).score(*golden_case("diverted"))
+    assert combined.tier == Tier.HIGH and combined.score == alone.score
+
+
+async def test_a_model_crash_during_a_run_turns_the_banner_amber():
+    from .conftest import events_of, make_orchestrator
+
+    orchestrator = make_orchestrator()
+    orchestrator.risk = CombinedRisk(RulesRisk(), _Broken())
+    await orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    assert "risk" in orchestrator.degraded
+    assert any("risk" in e["data"]["degraded"] for e in events_of(orchestrator, "system.mode"))
 
 
 def test_combined_risk_requires_oob_from_both_rules_and_model():

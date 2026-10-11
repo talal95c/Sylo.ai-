@@ -30,7 +30,7 @@ class ApiOrchestrator:
 
 def test_live_invoice_api_gates_cleans_and_validates_text():
     disabled = ApiOrchestrator()
-    with TestClient(create_app(Settings(), disabled)) as client:
+    with TestClient(create_app(Settings(demo_public=True), disabled)) as client:
         response = client.post(
             "/v1/scenarios/diverted/run",
             json={"invoiceText": "invoice"},
@@ -40,7 +40,7 @@ def test_live_invoice_api_gates_cleans_and_validates_text():
     assert not disabled.calls
 
     enabled = ApiOrchestrator()
-    with TestClient(create_app(Settings(live_invoice=True), enabled)) as client:
+    with TestClient(create_app(Settings(demo_public=True, live_invoice=True), enabled)) as client:
         cleaned = client.post(
             "/v1/scenarios/diverted/run",
             json={"invoiceText": " \x00Hello\tWorld\n\x01 "},
@@ -65,7 +65,11 @@ def test_live_invoice_api_gates_cleans_and_validates_text():
 def test_live_invoice_api_rate_limit_returns_retry_after():
     now = [100.0]
     orchestrator = ApiOrchestrator()
-    app = create_app(Settings(live_invoice=True), orchestrator, invoice_clock=lambda: now[0])
+    app = create_app(
+        Settings(demo_public=True, live_invoice=True),
+        orchestrator,
+        invoice_clock=lambda: now[0],
+    )
     with TestClient(app) as client:
         first = client.post("/v1/scenarios/diverted/run", json={"invoiceText": "first"})
         now[0] = 105.0
@@ -117,6 +121,7 @@ def test_live_writer_receives_document_and_document_is_removed_after_success_or_
 
     for failure in (None, RuntimeError("writer failed")):
         writer = LiveWriterStub(order, risk, failure=failure)
+        writer.documents[order.id] = "previous document"
         service = CaseService("off", live_writer=writer, live_writer_ready=True)
         if failure is None:
             assert service.write(order, risk, [], document=document).llm == "live"

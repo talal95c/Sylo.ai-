@@ -204,15 +204,11 @@ class CaseService:
         documents = getattr(writer, "documents", None)
         if not isinstance(documents, MutableMapping):
             raise TypeError("case writer cannot accept an invoice document")
-        previous = documents.get(payment_id)
-        had_previous = payment_id in documents
         documents[payment_id] = document
         try:
             return writer.write(payment_id, events)
         finally:
             documents.pop(payment_id, None)
-            if had_previous:
-                documents[payment_id] = previous
 
     def _fallback_cache_dir(self) -> Any | None:
         screen = getattr(self.live_writer, "text_screen", None)

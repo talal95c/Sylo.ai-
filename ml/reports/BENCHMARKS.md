@@ -16,6 +16,14 @@ All evaluation data are synthetic. Passes 1–4 document the prior baselines; Pa
 - Strict-schema run (`json_schema-strict`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=227.49815599991052`, `latencyMs.p95=244.1048390001015`.
 - Both runs returned HTTP 401 for every request, so they do not measure model output or schema conformance; the strict run returned no HTTP 400 schema rejection. The earlier 50%/50% run above used a prior credential state.
 
+### Valid-key rerun — 2026-10-11
+
+- Command: `cd ml && RUN_LIVE=1 uv run pytest tests/test_case_live.py`, `mistral-small-latest`, `json_schema-strict`, 20 variants, run twice (key checked first with `GET /v1/models` → 200).
+- Run 1: `passValidatorRate=0.85`, `fallbackRate=0.15`, `acceptedLessStrictCount=0`, `fallbackReasons={"invalid:citation_mismatch": 2, "invalid:unsupported_claim": 1}`, `repairedCount=1`, latency p50/p95 4,156/8,382 ms, 100.5 s.
+- Run 2 (the committed `s2_redteam.json`): `passValidatorRate=0.85`, `fallbackRate=0.15`, `acceptedLessStrictCount=0`, `fallbackReasons={"invalid:citation_mismatch": 3}`, `repairedCount=2`, latency p50/p95 4,499/7,789 ms, 101.4 s.
+- Total: 34/40 outputs pass the validator, 6/40 fall back to the template, 0/40 accepted outputs are less strict than the template. These replace the 50 %/50 % figure of Block 1, which no committed report backs.
+- `tests/test_case_live.py` now fails on HTTP 401/403 instead of writing a report made only of fallbacks. The scene 2 cache (`sylo_risk/case/cache/PAY-2026-0002.json`) is left unchanged: the test rewrites it as a side effect, and the demo fixtures were recorded with the current one.
+
 ## Block 2 — evaluation harness
 
 ### Model history

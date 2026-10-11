@@ -142,7 +142,8 @@ export function useSylo() {
       runLegit: () => runScenario("legit"),
       runDiverted: (invoiceText?: string) => runScenario("diverted", invoiceText),
       runMuleWave: () => runScenario("muleWave"),
-      runGuardian: () => runScenario("guardian"),
+      runGuardian: () =>
+        sourceKind === "live" ? attack("stolen_verifier_key") : runScenario("guardian"),
       runOutage: () => runScenario("outage"),
       runSimSwap: () => runScenario("diverted_simswap"),
       runHoldExpiry: () => runScenario("diverted_expiry"),
@@ -156,6 +157,6 @@ export function useSylo() {
       reset,
       closeAlert: dismissAlert,
     },
-    available: availableActions(state),
+    available: availableActions(state, sourceKind),
   };
 }

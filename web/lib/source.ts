@@ -11,7 +11,7 @@ export type ScenarioName =
   | "diverted_expiry"
   | "diverted_timelock"
   | "confidential";
-export type AttackName = "release_revoked" | "swap_beneficiary" | "replay";
+export type AttackName = "release_revoked" | "swap_beneficiary" | "replay" | "stolen_verifier_key";
 
 export interface SourceCallbacks {
   onEvent(event: SyloEvent): void;
@@ -160,7 +160,7 @@ export function createLiveSource(engineUrl: string): Source {
         });
       }
       if (name === "guardian") {
-        return Promise.reject(new Error("Guardian incidents are reported by the guardian service; use Replay for the recorded scene."));
+        return Promise.reject(new Error("Start a diverted invoice and wait for the escrow hold: the stolen-key attack runs on the held payment."));
       }
       const scenario = name === "confidential" ? "legit" : name;
       const automated = [
@@ -318,6 +318,7 @@ export function createReplaySource(): Source {
     },
     attack(paymentId, name) {
       if (!paymentId) return Promise.resolve();
+      if (name === "stolen_verifier_key") return playFixture(fixtureFiles.guardian, true);
       const file = name === "swap_beneficiary"
         ? fixtureFiles.swap
         : name === "replay"
