@@ -2,7 +2,7 @@
   "simulated": true,
   "chain": "mock",
   "seed": 42,
-  "cases": 300,
+  "cases": 400,
   "byKind": {
     "I1_substitution": {
       "cases": 100,
@@ -29,6 +29,18 @@
       "diverted": 0
     },
     "I3_modified_amount": {
+      "cases": 100,
+      "refusedByAdapter": 100,
+      "revertedOnChain": 100,
+      "adapterReasons": [
+        "INTENT_HASH_MISMATCH"
+      ],
+      "chainReasons": [
+        "CommitmentMismatch"
+      ],
+      "diverted": 0
+    },
+    "I4_tampered_leg": {
       "cases": 100,
       "refusedByAdapter": 100,
       "revertedOnChain": 100,

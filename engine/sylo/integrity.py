@@ -1,12 +1,13 @@
 """Integrity evaluation (roadmap A2.6, PRD §17.3): a changed or replayed payment must never get through.
 
-    python -m sylo.integrity             # 300 cases, writes engine/reports/integrity.json
-    python -m sylo.integrity --cases 30  # quicker
+    python -m sylo.integrity             # 400 cases, writes engine/reports/integrity.json
+    python -m sylo.integrity --cases 40  # quicker
     python -m sylo.integrity --check     # exit 1 if a case got through
 
-Three kinds of cases, each on a freshly committed payment (mock chain, simulated adapters, seed 42):
+Four kinds of cases, each on a freshly committed payment (mock chain, simulated adapters, seed 42):
 I1 the beneficiary of a leg or of the intent is substituted; I2 an executed leg and the signed intent
-are replayed; I3 the amount is modified. A case is "diverted" when the rail adapter sends the leg or
+are replayed; I3 the amount of the intent is modified; I4 a pay-out leg carries another amount or an
+extra hop while the intent is untouched. A case is "diverted" when the rail adapter sends the leg or
 the chain accepts the call. The expected diversion rate is 0.
 """
 
@@ -19,9 +20,11 @@ import json
 import random
 import sys
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sylo_spec.devkeys import dev_address
+from sylo_spec.models import Money
 from sylo_spec.ports import ChainReverted
 
 from . import ENGINE_DIR
@@ -32,7 +35,7 @@ from .rails import LegRejected
 
 REPORT_PATH = ENGINE_DIR / "reports" / "integrity.json"
 START = datetime(2026, 10, 11, 9, 0, 0, tzinfo=timezone.utc)
-KINDS = ("I1_substitution", "I2_replay", "I3_modified_amount")
+KINDS = ("I1_substitution", "I2_replay", "I3_modified_amount", "I4_tampered_leg")
 SUBSTITUTIONS = (
     {"creditor_account": "GH•• •••• 6660"},
     {"creditor_name": "ATTACKER HOLDINGS LTD"},
@@ -73,6 +76,12 @@ async def _case(orchestrator: Orchestrator, kind: str, rng: random.Random) -> di
     elif kind == "I2_replay":
         adapter = _adapter_refuses(orchestrator, run, genuine)
         chain = _chain_reverts(orchestrator.chain.commit, run.intent, run.intent_signature)
+    elif kind == "I4_tampered_leg":
+        multiplied = Money(value=str(Decimal(genuine.amount.value) * rng.choice((2, 10, 100))), currency="EUR")
+        change = rng.choice(({"amount": multiplied}, {"hop": 99}, {"hop": 99, "amount": multiplied}))
+        adapter = _adapter_refuses(orchestrator, run, dataclasses.replace(genuine, **change))
+        tampered = run.intent.model_copy(update={"amount": int(Decimal(multiplied.value) * 10**6)})
+        chain = _chain_reverts(orchestrator.chain.deposit, tampered, orchestrator.payer_address)
     else:
         delta = rng.choice((-1, 1)) * rng.randrange(1, 5_000_000_000)
         tampered = run.intent.model_copy(update={"amount": max(1, run.intent.amount + delta)})
@@ -116,7 +125,7 @@ async def evaluate(cases_per_kind: int = 100, seed: int = 42) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cases", type=int, default=300, help="total number of cases (a multiple of 3)")
+    parser.add_argument("--cases", type=int, default=400, help="total number of cases (a multiple of 4)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--check", action="store_true", help="do not write the report; fail if a case got through")
     args = parser.parse_args(argv)

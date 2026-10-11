@@ -128,26 +128,31 @@ class RulesRisk:
 class CombinedRisk:
     """Rules give the floor tier and the fired rules; the model gives the score and extra reasons.
 
-    The final tier is max(floorTier, band(score)): the model can only make a decision stricter.
-    If the model raises, the rules' result is used unchanged.
+    The final score is the higher of the two and the tier is never below the rules' own tier: the
+    model can only make a decision stricter. If the model raises, the strict rules decide and
+    ``failed`` is set, so the orchestrator reports ``risk`` as degraded.
     """
 
     def __init__(self, rules: RulesRisk, model: RiskPort) -> None:
         self.rules = rules
         self.model = model
         self.name = f"{rules.name}+{model.name}"
+        self.failed = False
+        self._strict = rules if rules.strict else RulesRisk(strict=True)
 
     def score(self, order: PaymentOrder, ctx: RiskContext) -> RiskResult:
         base = self.rules.score(order, ctx)
         try:
             learned = RiskResult.model_validate(self.model.score(order, ctx))
         except Exception:
-            return base
+            self.failed = True
+            return self._strict.score(order, ctx)
         known = {r.text for r in base.reasons}
         extra = [r for r in learned.reasons if r.text not in known]
+        score = max(base.score, learned.score)
         return RiskResult(
-            score=learned.score,
-            tier=Tier(max(base.floor_tier, band(learned.score))),
+            score=score,
+            tier=Tier(max(base.tier, band(score))),
             floor_tier=base.floor_tier,
             rules_fired=base.rules_fired,
             reasons=base.reasons + extra,
