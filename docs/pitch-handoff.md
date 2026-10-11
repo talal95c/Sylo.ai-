@@ -164,7 +164,7 @@ Timing assumes a 4-minute slot; the live demo carries most of it. The run sheet'
 3. **The signed intent is committed before any money moves.** Any leg that differs from it is refused.
 4. **We never alert the payer by email.** In BEC the mailbox is compromised, so alerts go in-app or by SMS. The event format has no email channel at all.
 5. **Text from invoices and emails is data, never instructions.** It never reaches rules or tools as a command.
-6. **Fail safe.** If the model, the chain or the LLM is missing, the system becomes stricter and shows a banner. Nothing is released by default.
+6. **Fail safe.** If the model, the chain or the LLM is missing, the system becomes stricter overall and shows a banner. Nothing is released by default. (Overall, not on every single payment: see §9, item 7.)
 7. **Simulated things are labelled as simulated. Synthetic data only.** Every security number comes from the evaluation script.
 
 Supporting lines from the PRD you can reuse:

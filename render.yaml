@@ -33,7 +33,7 @@ services:
       - key: JEV_API_KEY
         sync: false
       - key: LIVE_INVOICE
-        value: off
+        value: "on"
       - key: CHAIN_MODE
         value: mock
       - key: DEMO_PUBLIC
