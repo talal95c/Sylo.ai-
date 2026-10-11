@@ -68,7 +68,14 @@ class RouteDecision:
         }
 
 
-def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteModel) -> RouteDecision:
+def choose_route(
+    norms: NormsResult,
+    tier: Tier,
+    amount: float,
+    model: RouteModel,
+    oob_resolvable: bool = False,
+) -> RouteDecision:
+    action_tier = Tier.MEDIUM if tier == Tier.HIGH and oob_resolvable else tier
     scores: list[dict[str, Any]] = []
     allowed: list[tuple[float, str, RouteEval]] = []
     legal: list[tuple[float, str, RouteEval]] = []
@@ -82,7 +89,7 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
         s = round(route_cost(route, amount, model), 2)
         cost_by_id[route.id] = s
         legal.append((s, route.id, evaluation))
-        exclusion = tier_exclusion(tier, route)
+        exclusion = tier_exclusion(action_tier, route)
         scores.append({"routeId": route.id, "s": s, "excludedBy": exclusion})
         if exclusion is None:
             allowed.append((s, route.id, evaluation))
@@ -90,10 +97,10 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
     swift = cost_by_id.get("R1")
     if not allowed:
         return RouteDecision(
-            tier=tier,
+            tier=action_tier,
             route_eval=None,
             scores=scores,
-            reason=texts.NO_ROUTE_DETAIL.format(tier=tier.name),
+            reason=texts.NO_ROUTE_DETAIL.format(tier=action_tier.name),
             settlement=None,
             fees_eur=None,
             s_selected=None,
@@ -104,7 +111,7 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
     best_s, best_id, best = min(allowed, key=lambda c: (c[0], c[1]))
     cheapest_legal = min(legal, key=lambda c: (c[0], c[1]))[0]
     price_of_safety = round(best_s - cheapest_legal, 2)
-    if tier == Tier.LOW:
+    if action_tier == Tier.LOW:
         excluded = [(e.route.id, e.excluded_by or "") for e in norms.routes if e.status != PASS]
         reason = texts.route_reason_low(best_id, best_s, swift, excluded)
         settlement = "DIRECT"
@@ -113,7 +120,7 @@ def choose_route(norms: NormsResult, tier: Tier, amount: float, model: RouteMode
         reason = texts.route_reason_medium(best_id, best_s, swift, holding, price_of_safety)
         settlement = best.route.settlement
     return RouteDecision(
-        tier=tier,
+        tier=action_tier,
         route_eval=best,
         scores=scores,
         reason=reason,

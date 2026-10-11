@@ -350,6 +350,9 @@ class Orchestrator:
         self, run: PaymentRun, norms: NormsResult, risk: RiskResult, decision: RouteDecision, approval_hash: str
     ) -> PaymentIntent:
         order = run.order
+        action_tier = (
+            Tier.MEDIUM if risk.tier == Tier.HIGH and risk.oob_resolvable else risk.tier
+        )
         account = ACCOUNTS[order.creditor_account_id]
         offchain = offchain_hash(
             self._rng.randbytes(32),
@@ -370,6 +373,7 @@ class Orchestrator:
                 "tier": risk.tier.name,
                 "score": risk.score,
                 "rulesFired": risk.rules_fired,
+                "oobResolvable": risk.oob_resolvable,
                 "model": risk.model,
             }
         )
@@ -382,7 +386,7 @@ class Orchestrator:
             offchain_hash=offchain,
             decision_hash=decision_hash,
             approval_hash=approval_hash,
-            tier=int(risk.tier),
+            tier=int(action_tier),
             valid_until=int(run.pacer.now().timestamp()) + 600,
             nonce=self.signer.next_nonce("router_signer"),
         )
@@ -419,11 +423,21 @@ class Orchestrator:
                 "rulesFired": risk.rules_fired,
                 "reasons": [r.to_json_dict() for r in risk.reasons],
                 "model": risk.model,
+                "oobResolvable": risk.oob_resolvable,
             },
         )
 
         await pacer.wait(900)
-        decision = choose_route(norms, risk.tier, order.amount.as_float, self.norms.pack.route_model)
+        action_tier = (
+            Tier.MEDIUM if risk.tier == Tier.HIGH and risk.oob_resolvable else risk.tier
+        )
+        decision = choose_route(
+            norms,
+            risk.tier,
+            order.amount.as_float,
+            self.norms.pack.route_model,
+            oob_resolvable=risk.oob_resolvable,
+        )
         run.decision = decision
         if decision.route_eval is None:
             run.status = "stopped"
@@ -438,7 +452,7 @@ class Orchestrator:
         self._emit(run, "route.selected", decision.to_event_data())
 
         await pacer.wait(1000)
-        conditional = risk.tier == Tier.MEDIUM
+        conditional = action_tier == Tier.MEDIUM
         approvers = [{"name": a.name, "role": texts.APPROVER_ROLES.get(a.id, a.role)} for a in PAYER.approvers]
         approval_hash = hash_record(
             {
@@ -464,13 +478,13 @@ class Orchestrator:
         self._emit(
             run,
             "intent.committed",
-            {"intentHash": to_hex(digest(intent, domain)), "tier": risk.tier.name, **self._tx_fields(tx)},
+            {"intentHash": to_hex(digest(intent, domain)), "tier": Tier(intent.tier).name, **self._tx_fields(tx)},
             simulated=tx.simulated,
         )
         run.status = "in_transit"
 
         executed = False
-        escrowed = risk.tier == Tier.MEDIUM and decision.settlement == "ONCHAIN_ESCROW"
+        escrowed = action_tier == Tier.MEDIUM and decision.settlement == "ONCHAIN_ESCROW"
         for index, hop in enumerate(run.hops):
             duration = CHAIN_HOP_MS if hop["kind"] == "chain" else BANK_HOP_MS
             await pacer.wait(300)
@@ -544,7 +558,11 @@ class Orchestrator:
                 "headline": texts.HELD_HEADLINE,
                 "reasons": [r.to_json_dict() for r in risk.reasons],
                 "protection": texts.PROTECTION,
-                "nextStep": texts.NEXT_STEP,
+                "nextStep": (
+                    f"{texts.NEXT_STEP}\n{texts.HIGH_IDENTITY_ONLY_HOLD}"
+                    if risk.tier == Tier.HIGH and risk.oob_resolvable
+                    else texts.NEXT_STEP
+                ),
                 "expiresAt": expires_at,
             },
             simulated=self.chain_simulated,

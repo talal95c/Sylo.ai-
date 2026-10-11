@@ -120,6 +120,9 @@ NEXT_STEP = (
     "We are asking Savanna Shea on the number already on file for Kwame Asante, after checking that it was "
     "not SIM-swapped."
 )
+HIGH_IDENTITY_ONLY_HOLD = (
+    "High risk on the beneficiary's identity only: held in escrow until out-of-band confirmation"
+)
 ANSWER_DENY = 'Kwame Asante: "We have not changed our bank details. Do not pay this account."'
 ANSWER_CONFIRM = 'Kwame Asante: "Yes, this is our new account."'
 REVOKED_BY = "Analyst (auto-confirmed in v0)"

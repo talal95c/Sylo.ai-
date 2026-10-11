@@ -27,6 +27,7 @@ class RulesRisk:
                 floor_tier=Tier.CRITICAL,
                 rules_fired=["R-HB-01"],
                 reasons=[RiskReason(ref="S", text=texts.REASON_SANCTIONS, rule_id="R-HB-01")],
+                oob_resolvable=False,
                 model=self.name,
             )
 
@@ -67,6 +68,10 @@ class RulesRisk:
             floor_tier=floor,
             rules_fired=[rule[0] for rule in fired],
             reasons=reasons,
+            oob_resolvable=all(
+                rule[0] in {"R-PV-01", "R-FL-01", "R-FL-02", "R-FL-03", "R-NM-01"}
+                for rule in fired
+            ),
             model=self.name,
         )
 
@@ -97,5 +102,6 @@ class CombinedRisk:
             floor_tier=base.floor_tier,
             rules_fired=base.rules_fired,
             reasons=base.reasons + extra,
+            oob_resolvable=base.oob_resolvable and learned.oob_resolvable,
             model=learned.model,
         )

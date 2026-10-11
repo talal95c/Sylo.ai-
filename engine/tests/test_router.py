@@ -11,8 +11,8 @@ MODEL = ENGINE.pack.route_model
 AMOUNT = 85_000.0
 
 
-def _decision(order, tier):
-    return choose_route(ENGINE.evaluate(order), tier, AMOUNT, MODEL)
+def _decision(order, tier, oob_resolvable=False):
+    return choose_route(ENGINE.evaluate(order), tier, AMOUNT, MODEL, oob_resolvable)
 
 
 def test_route_scores_to_two_decimals():
@@ -52,6 +52,17 @@ def test_medium_allows_only_holding_routes():
 def test_high_and_critical_get_no_route():
     for tier in (Tier.HIGH, Tier.CRITICAL):
         assert _decision(DIVERTED_ORDER, tier).route is None
+
+
+def test_high_oob_resolvable_uses_conditional_routes():
+    decision = _decision(DIVERTED_ORDER, Tier.HIGH, oob_resolvable=True)
+    assert decision.tier == Tier.MEDIUM
+    assert decision.route.id == "R3" and decision.settlement == "ONCHAIN_ESCROW"
+
+
+def test_high_without_oob_and_critical_with_oob_have_no_route():
+    assert _decision(DIVERTED_ORDER, Tier.HIGH, oob_resolvable=False).route is None
+    assert _decision(DIVERTED_ORDER, Tier.CRITICAL, oob_resolvable=True).route is None
 
 
 def test_fraud_risk_is_not_an_input_of_the_route_score():
