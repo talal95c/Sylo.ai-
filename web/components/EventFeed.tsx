@@ -305,7 +305,7 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
     <GlowingShadow
       initial={{ opacity: 0, x: 16 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.7, ease, delay: 0.25 }}
+      transition={{ duration: 0.25, ease }}
       layout
       className={cx("flex min-h-0 w-full", expanded ? "flex-1" : "shrink-0")}
       panelClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -354,11 +354,10 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
               return (
                 <motion.li
                   key={`${item.seq}-${item.type}`}
-                  layout="position"
-                  initial={{ opacity: 0, y: -5 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, ease }}
+                  transition={{ duration: 0.18, ease }}
                   className="relative grid grid-cols-[8px_43px_20px_minmax(0,1fr)] items-start gap-x-[7px] py-[9px]"
                 >
                   {index < items.length - 1 ? (

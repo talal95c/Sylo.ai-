@@ -413,7 +413,7 @@ Legit R3 therefore has 5 hops: `payer_rhone→bank_fr→casp_eu→vasp_gh→bank
 
 `legalRef` strings come from PRD §9.3. The excluded R4 shows the first failing rule (`GH_FX_EXPORT_PROCEEDS_NOMINATED_BANK`) with reason text from `texts.py`.
 
-**Tax notices** (information only, never change anything): "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention (1993) in force." (`FR-GH-DTC-1993`) and, when R3 is a candidate, "The EU crypto-asset provider reports this leg under DAC8 (since 1 January 2026)." (`DAC8`).
+**Tax notices** (information only, never change anything): "No Ghanaian withholding tax on payments for goods by a non-resident buyer; France–Ghana tax convention signed in Accra on 5 April 1993, in force since 1 April 1997 (BOFiP BOI-INT-CVB-GHA)." (`FR-GH-DTC-1993`) and, when R3 is a candidate, "The EU crypto-asset provider reports this leg under DAC8 (since 1 January 2026)." (`DAC8`).
 
 ### 5.6 Rules-based risk (`risk_rules.py`, class `RulesRisk`)
 

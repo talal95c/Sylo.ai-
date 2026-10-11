@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { loadGeo, type Institution } from "@/lib/geo";
 import { riskModeForSource } from "@/lib/store";
@@ -26,13 +26,37 @@ export default function SyloApp() {
   const sylo = useSylo();
   const urlView = useSyncExternalStore(noopSubscribe, readUrlView, () => null);
   const [picked, setViewState] = useState<DemoView | null>(null);
-  const [decisionsOpen, setDecisionsOpen] = useState(false);
-  const [feedOpen, setFeedOpen] = useState(false);
+  const [decisionsUserOpen, setDecisionsUserOpen] = useState(false);
+  const [decisionsClosedAtStart, setDecisionsClosedAtStart] = useState<number | null>(null);
+  const [feedUserOpen, setFeedUserOpen] = useState(false);
+  const [feedClosedAtStart, setFeedClosedAtStart] = useState<number | null>(null);
   const [incidentOpen, setIncidentOpen] = useState(false);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
   const autoRunRef = useRef(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const decisionsOpen =
+    decisionsUserOpen ||
+    (sylo.scenarioStartedVersion > 0 &&
+      decisionsClosedAtStart !== sylo.scenarioStartedVersion);
+  const feedOpen =
+    feedUserOpen ||
+    (sylo.scenarioStartedVersion > 0 &&
+      feedClosedAtStart !== sylo.scenarioStartedVersion);
+  const setDecisionsOpen = useCallback(
+    (open: boolean) => {
+      setDecisionsUserOpen(open);
+      setDecisionsClosedAtStart(open ? null : sylo.scenarioStartedVersion);
+    },
+    [sylo.scenarioStartedVersion],
+  );
+  const setFeedOpen = useCallback(
+    (open: boolean) => {
+      setFeedUserOpen(open);
+      setFeedClosedAtStart(open ? null : sylo.scenarioStartedVersion);
+    },
+    [sylo.scenarioStartedVersion],
+  );
 
   useEffect(() => {
     const fromTest = new URLSearchParams(window.location.search).has("scene");
@@ -77,6 +101,7 @@ export default function SyloApp() {
   const globe = view === "globe";
 
   return (
+    <MotionConfig reducedMotion="user">
     <main className="relative h-dvh w-full overflow-hidden">
       <div
         aria-hidden
@@ -125,7 +150,7 @@ export default function SyloApp() {
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>
             <aside data-globe-occluder="left" className="absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-hidden 2xl:w-[372px]">
-              <PaymentCard state={sylo.state} />
+              <PaymentCard state={sylo.state} panelOpen={decisionsOpen} />
               <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} />
             </aside>
 
@@ -149,5 +174,6 @@ export default function SyloApp() {
       />
       <Toast toasts={sylo.toasts} onDismiss={sylo.dismissToast} />
     </main>
+    </MotionConfig>
   );
 }

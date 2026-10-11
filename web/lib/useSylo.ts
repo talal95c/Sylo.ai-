@@ -10,6 +10,7 @@ import {
   resetForSourceChange,
   type ViewState,
 } from "./store";
+import { readyAfterTerminalBacklog } from "./liveReady";
 import {
   createLiveSource,
   createReplaySource,
@@ -20,12 +21,18 @@ import {
 } from "./source";
 import { engineConnectTimeoutMs, engineUrl } from "./engine";
 
-type UiAction = { type: "ui.closeAlert" } | { type: "ui.sourceChanged" };
+type UiAction =
+  | { type: "ui.closeAlert" }
+  | { type: "ui.liveBacklogSettled" }
+  | { type: "ui.sourceChanged" };
 type HookAction = SyloEvent | UiAction;
 
 function hookReducer(state: ViewState, action: HookAction): ViewState {
   if (!("v" in action)) {
     if (action.type === "ui.closeAlert") return closeAlert(state);
+    if (action.type === "ui.liveBacklogSettled") {
+      return readyAfterTerminalBacklog(state);
+    }
     return resetForSourceChange(state);
   }
   return reduce(state, action);
@@ -35,6 +42,7 @@ const offlineNotice = "Engine offline: replaying recorded events";
 
 export function useSylo() {
   const [state, dispatch] = useReducer(hookReducer, initialState);
+  const [scenarioStartedVersion, setScenarioStartedVersion] = useState(0);
   const [sourceKind, setSourceKindState] = useState<SourceKind>(
     process.env.NEXT_PUBLIC_SOURCE === "replay" ? "replay" : "live",
   );
@@ -44,6 +52,8 @@ export function useSylo() {
   const [ready, setReady] = useState(false);
   const sourceRef = useRef<Source | null>(null);
   const toastId = useRef(0);
+  const scenarioStartedCount = useRef(0);
+  const liveBacklogChecked = useRef(false);
   const activePaymentId = state.payment?.paymentId;
 
   useEffect(() => {
@@ -56,6 +66,17 @@ export function useSylo() {
     let opened = false;
     let initialTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let backlogTimer: ReturnType<typeof setTimeout> | undefined;
+    const initialLiveConnect = sourceKind === "live" && !liveBacklogChecked.current;
+
+    const scheduleBacklogCheck = () => {
+      if (!initialLiveConnect || liveBacklogChecked.current) return;
+      if (backlogTimer) clearTimeout(backlogTimer);
+      backlogTimer = setTimeout(() => {
+        liveBacklogChecked.current = true;
+        dispatch({ type: "ui.liveBacklogSettled" });
+      }, 500);
+    };
 
     const switchToReplay = () => {
       setNotice(offlineNotice);
@@ -64,11 +85,19 @@ export function useSylo() {
 
     source.start({
       onEvent(event) {
+        if (event.type === "scenario.started") {
+          scenarioStartedCount.current += 1;
+          setScenarioStartedVersion(scenarioStartedCount.current);
+        }
         dispatch(event);
+        scheduleBacklogCheck();
       },
       onStatus(status) {
         if (status.notice) setNotice(status.notice);
-        if (status.connected) setReady(true);
+        if (status.connected) {
+          setReady(true);
+          scheduleBacklogCheck();
+        }
         if (status.kind !== "live") return;
         if (status.connected) {
           opened = true;
@@ -92,6 +121,7 @@ export function useSylo() {
     return () => {
       if (initialTimer) clearTimeout(initialTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (backlogTimer) clearTimeout(backlogTimer);
       source.stop();
       if (sourceRef.current === source) sourceRef.current = null;
     };
@@ -156,6 +186,7 @@ export function useSylo() {
 
   return {
     state,
+    scenarioStartedVersion,
     sourceKind,
     notice,
     ready,

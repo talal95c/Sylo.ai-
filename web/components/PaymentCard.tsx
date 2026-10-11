@@ -2,29 +2,12 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { FeedItem, PaymentStatus, ViewState } from "@/lib/store";
+import type { FeedItem, ViewState } from "@/lib/store";
+import { paymentStatusView } from "@/lib/paymentStatus";
 import { RouteQuote } from "./RouteQuote";
-import { Dot, ease, shortHash, Spinner, Tag } from "./ui";
+import { cx, Dot, ease, shortHash, Spinner, Tag } from "./ui";
 
-const STATUS: Record<PaymentStatus, { label: string; color: string; busy?: boolean }> = {
-  idle: { label: "Ready", color: "rgba(0,0,0,.38)" },
-  deciding: { label: "Decision in progress", color: "var(--accent)", busy: true },
-  in_transit: { label: "In transit", color: "var(--accent)", busy: true },
-  held: { label: "Held in escrow", color: "var(--medium)" },
-  awaiting_supplier: { label: "Awaiting supplier", color: "var(--medium)", busy: true },
-  awaiting_analyst: { label: "Awaiting analyst", color: "var(--medium)", busy: true },
-  frozen: { label: "Frozen by the guardian", color: "var(--danger)" },
-  stopped: { label: "Stopped", color: "var(--danger)" },
-  credited: { label: "Supplier credited", color: "var(--low)" },
-};
-
-function statusMeta(status: PaymentStatus, refunded: boolean) {
-  const meta = STATUS[status];
-  return status === "stopped" && refunded ? { ...meta, label: "Stopped and refunded" } : meta;
-}
-
-export function StatusPill({ status, refunded = false }: { status: PaymentStatus; refunded?: boolean }) {
-  const meta = statusMeta(status, refunded);
+export function StatusPill({ meta }: { meta: ReturnType<typeof paymentStatusView> }) {
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
@@ -43,20 +26,20 @@ export function StatusPill({ status, refunded = false }: { status: PaymentStatus
   );
 }
 
-export function PaymentCard({ state }: { state: ViewState }) {
+export function PaymentCard({ state, panelOpen = false }: { state: ViewState; panelOpen?: boolean }) {
   const payment = state.payment;
-  const status = statusMeta(payment?.status ?? "idle", state.refunded);
+  const status = paymentStatusView(state);
 
   return (
-    <motion.section layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease, delay: 0.1 }} className="card shrink-0 overflow-clip rounded-[18px]" aria-label="Payment">
+    <motion.section layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease }} className={cx("card overflow-clip rounded-[18px]", panelOpen ? "flex min-h-0 flex-1 flex-col" : "shrink-0")} aria-label="Payment">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[18px] bg-white px-4 pb-2 pt-4">
         <Tag index="01">Payment</Tag>
-        <StatusPill status={payment?.status ?? "idle"} refunded={state.refunded} />
+        <StatusPill meta={status} />
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
         {payment ? (
-          <motion.div key={payment.paymentId} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.35, ease }} className="px-4 pb-3.5 pt-1">
+          <motion.div key={payment.paymentId} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.35, ease }} className={cx("px-4 pb-3.5 pt-1", panelOpen && "min-h-0 flex-1 overflow-y-auto")}>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-[31px] font-semibold leading-none tabular-nums">
                 {formatAmount(payment.amount.value, payment.amount.currency)}
