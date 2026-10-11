@@ -79,7 +79,7 @@ export interface RiskScoredData {
   score: number;
   tier: Tier;
   rulesFired: string[];
-  reasons: { ref: string; text: string }[];
+  reasons: { ref: string; text: string; ruleId?: string | null }[];
   model: string;
   oobResolvable?: boolean;
 }
@@ -183,7 +183,7 @@ export interface PaymentHeldData {
   at: "escrow" | "bank";
   tier: Tier;
   headline: string;
-  reasons: { ref: string; text: string }[];
+  reasons: { ref: string; text: string; ruleId?: string | null }[];
   protection: string;
   nextStep: string;
   expiresAt: string;

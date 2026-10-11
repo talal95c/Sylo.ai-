@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SyloEvent } from "../events";
-import { describe as describeEvent, outcomeBadge } from "../feed";
+import { describe as describeEvent, distinctReasons, formatEur, outcomeBadge } from "../feed";
 
 function fixture(name: string): SyloEvent[] {
   const contents = readFileSync(
@@ -145,5 +145,41 @@ describe("feed outcome", () => {
       const labels = fixture(name).map((sceneEvent) => describeEvent(sceneEvent).text);
       expect(labels.every((label) => !label.startsWith("Event received:"))).toBe(true);
     }
+  });
+});
+
+describe("feed wording", () => {
+  it("shows rule codes and scene ids as sentences", () => {
+    expect(describeEvent(first("scene1-legit", "norms.checked")).text).toContain("nominated bank");
+    expect(describeEvent(first("scene1-legit", "norms.checked")).text).not.toContain("GH_FX_EXPORT");
+    expect(describeEvent(event("scenario.started", { scenario: "mule_wave" })).text).toBe("Scene started: Mule wave");
+    expect(describeEvent(event("guardian.incident", { headline: "Hold frozen", action: "FREEZE_AND_PAUSE", incidentId: "INC-1" })).text)
+      .toContain("Hold frozen and corridor paused");
+  });
+
+  it("titles an alert by its audience and channel, not as a security alert", () => {
+    const payer = describeEvent(event("alert.raised", { audience: "payer", channel: "SMS", to: "Claire Martin", text: "Funds returned." }));
+    expect(payer.title).toBe("Message to the payer (SMS)");
+    expect(payer.text).toBe("SMS to Claire Martin (payer): Funds returned.");
+    const bank = describeEvent(event("alert.raised", { audience: "beneficiary_bank", channel: "NETWORK", to: "mule_bank", text: "Freeze." }));
+    expect(bank.text).toContain("Volta Rural Bank (beneficiary's bank)");
+  });
+
+  it("titles each attack by its name", () => {
+    expect(describeEvent(event("attack.attempted", { attack: "replay", description: "x" })).title).toBe("Replay attempted");
+  });
+
+  it("formats every amount the same way", () => {
+    expect(formatEur("85000.00")).toBe("€85,000");
+    expect(formatEur(216.5)).toBe("€216.50");
+    expect(describeEvent(first("scene1-legit", "payment.created")).text).toContain("€85,000");
+  });
+
+  it("drops a model reason that repeats a rule that fired", () => {
+    const reasons = (first("scene2-diverted", "risk.scored").data as { reasons: { text: string; ruleId?: string | null }[] }).reasons;
+    const shown = distinctReasons(reasons);
+    expect(shown.length).toBeLessThan(reasons.length);
+    expect(shown.filter((reason) => reason.ruleId)).toHaveLength(reasons.filter((reason) => reason.ruleId).length);
+    expect(shown.some((reason) => /name match score/i.test(reason.text))).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 [project]
 name = "sylo-chain"
 version = "0.1.0"
-description = "Sylo.ai Lane C: Avalanche Fuji client implementing ChainPort (skeleton in v0)"
+description = "Sylo.ai Lane C: Avalanche Fuji client implementing ChainPort, guardian and attack scripts"
 requires-python = ">=3.11"
 dependencies = [
   "web3>=7",

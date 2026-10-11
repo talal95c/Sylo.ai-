@@ -1,3 +1,4 @@
+import { formatEur } from "./feed";
 import type { ViewState } from "./store";
 
 export type FlowNodeId =
@@ -145,8 +146,6 @@ export function edgeStatus(edge: FlowEdge, statuses: Record<FlowNodeId, FlowStat
 
 export type NarrationTone = "neutral" | "accent" | "low" | "medium" | "danger";
 
-const formatEur = (value: string | number) =>
-  `EUR ${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 export function narrate(state: ViewState): { tone: NarrationTone; text: string } {
   const p = state.payment;
@@ -157,7 +156,7 @@ export function narrate(state: ViewState): { tone: NarrationTone; text: string }
   if (state.credited)
     return {
       tone: "low",
-      text: `Credited. €${state.credited.routeCostEur.toLocaleString("en-US")} all-in instead of €${state.credited.swiftRouteCostEur.toLocaleString("en-US")} via SWIFT.`,
+      text: `Credited. ${formatEur(state.credited.routeCostEur)} all-in instead of ${formatEur(state.credited.swiftRouteCostEur)} via SWIFT.`,
     };
   if (!p || !event) return { tone: "neutral", text: "Pick a scenario below. Each node lights up as the engine emits its events." };
 
