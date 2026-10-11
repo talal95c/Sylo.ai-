@@ -26,6 +26,24 @@ forge test                                # includes the shared EIP-712 vector f
 make -C .. anvil-deploy                   # deploy to a throwaway Anvil node; writes deployments/31337.json
 ```
 
+## Security testing
+
+PRD §13.3 invariants, beyond the unit tests in `PaymentRegistry.t.sol` and `PaymentEscrow.t.sol`:
+
+| Test | What it checks |
+|---|---|
+| `EscrowInvariants.t.sol` + `EscrowHandler.sol` | Random sequences (256 runs × 100 calls) of commit, deposit, tampered deposit, verify, revoke, markExecuted, release, refund, freeze, pause, nonce replay and time jumps, from random callers. The handler predicts every outcome from the rules and counts disagreements. After each call: (1) escrow balance = open holds; (2) tokens stay with the payer, the escrow or intent beneficiaries; (3–6) no disagreement; holds mirror their committed intent; REVOKED and EXECUTED are final. |
+| `EscrowFuzz.t.sol` | One action, random inputs: any altered intent field reverts `CommitmentMismatch`; release pays exactly the committed beneficiary, whoever calls; release needs CONFIRMED and an unexpired hold; anyone refunds after revoke or expiry, nobody but the analyst before; one deposit per payment; single-use nonces; only MEDIUM is escrowed; only the router key commits and only the router role deposits. |
+| `Reentrancy.t.sol` (invariant 7) | A hostile token calls back into `release` and `refund` during every transfer of `deposit`, `release` and `refund`; the guard blocks each, and money moves once. |
+| `script/mutation-check.sh` | Plants 11 known bugs in `src/` one at a time (skipped freeze or pause check, early refund, no digest check, any tier, double deposit, wrong refund recipient, lost accounting, no reentrancy guard, nonce not recorded, executed payment revocable) and checks the suites above catch each: 11/11. Restores `src/` afterwards. |
+
+Gas (median, `forge test --gas-report`): `commit` 171k, `deposit` 204k, `recordVerification` 65k, `release` 84k, `revoke` 61k, `refund` 64k, `freeze` 33k, `markExecuted` 27k. A full MEDIUM flow (commit, deposit, verify, release) is about 525k gas.
+
+Slither (`uvx --from slither-analyzer slither . --filter-paths "lib/|test/|script/"`) reports, after triage:
+- `arbitrary-send-erc20` in `deposit`: the escrow pulls from the `payer` argument, which the signed intent does not bind. Only the router role can call it, and only for a committed intent whose beneficiary is fixed, so the money still goes to that beneficiary or back to the account it came from. A compromised relayer could make another treasury that approved the escrow fund the intent. Today only the EU CASP approves it. Fix in the roadmap: add `payer` to `PaymentIntent` (EIP-712 change for every lane).
+- `unused-return` on `ECDSA.tryRecoverCalldata`: the ignored value is the error argument; the error code is checked.
+- `timestamp`: holds last hours, so validator drift of seconds does not matter (also excluded in `foundry.toml`).
+
 `script/Deploy.s.sol` reads `DEPLOYER_PK` and the role addresses (`RELAYER_ADDRESS`, `ROUTER_SIGNER_ADDRESS`, `VERIFIER_SIGNER_ADDRESS`, `ANALYST_SIGNER_ADDRESS`, `GUARDIAN_ADDRESS`, `EU_CASP_ADDRESS`) from the environment. `make anvil-deploy` fills them with the public Anvil development accounts; never fund those keys on a real network.
 
 ## Fuji
