@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ruleLabel } from "@/lib/feed";
+import { formatEventTime } from "@/lib/eventTime";
+import { paymentStatusView } from "@/lib/paymentStatus";
 import { buildQuote } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
@@ -30,15 +32,15 @@ const STEP_EVENTS: Record<string, string[]> = {
   outcome: ["payment.credited", "payment.stopped", "tx.reverted"],
 };
 
-function eventTime(state: ViewState, key: string) {
-  const start = state.feed[0]?.ts;
+function eventTime(state: ViewState, key: string, sourceKind: "live" | "replay") {
+  const start = [...state.feed].reverse().find((item) => item.type === "scenario.started")?.ts ?? state.feed[0]?.ts;
   if (!start) return "--";
   const event = [...state.feed].reverse().find((item) => STEP_EVENTS[key]?.includes(item.type));
   if (!event) return "--";
-  return event.ts.slice(11, 19);
+  return formatEventTime(event.ts, sourceKind, start);
 }
 
-function buildSteps(state: ViewState): Step[] {
+function buildSteps(state: ViewState, sourceKind: "live" | "replay"): Step[] {
   const p = state.payment;
   const final = p?.status === "credited" || p?.status === "stopped";
   const excluded = state.routes.filter((route) => route.status === "EXCLUDED");
@@ -111,7 +113,7 @@ function buildSteps(state: ViewState): Step[] {
       value = step.warn && waiting ? "warn" : "running";
     }
     const defaultBadge = value === "running" ? "Processing" : value === "pending" ? "Pending" : value === "skipped" ? "Skipped" : value === "warn" ? "Review" : value === "fail" ? "Blocked" : "Complete";
-    return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key), badge: step.badge ?? defaultBadge, extra: step.extra };
+    return { key: step.key, label: step.label, detail: step.detail, state: value, time: eventTime(state, step.key, sourceKind), badge: step.badge ?? defaultBadge, extra: step.extra };
   });
 }
 
@@ -138,7 +140,7 @@ function RouteTable({ state }: { state: ViewState }) {
           const exclusion = ruleLabel(score.excludedBy ?? route?.excludedBy ?? "Excluded");
           return (
             <div key={score.routeId} className={cx("grid grid-cols-[18px_minmax(0,1fr)_auto] items-baseline gap-1.5 rounded-md px-2 py-1 text-[11px] leading-snug", chosen ? "bg-[var(--accent-soft)] text-accent" : "text-ink-2")}>
-              <span className={cx("font-mono text-[9.5px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
+              <span className={cx("font-mono text-[10px]", chosen ? "text-accent" : "text-ink-3")}>{score.routeId}</span>
               <span className={excluded ? "text-ink-3 line-through decoration-[rgba(0,0,0,.25)]" : chosen ? "font-medium" : ""}>{route?.name ?? score.routeId}</span>
               <span className={cx("max-w-24 truncate tabular-nums", excluded && "text-[var(--danger)]")} title={excluded ? exclusion : undefined}>{excluded ? exclusion : typeof score.s === "number" ? euros(score.s) : "—"}</span>
             </div>
@@ -178,15 +180,15 @@ function decisionSummary(state: ViewState) {
   return { title: "Awaiting events", detail: "The panel updates as the engine reports each step.", color: "var(--ink-3)" };
 }
 
-export function DecisionSteps({ state, expanded, onExpandedChange }: { state: ViewState; expanded: boolean; onExpandedChange: (expanded: boolean) => void }) {
-  const steps = buildSteps(state);
+export function DecisionSteps({ state, expanded, onExpandedChange, sourceKind = "replay" }: { state: ViewState; expanded: boolean; onExpandedChange: (expanded: boolean) => void; sourceKind?: "live" | "replay" }) {
+  const steps = buildSteps(state, sourceKind);
   const completed = steps.filter((step) => step.state === "done" || step.state === "warn" || step.state === "fail").length;
   const summary = decisionSummary(state);
   const final =
     state.payment?.status === "credited" || state.payment?.status === "stopped";
   const summaryCard = (
     <div className="mx-4 mb-4 rounded-lg bg-[var(--accent-soft)] px-3 py-3">
-      <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {summary.title.toLowerCase()}</div>
+      <div className="flex items-center gap-2 text-[11.5px] font-semibold text-accent"><span className="grid size-5 place-items-center rounded-md border border-[color-mix(in_srgb,var(--accent)_16%,white)] bg-white text-[11px]">✣</span>Decision: {final ? paymentStatusView(state).label : summary.title}</div>
       <p className="mt-1 text-[11px] leading-relaxed text-ink-2">{summary.detail}</p>
     </div>
   );
@@ -195,7 +197,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
       <PanelHeaderButton
         index="02"
         title="Engine decisions"
-        meta={`${completed} / ${steps.length} steps`}
+        meta={`${completed} · ${steps.length} steps`}
         expanded={expanded}
         controls="engine-decisions-content"
         onToggle={() => onExpandedChange(!expanded)}
@@ -217,7 +219,7 @@ export function DecisionSteps({ state, expanded, onExpandedChange }: { state: Vi
       <ol className="px-4 py-1">
         {steps.map((step, index) => (
           <motion.li key={step.key} layout="position" transition={{ duration: 0.25, ease }} className="relative grid grid-cols-[54px_22px_minmax(0,1fr)_auto] items-start gap-2 py-2">
-            <time className="pt-0.5 font-mono text-[9.5px] text-ink-3">{step.time}</time>
+            <time className="pt-0.5 font-mono text-[10px] text-ink-3">{step.time}</time>
             <span data-timeline-column className="grid w-[22px] self-stretch grid-rows-[18px_minmax(0,1fr)] justify-items-center">
               <span data-timeline-marker className="relative z-[1] col-start-1 row-start-1 grid size-[18px] place-items-center rounded-full border bg-white" style={{ color: STEP_COLOR[step.state], borderColor: `color-mix(in srgb, ${STEP_COLOR[step.state]} 42%, white)` }}>
                 <AnimatePresence mode="wait" initial={false}><motion.span key={step.state} initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ duration: 0.18 }} className="grid place-items-center"><StepIcon state={step.state} index={index} /></motion.span></AnimatePresence>

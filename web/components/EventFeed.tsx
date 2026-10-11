@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { outcomeBadge } from "@/lib/feed";
+import { formatEventTime } from "@/lib/eventTime";
 import type { FeedItem } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { cx, ease, PanelHeaderButton, shortHash } from "./ui";
@@ -267,10 +268,6 @@ function descriptionFor(item: FeedItem) {
   }
 }
 
-function clock(ts: string) {
-  return ts.slice(11, 19);
-}
-
 function EventIcon({ name }: { name: EventIconName }) {
   const glyphs = {
     alert: <><path d="M10 2.8 17.3 16H2.7L10 2.8Z" /><path d="M10 7v4.2M10 14v.1" /></>,
@@ -298,7 +295,7 @@ function EventIcon({ name }: { name: EventIconName }) {
   );
 }
 
-export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: { feed: FeedItem[]; expanded: boolean; onExpandedChange: (expanded: boolean) => void; onOpenIncident?: () => void }) {
+export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident, sourceKind = "replay" }: { feed: FeedItem[]; expanded: boolean; onExpandedChange: (expanded: boolean) => void; onOpenIncident?: () => void; sourceKind?: "live" | "replay" }) {
   const items = [...feed].reverse();
 
   return (
@@ -376,9 +373,9 @@ export function EventFeed({ feed, expanded, onExpandedChange, onOpenIncident }: 
                   />
                   <time
                     dateTime={item.ts}
-                    className="pt-[3px] font-mono text-[9px] leading-none tabular-nums text-ink-3"
+                    className="pt-[3px] font-mono text-[10px] leading-none tabular-nums text-ink-3"
                   >
-                    {clock(item.ts)}
+                    {formatEventTime(item.ts, sourceKind, [...feed].reverse().find((event) => event.type === "scenario.started")?.ts)}
                   </time>
                   <span
                     className="grid size-5 place-items-center text-[rgba(25,37,68,0.68)]"
