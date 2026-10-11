@@ -222,6 +222,20 @@ DENIED_ACCOUNT_DETAIL = (
 )
 ALERT_DENIED_ACCOUNT = "Payment not sent: your supplier told us this bank account is not theirs."
 
+# Confidential chain leg with eERC (PRD §13.6)
+CONFIDENTIAL_TRANSFER = (
+    "Sent as an eERC confidential transfer: the amount is not readable on-chain. The designated auditor "
+    "decrypted EUR {amount}, which matches the payment."
+)
+CONFIDENTIAL_FALLBACK = (
+    "The confidential leg is unavailable ({why}). This leg was sent as a public transfer instead: "
+    "the amount is visible on-chain."
+)
+CONFIDENTIAL_MISMATCH_HEADLINE = "Payment stopped: the confidential leg does not match the payment"
+CONFIDENTIAL_MISMATCH = (
+    "The auditor decrypted EUR {seen} for a payment of EUR {expected}. The next leg is not sent and an analyst is alerted."
+)
+
 # Hold expiry and time-lock (PRD §12.3), shown in seconds with the demo clock
 EXPIRY_BY = "Hold expiry (automatic)"
 STOPPED_DETAIL_EXPIRED = (

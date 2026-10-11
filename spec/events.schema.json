@@ -96,6 +96,7 @@
     { "if": { "properties": { "type": { "const": "rail.up" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/RailUp" } } } },
     { "if": { "properties": { "type": { "const": "clock.advanced" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ClockAdvanced" } } } },
     { "if": { "properties": { "type": { "const": "payee.verification" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/PayeeVerification" } } } },
+    { "if": { "properties": { "type": { "const": "confidential.transfer" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/ConfidentialTransfer" } } } },
     { "if": { "properties": { "type": { "const": "timelock.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOn" } } } },
     { "if": { "properties": { "type": { "const": "timelock.off" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/TimeLockOff" } } } },
     { "if": { "properties": { "type": { "const": "killswitch.on" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/KillSwitchOn" } } } },
@@ -678,6 +679,27 @@
         "simSwapRecent": { "type": "boolean" },
         "result": { "enum": ["CONFIRMED", "DENIED", null] },
         "text": { "type": "string" }
+      }
+    },
+    "ConfidentialTransfer": {
+      "description": "P1 (PRD §13.6). The chain leg of a payment that needs no hold, sent as an eERC confidential transfer: the amount is not readable on-chain and the designated auditor decrypts it. Addresses and the amounts wrapped and unwrapped at the two ends stay visible.",
+      "type": "object",
+      "required": ["hop", "from", "to", "token", "amountHidden", "txHash", "auditorMatches"],
+      "additionalProperties": true,
+      "properties": {
+        "hop": { "type": "integer", "minimum": 0 },
+        "from": { "$ref": "#/$defs/InstitutionId" },
+        "to": { "$ref": "#/$defs/InstitutionId" },
+        "token": { "const": "eEURC" },
+        "amountHidden": { "const": true },
+        "txHash": { "$ref": "#/$defs/Hash32" },
+        "explorerUrl": { "type": ["string", "null"] },
+        "auditorDecryptedAmountEur": { "type": ["number", "null"] },
+        "auditorMatches": { "type": "boolean" },
+        "metadataEncrypted": { "type": "boolean" },
+        "hidden": { "type": "array", "items": { "type": "string" } },
+        "visible": { "type": "array", "items": { "type": "string" } },
+        "text": { "type": ["string", "null"] }
       }
     },
     "TimeLockOn": {

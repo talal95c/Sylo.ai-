@@ -38,6 +38,7 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 | `samples-scene3-mule-wave.jsonl` | v2. Three payments of other payers (`traffic.sample`), `cluster.detected`, `breaker.on`, then the diverted payment into the same region: HIGH with rule R-CB-01, held, revoked |
 | `samples-scene4-guardian.jsonl` | v2. While the diverted payment is held, `guardian.incident` (the guardian froze it); the supplier confirms, `release` reverts, the analyst revokes |
 | `samples-scene5-outage.jsonl` | v2. Scenario `outage`: `rail.down` for R3, the legitimate payment goes through R1, `rail.up` |
+| `samples-confidential.jsonl` | The legitimate payment with `CONFIDENTIAL_MODE=simulated`: its chain leg is an eERC confidential transfer (`confidential.transfer`) |
 | `samples-hold-expiry.jsonl`, `samples-time-lock.jsonl` | Demo clock: a hold that expires and is refunded (`diverted_expiry`), and a confirmed first payment to a new account that waits for its 24-hour time-lock at the bank (`diverted_timelock`) |
 | `cluster-sample.json` | v2. One synthetic mule cluster near Aflao (coarse points only), the engine's fallback when Lane B's detector is not installed, and the three payments of the mule wave (three payers, one young account; `accountAgeDays` and `successfulPayments` feed the detector) |
 

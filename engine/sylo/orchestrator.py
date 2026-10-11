@@ -54,6 +54,7 @@ from .breakers import BreakerError, Breakers, apply_breaker, apply_degraded
 from .bus import EventBus
 from .case import CaseService, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
+from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
 from .config import Settings
 from .journal import Journal
 from .norms import NormsEngine, NormsResult
@@ -81,6 +82,7 @@ CONTACT_MIN_DAYS = 30
 SIM_EVENTS = ("rail_down", "rail_up", "mule_wave", "sim_swap", "clock", "compromised_connector", "stolen_verifier_key")
 THIEF_RELEASE_MS = 900
 CASE_TIMEOUT_S = 10.0
+CONFIDENTIAL_TIMEOUT_S = 150.0
 KILL_REFUSALS = 2
 KILL_WINDOW_S = 600.0
 CLUSTER_WINDOW_MINUTES = 60
@@ -258,6 +260,7 @@ class Orchestrator:
         token: str | None = None,
         case: CaseService | None = None,
         journal: Journal | None = None,
+        confidential: ConfidentialLeg | None = None,
     ) -> None:
         self.bus = bus
         self.risk = risk
@@ -272,6 +275,7 @@ class Orchestrator:
         self.token = token or DEFAULT_TOKEN
         self.case = case or CaseService()
         self.journal = journal or Journal()
+        self.confidential = confidential
         self.boot_id = uuid.uuid4().hex[:12]
         self.chain_simulated = chain.mode != "fuji"
         self.telecom = SimSwapMock(clock=self.now)
@@ -338,6 +342,7 @@ class Orchestrator:
             "bootId": self.boot_id,
             "humanSteps": self.settings.human_steps,
             "clusters": "sample" if self.cluster_stub else "detector",
+            "confidential": self.confidential.mode if self.confidential is not None else "off",
         }
 
     def mode_event(self) -> dict[str, Any]:
@@ -1516,6 +1521,10 @@ class Orchestrator:
             leg = self._leg_message(run, index, hop)
             if not await self._send_leg(run, adapter, leg, duration):
                 return
+            if hop["kind"] == "chain" and hold_mode is None and self.confidential is not None:
+                # No hold is needed, so the chain leg can be confidential (a held payment keeps the public escrow).
+                if not await self._confidential_leg(run, index, hop):
+                    return
             if hold_mode == "escrow" and index == hold_hop:
                 if not await self._hold_and_verify(run, intent, index, "escrow"):
                     return
@@ -1607,6 +1616,54 @@ class Orchestrator:
             simulated=True,
         )
         return True
+
+    async def _confidential_leg(self, run: PaymentRun, index: int, hop: dict[str, str]) -> bool:
+        """The chain leg as an eERC confidential transfer, after the adapter accepted the leg. Returns False
+        (payment stopped) only when the auditor's amount does not match. If the confidential leg cannot
+        be made, the leg stays public and the banner says so."""
+        assert self.confidential is not None
+        amount = run.order.amount.as_float
+        try:
+            receipt = await asyncio.wait_for(
+                asyncio.to_thread(self.confidential.transfer, run.order.id, amount), timeout=CONFIDENTIAL_TIMEOUT_S
+            )
+        except Exception as err:
+            why = str(err) if str(err) else type(err).__name__
+            log.warning("confidential leg unavailable (%s); the leg stays public", why)
+            self._degrade("confidential")
+            self._alert(run, "analyst", texts.ANALYST, "IN_APP", texts.CONFIDENTIAL_FALLBACK.format(why=why))
+            return True
+        matches = receipt.auditor_amount_eur is not None and abs(receipt.auditor_amount_eur - amount) < 0.005
+        self._emit(
+            run,
+            "confidential.transfer",
+            {
+                "hop": index,
+                "from": hop["from"],
+                "to": hop["to"],
+                "token": TOKEN,
+                "amountHidden": True,
+                "txHash": receipt.tx_hash,
+                "explorerUrl": receipt.explorer_url,
+                "depositTxHash": receipt.deposit_tx_hash,
+                "withdrawTxHash": receipt.withdraw_tx_hash,
+                "auditorDecryptedAmountEur": receipt.auditor_amount_eur,
+                "auditorMatches": matches,
+                "metadataEncrypted": receipt.metadata_payment_id is not None,
+                "hidden": list(HIDDEN),
+                "visible": list(VISIBLE),
+                "text": texts.CONFIDENTIAL_TRANSFER.format(amount=texts.eur(amount)) if matches else None,
+            },
+            simulated=receipt.simulated,
+        )
+        if matches:
+            return True
+        seen = "unknown" if receipt.auditor_amount_eur is None else texts.eur(receipt.auditor_amount_eur)
+        detail = texts.CONFIDENTIAL_MISMATCH.format(seen=seen, expected=texts.eur(amount))
+        self._alert(run, "analyst", texts.ANALYST, "IN_APP", detail, headline=texts.CONFIDENTIAL_MISMATCH_HEADLINE)
+        run.status = "stopped"
+        self._emit(run, "payment.stopped", {"headline": texts.CONFIDENTIAL_MISMATCH_HEADLINE, "detail": detail}, simulated=True)
+        return False
 
     # --- hold, out-of-band check, outcome ----------------------------------------------------
 
@@ -2135,6 +2192,11 @@ def build_orchestrator(
     writer, llm_degraded = load_case_writer(settings, env)
     if llm_degraded:
         degraded.append("llm")
+    confidential, confidential_degraded = load_confidential_leg(
+        settings.confidential_mode, settings.eerc_url, settings.explorer_base_url
+    )
+    if confidential_degraded:
+        degraded.append("confidential")
     journal = Journal(settings.journal_path)
     bus = bus or EventBus()
     bus.add_listener(journal.record_event)
@@ -2152,6 +2214,7 @@ def build_orchestrator(
         token=settings.token_address,
         case=CaseService(settings.llm_mode, writer),
         journal=journal,
+        confidential=confidential,
     )
     holder["o"] = orchestrator
     return orchestrator

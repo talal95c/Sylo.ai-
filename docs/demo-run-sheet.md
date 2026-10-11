@@ -22,6 +22,7 @@ Flags in `.env` (the banner shows what is really running):
 | `RISK_MODE` | `model` once Lane B's model is installed | `rules`: diverted is MEDIUM 64 instead of HIGH 77, same hold |
 | `LLM_MODE` | `cached` once Lane B's case writer exists | `off`: the case file is built from the rules |
 | `HUMAN_STEPS` | `manual` once the payer panel and the analyst drawer call the API | `auto`: the engine plays the approvals and the analyst |
+| `CONFIDENTIAL_MODE` | `eerc` with Lane C's service running (`cd chain/eerc && node src/server.mjs`): the chain leg of Scene 1 is a real eERC confidential transfer, about 30 s | `simulated`: same event, labelled simulated. `off`: public leg, eERC stays on its slide |
 | `CLUSTER_MODE` | `auto`: Lane B's detector finds the cluster of Scene 3 | `sample`, or the package is missing: the sample cluster near Aflao is shown; say "sample cluster" |
 | `DEMO_SPEED` | `1` | `2` if the slot is short |
 
@@ -34,6 +35,7 @@ Times are at speed 1. "UI" means a button exists on the demo screen today; "curl
 | # | Scene | How | What must appear | Time |
 |---|---|---|---|---|
 | 1 | Legitimate payment | UI: **Legitimate payment** | R4 excluded by Ghana's export-proceeds rule; LOW 10; R3 chosen; two approvals; intent committed; five hops; "Credited" | 16 s |
+| 1 | Legitimate payment, confidential (`CONFIDENTIAL_MODE` not `off`) | UI: **Legitimate payment** | Same as above, plus `confidential.transfer` on the Avalanche leg: amount hidden, the auditor decrypted EUR 85,000. The diverted invoice of Scene 2 still uses the public escrow | 16 s (about 45 s with `eerc`) |
 | 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
 | 2 | Supplier denies | UI: **"We never changed it"** | Denial recorded; analyst confirms; revoked; refunded; freeze request to the mule's bank; "Payment stopped" | 7 s |
 | 2 | Supplier confirms (variant) | UI: **"Yes, it's our account"** | Released; two more hops; credited at the new account | 5 s |

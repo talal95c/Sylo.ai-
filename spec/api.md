@@ -121,6 +121,15 @@ What a bank's payment hub calls before it executes: quote, then payment, then th
 - **Time-lock.** After the supplier confirms, a first payment to a new account held at the bank (route R1) stays there until the lock ends: 4 h from `TIME_LOCK_FROM_EUR` (5,000), 24 h above `TIME_LOCK_LONG_FROM_EUR` (50,000), counted from the start of the hold. `GET /v1/payments/{id}` shows `status: "time_locked"` and `lockedUntil`. `CONFIRM_REVOCATION` still stops the payment during the lock. On the escrow route there is no extra lock: the escrow stands in for it.
 - **Reroute limits.** When the route a payment would normally take is unavailable (rail down, kill switch, corridor paused), a replacement is used only within the payer's limits: fees up to `REROUTE_MAX_FEES_EUR` (500) and at most `REROUTE_MAX_DAYS` (3). A route above them is scored with `excludedBy: "PAYER_LIMIT"`. If none is left, `payment.stopped` carries `blockedBy: "PAYER_LIMIT"` and `scores`, the payer gets an in-app `alert.raised`, and no case is opened: it is an operational wait, not a fraud case. The limits never apply while the usual route is available.
 
+## Confidential chain leg with eERC (PRD §13.6, roadmap A3.3)
+
+`CONFIDENTIAL_MODE` is `off` (default), `simulated` or `eerc`; `system.mode.confidential` says which one runs.
+
+- **When.** Only for a payment that needs no hold (LOW, direct settlement on R3): after the adapter accepted the chain leg (`leg.sent`), the engine makes the confidential transfer and emits `confidential.transfer`, then `leg.settled`. A payment that must be held keeps the public escrow: a contract cannot hold and release eEURC by itself.
+- **`confidential.transfer`** `{ hop, from, to, token: "eEURC", amountHidden: true, txHash, explorerUrl, depositTxHash?, withdrawTxHash?, auditorDecryptedAmountEur, auditorMatches, metadataEncrypted, hidden: [...], visible: [...], text }`. With `eerc` the transactions are real (Lane C's service `chain/eerc`, `POST {EERC_URL}/transfer`, about 30 s per leg on Fuji) and `simulated` is false; with `simulated` the receipt is a labelled fake.
+- **Fail safe.** If the service does not answer, the leg stays public: `system.mode.degraded` gains `"confidential"` and the analyst gets an `alert.raised` saying the amount is visible on-chain. If the amount the auditor decrypts does not match the payment, the next leg is not sent: `payment.stopped` and an analyst alert.
+- **Still visible:** the institutions' addresses and the amounts wrapped and unwrapped at the two ends. This is not anonymity: the designated auditor reads every amount.
+
 ## Norms rules added after v2
 
 - `norms.checked.data.controls` (additive): `[{ ruleId, text, legalRef }]`, the controls a rule asks for without excluding a route. `EU_VOP_SCOPE` says the bank's Verification of Payee does not reach an account outside SEPA, so new or changed details need the out-of-band check.

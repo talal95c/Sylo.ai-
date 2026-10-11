@@ -46,6 +46,7 @@ NAMES = (
     "samples-scene5-outage",
     "samples-hold-expiry",
     "samples-time-lock",
+    "samples-confidential",
 )
 
 
@@ -174,6 +175,10 @@ async def record() -> dict[str, list[dict[str, Any]]]:
     locked = _orchestrator()
     await locked.run_to_end("diverted_timelock", auto=True, auto_answer="confirm")
     recorded["samples-time-lock"] = locked.bus.events
+    # eERC (simulated here): the legitimate payment needs no hold, so its chain leg is confidential.
+    confidential = _orchestrator(confidential_mode="simulated")
+    await confidential.run_to_end("legit", auto=True)
+    recorded["samples-confidential"] = confidential.bus.events
     return recorded
 
 
