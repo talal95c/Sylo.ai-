@@ -53,6 +53,8 @@ class PaymentIn(BaseModel):
     amount: str = Field(pattern=r"^[0-9]{1,7}(\.[0-9]{1,2})?$")
     purpose: Literal["GOODS", "SERVICES"] = "GOODS"
     invoiceRef: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")
+    locRef: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")
+    """Bank of Ghana export letter of credit: a payment for goods to Ghana needs it on every bank route."""
     detailsSource: Literal["saved", "invoice_email", "phone", "typed"] = "typed"
     senderDomain: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$")
 
@@ -170,6 +172,7 @@ def build_order(payment: PaymentIn, payment_id: str) -> PaymentOrder:
         purpose=payment.purpose,
         documents=Documents(
             invoice_ref=payment.invoiceRef,
+            loc_ref=payment.locRef,
             sender_domain=payment.senderDomain if payment.detailsSource == "invoice_email" else None,
         ),
         provenance={"creditorAccount": provenance},
