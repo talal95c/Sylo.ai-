@@ -2,7 +2,8 @@
 .github
 **/node_modules
 web
-contracts
+contracts/*
+!contracts/deployments
 **/.venv
 **/__pycache__
 **/*.py[cod]

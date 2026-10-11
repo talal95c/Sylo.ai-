@@ -6,14 +6,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY spec/python/pyproject.toml ./spec/python/pyproject.toml
-COPY spec/python/sylo_spec ./spec/python/sylo_spec
+COPY spec ./spec
 COPY ml/pyproject.toml ./ml/pyproject.toml
 COPY ml/sylo_risk ./ml/sylo_risk
 COPY ml/models ./ml/models
 COPY ml/reports/metrics.json ./ml/reports/metrics.json
 COPY chain/pyproject.toml ./chain/pyproject.toml
 COPY chain/sylo_chain ./chain/sylo_chain
+COPY contracts/deployments/43113.json ./contracts/deployments/43113.json
 COPY engine/pyproject.toml ./engine/pyproject.toml
 COPY engine/uv.lock ./engine/uv.lock
 COPY engine/sylo ./engine/sylo
@@ -32,4 +32,4 @@ ENV CHAIN_MODE=mock
 
 EXPOSE 8000
 
-CMD uvicorn sylo.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
+CMD ["sh", "-c", "exec uvicorn sylo.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
