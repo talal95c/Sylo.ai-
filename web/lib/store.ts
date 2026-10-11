@@ -4,6 +4,7 @@ import type {
   RouteSelectedData,
   PaymentCreditedData,
   PaymentHeldData,
+  CaseReadyData,
   PaymentStoppedData,
   SyloEvent,
   Tier,
@@ -73,6 +74,7 @@ export interface ViewState {
     tier: Tier;
     reasons: { ref: string; text: string }[];
     rulesFired: string[];
+    oobResolvable: boolean;
   };
   routes: NormsRoute[];
   selectedRouteId: string | null;
@@ -80,6 +82,7 @@ export interface ViewState {
   approval: ApprovalGrantedData | null;
   hops: HopView[];
   held: PaymentHeldData | null;
+  caseFile: CaseReadyData | null;
   alertOpen: boolean;
   verification: {
     requested?: VerificationRequestedData;
@@ -107,6 +110,7 @@ export const initialState: ViewState = {
   approval: null,
   hops: [],
   held: null,
+  caseFile: null,
   alertOpen: false,
   verification: {},
   revoked: false,
@@ -206,6 +210,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
           tier: data.tier as Tier,
           reasons: data.reasons as { ref: string; text: string }[],
           rulesFired: data.rulesFired as string[],
+          oobResolvable: data.oobResolvable === true,
         },
         payment: next.payment
           ? {
@@ -288,6 +293,8 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         held: data as unknown as PaymentHeldData,
         alertOpen: true,
       };
+    case "case.ready":
+      return { ...next, caseFile: data as unknown as CaseReadyData };
     case "verification.requested":
       return {
         ...next,
