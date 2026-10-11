@@ -1,5 +1,6 @@
 """Out-of-band check, SIM-swap mock and analyst actions (roadmap A1.4 and A1.8)."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -119,10 +120,21 @@ async def test_a_frozen_payment_is_not_released_even_if_the_supplier_confirms(ev
 async def test_release_by_the_analyst_is_only_possible_once_confirmed():
     orchestrator = make_orchestrator()
     orchestrator.start("diverted", auto=False)
-    await until(orchestrator, DIVERTED, "awaiting_supplier")
+    run = await until(orchestrator, DIVERTED, "awaiting_supplier")
+
+    # With a virtual clock the "confirmed" second lasts no time at all: hold the script there.
+    gate, advance = asyncio.Event(), run.pacer.wait
+
+    async def wait(ms):
+        if run.status == "confirmed":
+            await gate.wait()
+        await advance(ms)
+
+    run.pacer.wait = wait
     orchestrator.supplier_response(DIVERTED, "confirm")
     await until(orchestrator, DIVERTED, "confirmed")
     assert await orchestrator.case_action(DIVERTED, "RELEASE") == {"ok": True}
+    gate.set()
     await orchestrator._task
     assert types(orchestrator)[-len(CONFIRM_SEQUENCE) - 1 :] == ["verification.recorded", "case.action"] + CONFIRM_SEQUENCE[1:]
     with pytest.raises(ActionNotAllowed):
