@@ -607,14 +607,15 @@ export default function GlobeCanvas({
         state.wave.breaker.scope.regionName ??
         state.wave.cluster.regionName ??
         state.wave.cluster.region;
-      const label = `Circuit breaker · ${regionName}`;
+      const region = regionName.replace(/\s+Region$/, "");
+      const label = `Circuit breaker · ${region} · 24 h`;
       list.push(
         stable("wave-breaker", label, () => ({
           id: "wave-breaker",
           lat: centroid.lat,
           lng: centroid.lng,
           altitude: 0.015,
-          className: "globe-label",
+          className: "globe-label globe-label-breaker",
           preferredSide: "above",
           html: `<span class="globe-label-connector"></span><span class="globe-label-pill"><span class="globe-label-name">${escapeHtml(label)}</span></span>`,
         })),
