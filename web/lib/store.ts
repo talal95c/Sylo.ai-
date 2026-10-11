@@ -475,6 +475,10 @@ export function availableActions(state: ViewState): {
   runMuleWave: boolean;
   runGuardian: boolean;
   runOutage: boolean;
+  runSimSwap: boolean;
+  runHoldExpiry: boolean;
+  runTimeLock: boolean;
+  runConfidential: boolean;
   confirm: boolean;
   deny: boolean;
   attack: boolean;
@@ -494,6 +498,10 @@ export function availableActions(state: ViewState): {
     runMuleWave: canRun,
     runGuardian: canRun,
     runOutage: canRun,
+    runSimSwap: canRun,
+    runHoldExpiry: canRun,
+    runTimeLock: canRun,
+    runConfidential: canRun,
     confirm: awaitingSupplier,
     deny: awaitingSupplier,
     attack: state.revoked && !state.attack.attempted,
