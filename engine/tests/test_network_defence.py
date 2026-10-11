@@ -11,7 +11,7 @@ from sylo_spec.ports import ClusterPort
 
 from sylo import texts
 from sylo.breakers import BreakerError, Breakers, apply_breaker, apply_degraded
-from sylo.clusters import SampleClusterPort, cluster_sample
+from sylo.clusters import SampleClusterPort, cluster_sample, load_cluster_port
 from sylo.orchestrator import ActionNotAllowed, UnknownBreaker, UnknownRoute
 
 from .conftest import LEGIT_SEQUENCE, events_of, make_orchestrator, types, until
@@ -27,6 +27,10 @@ def risk(score, tier, **kw):
 
 def cluster():
     return Cluster.model_validate(cluster_sample())
+
+
+def breaker_id(orchestrator):
+    return events_of(orchestrator, "cluster.detected")[0]["data"]["proposedBreaker"]["breakerId"]
 
 
 def valid(orchestrator, validator):
@@ -92,14 +96,31 @@ def test_the_stub_detector_is_a_cluster_port_and_needs_three_linked_payments():
     assert [c.cluster_id for c in found] == ["CL-AFLAO-01"] and found[0].linked_payments == ["P0", "P2", "P3"]
 
 
+def test_cluster_port_loader_uses_the_lane_b_detector():
+    port, is_stub = load_cluster_port()
+    assert not is_stub
+    assert not isinstance(port, SampleClusterPort)
+    assert port.name == "networkx-mule-clusters"
+
+
 async def test_scene_3_three_linked_payments_propose_a_breaker_and_the_next_payment_is_held(event_validator):
     orchestrator = make_orchestrator()
     await orchestrator.run_wave()
     assert types(orchestrator) == WAVE_SEQUENCE
+    assert [payment.payer_id for payment in orchestrator._window] == [
+        "payer_atelier",
+        "payer_maison",
+        "payer_garonne",
+    ]
+    assert all(payment.account_age_days is None for payment in orchestrator._window)
+    assert all(payment.successful_payments is None for payment in orchestrator._window)
     detected = events_of(orchestrator, "cluster.detected")[0]["data"]
-    assert (detected["accounts"], detected["agents"], detected["region"]) == (6, 3, "GH-TV")
+    assert (detected["accounts"], detected["agents"], detected["region"]) == (3, 0, "GH-TV")
+    assert detected["regionName"] == "Volta Region (Aflao border)"
+    assert detected["institutions"] == ["mule_bank"]
     assert detected["linkedPayments"] == ["PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"]
-    assert detected["proposedBreaker"]["breakerId"] == "CB-CL-AFLAO-01" and detected["detector"] == "cluster-sample"
+    assert detected["proposedBreaker"]["scope"]["institutions"] == ["mule_bank"]
+    assert detected["detector"] == "networkx-mule-clusters"
     on = events_of(orchestrator, "breaker.on")[0]["data"]
     assert on["thresholdsDelta"] == -20 and on["scope"] == detected["proposedBreaker"]["scope"]
     assert on["scope"]["institutions"] == ["mule_bank"] and on["expiresAt"].startswith("2026-10-12T09:00")
@@ -127,34 +148,36 @@ async def test_without_auto_the_breaker_waits_for_the_analyst_and_can_be_lifted(
     orchestrator = make_orchestrator(human_steps="manual")
     await orchestrator.run_wave(auto=False)
     assert types(orchestrator) == WAVE_SEQUENCE[:-1], "proposed, not switched on"
-    assert (await orchestrator.run_to_end("diverted", auto_answer="deny")).tier == Tier.MEDIUM
+    assert events_of(orchestrator, "breaker.on") == []
 
-    result = orchestrator.confirm_breaker("CB-CL-AFLAO-01")
+    active_breaker = breaker_id(orchestrator)
+    result = orchestrator.confirm_breaker(active_breaker)
     assert result["ok"] and events_of(orchestrator, "breaker.on")[0]["data"]["confirmedBy"] == "Julien (fraud analyst)"
     with pytest.raises(ActionNotAllowed):
-        orchestrator.confirm_breaker("CB-CL-AFLAO-01")
+        orchestrator.confirm_breaker(active_breaker)
     with pytest.raises(UnknownBreaker):
         orchestrator.confirm_breaker("CB-nope")
     assert (await orchestrator.run_to_end("diverted", auto_answer="deny")).tier == Tier.HIGH
 
-    assert orchestrator.lift_breaker("CB-CL-AFLAO-01")["ok"]
+    assert orchestrator.lift_breaker(active_breaker)["ok"]
     assert events_of(orchestrator, "breaker.off")[0]["data"] == {
-        "breakerId": "CB-CL-AFLAO-01",
+        "breakerId": active_breaker,
         "reason": "LIFTED",
         "by": "Julien (fraud analyst)",
     }
-    assert (await orchestrator.run_to_end("diverted", auto_answer="deny")).tier == Tier.MEDIUM
+    assert (await orchestrator.run_to_end("diverted", auto_answer="deny")).tier == Tier.HIGH
     with pytest.raises(ActionNotAllowed):
-        orchestrator.lift_breaker("CB-CL-AFLAO-01")
+        orchestrator.lift_breaker(active_breaker)
 
 
 async def test_the_breaker_expires_after_24_hours():
     orchestrator = make_orchestrator()
     await orchestrator.run_wave()
-    orchestrator.breakers.get("CB-CL-AFLAO-01").expires_at = NOW - timedelta(seconds=1)
+    active_breaker = breaker_id(orchestrator)
+    orchestrator.breakers.get(active_breaker).expires_at = NOW - timedelta(seconds=1)
     run = await orchestrator.run_to_end("diverted", auto_answer="deny")
-    assert run.tier == Tier.MEDIUM
-    assert events_of(orchestrator, "breaker.off")[0]["data"] == {"breakerId": "CB-CL-AFLAO-01", "reason": "EXPIRED"}
+    assert run.tier == Tier.HIGH
+    assert events_of(orchestrator, "breaker.off")[0]["data"] == {"breakerId": active_breaker, "reason": "EXPIRED"}
 
 
 async def test_the_diverted_payment_and_two_others_within_the_hour_make_the_cluster():
@@ -163,9 +186,13 @@ async def test_the_diverted_payment_and_two_others_within_the_hour_make_the_clus
     await orchestrator.run_to_end("diverted", auto_answer="deny")  # the same payment again counts once
     await orchestrator.run_wave()
     detected = events_of(orchestrator, "cluster.detected")
-    assert len(detected) == 1 and detected[0]["data"]["linkedPayments"] == [DIVERTED, "PAY-2026-0101", "PAY-2026-0102"]
+    assert [event["data"]["linkedPayments"] for event in detected] == [
+        [DIVERTED, "PAY-2026-0101", "PAY-2026-0102"],
+        [DIVERTED, "PAY-2026-0101", "PAY-2026-0102", "PAY-2026-0103"],
+    ]
+    assert all(event["data"]["detector"] == "networkx-mule-clusters" for event in detected)
     third = [e["seq"] for e in events_of(orchestrator, "traffic.sample") if e["paymentId"] == "PAY-2026-0103"]
-    assert detected[0]["seq"] < third[0], "found after the second of the other payments"
+    assert detected[0]["seq"] < third[0] < detected[1]["seq"]
 
 
 # --- rail outage -------------------------------------------------------------------------------

@@ -571,14 +571,28 @@ class Orchestrator:
                     },
                     payment_id=payment["paymentId"],
                 )
-                self._observe(payment["paymentId"], payment["accountId"], institution, float(payment["amount"]))
+                self._observe(
+                    payment["paymentId"],
+                    payment["accountId"],
+                    institution,
+                    float(payment["amount"]),
+                    payer_id=payment["payer"]["id"],
+                )
                 await self._detect_clusters(pacer, auto or self.settings.human_steps != "manual")
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("mule wave failed")
 
-    def _observe(self, payment_id: str, account_id: str, institution_id: str, amount_eur: float) -> None:
+    def _observe(
+        self,
+        payment_id: str,
+        account_id: str,
+        institution_id: str,
+        amount_eur: float,
+        *,
+        payer_id: str | None = None,
+    ) -> None:
         """Remember a payment for the cluster detector (last hour; a re-run of the same payment counts once)."""
         now = self.now()
         cutoff = now - timedelta(minutes=CLUSTER_WINDOW_MINUTES)
@@ -587,9 +601,26 @@ class Orchestrator:
             for payment in self._window
             if payment.payment_id != payment_id and datetime.fromisoformat(payment.at.replace("Z", "+00:00")) >= cutoff
         ]
+        account = ACCOUNTS.get(account_id)
+        account_age_days = None
+        if account is not None:
+            try:
+                first_seen = datetime.fromisoformat(account.first_seen.replace("Z", "+00:00"))
+                if first_seen.tzinfo is None:
+                    first_seen = first_seen.replace(tzinfo=timezone.utc)
+                account_age_days = max((now - first_seen).total_seconds() / 86400, 0.0)
+            except (TypeError, ValueError):
+                account_age_days = None
         self._window.append(
             WindowPayment(
-                payment_id=payment_id, account_id=account_id, institution_id=institution_id, amount_eur=amount_eur, at=iso_ms(now)
+                payment_id=payment_id,
+                account_id=account_id,
+                institution_id=institution_id,
+                amount_eur=amount_eur,
+                at=iso_ms(now),
+                payer_id=payer_id,
+                account_age_days=account_age_days,
+                successful_payments=account.successful_payments if account is not None else None,
             )
         )
 
@@ -962,7 +993,13 @@ class Orchestrator:
         await pacer.wait(400)
         self._emit(run, "payment.created", self._payment_created(order))
         creditor_account = ACCOUNTS[order.creditor_account_id]
-        self._observe(order.id, creditor_account.id, creditor_account.institution_id, order.amount.as_float)
+        self._observe(
+            order.id,
+            creditor_account.id,
+            creditor_account.institution_id,
+            order.amount.as_float,
+            payer_id=order.debtor.id,
+        )
         await self._detect_clusters(pacer, self._auto_humans(run))
 
         await pacer.wait(900)

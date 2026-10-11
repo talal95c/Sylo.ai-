@@ -201,10 +201,13 @@ def test_v2_endpoints_wave_breaker_rails_guardian_and_metrics(manual_url):
     proposal = read_stream_until(manual_url, "cluster.detected")[-1]["data"]["proposedBreaker"]
     assert post(manual_url, "/v1/breakers/CB-nope/confirm").status_code == 404
     confirmed = post(manual_url, f"/v1/breakers/{proposal['breakerId']}/confirm")
-    assert confirmed.status_code == 200 and confirmed.json()["breakerId"] == "CB-CL-AFLAO-01"
+    assert confirmed.status_code == 200 and confirmed.json()["breakerId"] == proposal["breakerId"]
     assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/confirm").status_code == 409
     assert read_stream_until(manual_url, "breaker.on")[-1]["data"]["confirmedBy"] == "Julien (fraud analyst)"
-    assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/lift").json() == {"ok": True, "breakerId": "CB-CL-AFLAO-01"}
+    assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/lift").json() == {
+        "ok": True,
+        "breakerId": proposal["breakerId"],
+    }
     assert post(manual_url, f"/v1/breakers/{proposal['breakerId']}/lift").status_code == 409
 
     assert post(manual_url, "/v1/sim/rails/R3/down", {"reason": "maintenance"}).json() == {"ok": True, "routeId": "R3", "available": False}

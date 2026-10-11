@@ -62,7 +62,7 @@ def load_cluster_port() -> tuple[ClusterPort, bool]:
         port.detect([_PROBE])
         return port, False
     except Exception as err:
-        log.info("cluster detector of Lane B not available (%s); using the sample cluster", err)
+        log.warning("cluster detector of Lane B not available (%s); using the sample cluster", err)
         return SampleClusterPort(), True
 
 

@@ -272,13 +272,16 @@ class WeightedPoint(GeoPoint):
 
 
 class WindowPayment(SpecModel):
-    """One recent payment, as the cluster detector sees it. No names: ids, amounts and time only."""
+    """One recent payment, as the cluster detector sees it."""
 
     payment_id: str
     account_id: str
     institution_id: str
     amount_eur: float
     at: str
+    payer_id: str | None = None
+    account_age_days: float | None = None
+    successful_payments: int | None = None
 
 
 class Cluster(SpecModel):

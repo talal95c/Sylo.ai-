@@ -1,4 +1,4 @@
-from sylo_spec.models import Cluster
+from sylo_spec.models import Cluster, WindowPayment
 from sylo_spec.ports import ClusterPort
 
 
@@ -36,3 +36,33 @@ def test_cluster_port_is_a_runtime_protocol():
             return []
 
     assert isinstance(Detector(), ClusterPort)
+
+
+def test_window_payment_adds_optional_payer_and_account_history_with_camel_case_aliases():
+    payment = WindowPayment(
+        payment_id="payment-1",
+        account_id="account-1",
+        institution_id="mule_bank",
+        amount_eur=100.0,
+        at="2026-10-11T09:00:00.000Z",
+        payer_id="payer-1",
+        account_age_days=12.5,
+        successful_payments=2,
+    )
+    assert payment.to_json_dict() == {
+        "paymentId": "payment-1",
+        "accountId": "account-1",
+        "institutionId": "mule_bank",
+        "amountEur": 100.0,
+        "at": "2026-10-11T09:00:00.000Z",
+        "payerId": "payer-1",
+        "accountAgeDays": 12.5,
+        "successfulPayments": 2,
+    }
+    assert WindowPayment(
+        payment_id="payment-2",
+        account_id="account-2",
+        institution_id="mule_bank",
+        amount_eur=10.0,
+        at="2026-10-11T09:00:00.000Z",
+    ).payer_id is None

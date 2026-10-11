@@ -1,5 +1,6 @@
 from sylo_risk.clusters import detect, detect_isolated_by_payer_bank
 from sylo_risk.geo import GH_REGION_CENTROIDS
+from sylo_spec.models import WindowPayment
 
 
 def _payment(
@@ -40,11 +41,60 @@ def test_three_payers_to_young_account_detect_one_region_level_cluster():
     assert cluster.accounts == ["young-account"]
     assert cluster.linked_payments == ["pay-1", "pay-2", "pay-3"]
     assert cluster.detected_at_day == 2
-    assert cluster.region == "Volta"
+    assert cluster.region == "GH-TV"
+    assert cluster.region_name == "Volta Region (Aflao border)"
+    assert cluster.institutions == ["mule_bank"]
     assert (cluster.centroid.lat, cluster.centroid.lng) == GH_REGION_CENTROIDS["Volta"]
     assert {
         (point.lat, point.lng) for point in cluster.points
     } == {GH_REGION_CENTROIDS["Volta"]}
+
+
+def test_three_window_payments_to_distinct_suspect_accounts_detect_on_third_payment():
+    payments = [
+        WindowPayment(
+            payment_id=f"wave-{index}",
+            payer_id=f"payer-{index}",
+            account_id=f"account-{index}",
+            institution_id="mule_bank",
+            amount_eur=100.0,
+            at=f"2026-10-11T09:00:0{index}.000Z",
+        )
+        for index in range(1, 4)
+    ]
+
+    clusters = detect(payments, window_days=2)
+
+    assert len(clusters) == 1
+    assert clusters[0].accounts == ["account-1", "account-2", "account-3"]
+    assert clusters[0].linked_payments == ["wave-1", "wave-2", "wave-3"]
+    assert clusters[0].detected_at_day == 0
+    assert clusters[0].region == "GH-TV"
+    assert clusters[0].region_name == "Volta Region (Aflao border)"
+    assert clusters[0].institutions == ["mule_bank"]
+
+
+def test_probe_and_border_fan_in_below_three_accounts_return_no_cluster():
+    assert detect([WindowPayment(
+        payment_id="probe",
+        account_id="probe-account",
+        institution_id="mule_bank",
+        amount_eur=1.0,
+        at="2026-10-11T09:00:00.000Z",
+    )]) == []
+    assert detect(
+        [
+            WindowPayment(
+                payment_id=f"wave-{index}",
+                payer_id=f"payer-{index}",
+                account_id=f"account-{index}",
+                institution_id="mule_bank",
+                amount_eur=100.0,
+                at="2026-10-11T09:00:00.000Z",
+            )
+            for index in range(1, 3)
+        ]
+    ) == []
 
 
 def test_old_popular_supplier_is_not_flagged():

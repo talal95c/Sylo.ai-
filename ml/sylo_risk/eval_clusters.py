@@ -13,6 +13,32 @@ from .sim.generator import PAYER_BANKS, SEEDS, generate_dataset
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "reports" / "metrics.json"
+BEFORE_BORDER_FAN_IN = {
+    "B": {
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "campaignCount": 30,
+        "paymentsToDetect": {"p50": 7.0, "p90": 10.1},
+        "falseClusters": {"legit": 0, "popularSupplier": 0, "youngPopular": 30},
+        "isolatedInstitution": {
+            "campaignDetectionRate": 1.0,
+            "campaignsDetected": 30,
+            "paymentsToDetect": {"p50": 11.5, "p90": 16.1},
+        },
+    },
+    "C": {
+        "campaignDetectionRate": 1.0,
+        "campaignsDetected": 30,
+        "campaignCount": 30,
+        "paymentsToDetect": {"p50": 7.5, "p90": 10.2},
+        "falseClusters": {"legit": 0, "popularSupplier": 0, "youngPopular": 30},
+        "isolatedInstitution": {
+            "campaignDetectionRate": 29 / 30,
+            "campaignsDetected": 29,
+            "paymentsToDetect": {"p50": 10.0, "p90": 15.2},
+        },
+    },
+}
 
 
 def _seed_frame(seed: str) -> pd.DataFrame:
@@ -195,7 +221,8 @@ def main() -> None:
     results = {seed: evaluate_seed(seed) for seed in ("B", "C")}
     report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
     report["clusters"] = {
-        "method": "NetworkX payer-account bipartite windows; age <120 days or <10 successes",
+        "method": "NetworkX payer-account bipartite windows; per-account and border-institution fan-in; age <120 days or <10 successes",
+        "beforeBorderFanIn": BEFORE_BORDER_FAN_IN,
         "hardNegatives": "30 old popular suppliers and 30 young popular accounts per seed; evaluation only",
         "hardNegativeSeedFormula": "np.random.default_rng(SEEDS[seed] + 1_000_003)",
         "hardNegativeSeeds": {

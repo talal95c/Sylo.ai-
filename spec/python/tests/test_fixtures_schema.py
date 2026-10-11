@@ -128,12 +128,16 @@ def types_of(name: str) -> list[str]:
     return [event["type"] for event in load(name)]
 
 
-def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_held_payment():
+def test_scene_3_sample_goes_from_three_payments_to_a_breaker_and_a_stopped_payment():
     kinds = types_of("samples-scene3-mule-wave")
     assert kinds[:6] == ["scenario.started", "traffic.sample", "traffic.sample", "traffic.sample", "cluster.detected", "breaker.on"]
-    assert "payment.held" in kinds[6:] and kinds[-1] == "payment.stopped"
+    assert "payment.held" not in kinds[6:] and kinds[-1] == "case.ready"
+    assert "payment.stopped" in kinds[6:]
     scored = next(e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "risk.scored")
-    assert scored["rulesFired"][-1] == "R-CB-01"
+    assert scored["score"] == 77 and scored["tier"] == "CRITICAL"
+    assert "R-CB-01" in scored["rulesFired"]
+    detected = [e["data"] for e in load("samples-scene3-mule-wave") if e["type"] == "cluster.detected"]
+    assert detected and all(event["detector"] == "networkx-mule-clusters" for event in detected)
     stamps = [e["ts"] for e in load("samples-scene3-mule-wave")]
     assert stamps == sorted(stamps), "one timeline, even with two scenarios in the file"
 
