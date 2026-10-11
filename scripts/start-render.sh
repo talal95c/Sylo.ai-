@@ -22,7 +22,7 @@ trap forward_termination TERM INT
 engine_pid=$!
 
 engine_ready=false
-for attempt in {1..60}; do
+for attempt in {1..360}; do
   if [[ "$shutdown_requested" == true ]] || ! kill -0 "$engine_pid" 2>/dev/null; then
     break
   fi
