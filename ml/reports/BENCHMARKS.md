@@ -97,6 +97,6 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 
 The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; the border fan-in trigger adds one false legitimate cluster per seed. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
-- Border fan-in trigger: +1 false legit cluster per seed (B, C), accepted so the engine runs the real detector; breaker proposal only, analyst confirms.
+- border fan-in trigger: +1 false legit cluster per seed (B, C), accepted so the engine runs the real detector; breaker proposal only, analyst confirms
 
 The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. No engine/web wiring was done. Lane A will need to invoke the `ClusterPort` implementation from the future mule-wave scene and publish the resulting roadmap-shaped `cluster.detected` event before wiring the breaker or globe.
