@@ -873,7 +873,8 @@ export default function GlobeCanvas({
     if (!globe) return;
     const controls = globe.controls() as unknown as { autoRotate: boolean; autoRotateSpeed: number };
     if (!lastEvent || lastEvent.type === "session.reset") {
-      controls.autoRotate = !reducedMotion;
+      controls.autoRotate = false;
+      globe.pointOfView(CORRIDOR_VIEW, reducedMotion ? 0 : 1200);
       return;
     }
     if (!state.scenario) return;
@@ -899,9 +900,6 @@ export default function GlobeCanvas({
     const pullBack = (delay: number) => {
       schedule(delay, () => {
         globe.pointOfView(CORRIDOR_VIEW, ms(1800));
-        schedule(1800 + 2000, () => {
-          controls.autoRotate = !reducedMotion;
-        });
       });
     };
     const data = lastEvent.data as Record<string, unknown>;
@@ -1088,10 +1086,9 @@ export default function GlobeCanvas({
     const frontLight = new THREE.DirectionalLight("#ffffff", 0.55);
     frontLight.position.set(-60, 80, 150);
     globe.scene().add(new THREE.AmbientLight("#ffffff", 0.45), frontLight);
-    controls.autoRotate = !reducedMotion;
-    controls.autoRotateSpeed = 0.35;
+    controls.autoRotate = false;
     controls.enableZoom = false;
-    globe.pointOfView(CORRIDOR_VIEW, 0);
+    globe.pointOfView(CORRIDOR_VIEW, reducedMotion ? 0 : 1200);
   }
 
   return (
