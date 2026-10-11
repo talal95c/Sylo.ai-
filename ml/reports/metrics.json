@@ -9,50 +9,50 @@
       "step": "drop_B"
     },
     {
-      "auc": 0.9980778563411897,
-      "fprMediumPlus": 0.06784511784511785,
-      "recallAll": 0.9833333333333333,
-      "recallAtFpr": 0.9833333333333333,
+      "auc": 0.9983613041526376,
+      "fprMediumPlus": 0.06713804713804714,
+      "recallAll": 0.978,
+      "recallAtFpr": 0.978,
       "recallT1Evasive": 1.0,
       "step": "drop_V"
     },
     {
-      "auc": 0.9980610909090909,
-      "fprMediumPlus": 0.0676094276094276,
-      "recallAll": 0.98,
-      "recallAtFpr": 0.98,
+      "auc": 0.9983458922558922,
+      "fprMediumPlus": 0.06704377104377104,
+      "recallAll": 0.9786666666666667,
+      "recallAtFpr": 0.9786666666666667,
       "recallT1Evasive": 1.0,
       "step": "drop_P"
     },
     {
-      "auc": 0.998025746352413,
-      "fprMediumPlus": 0.06784511784511785,
-      "recallAll": 0.986,
-      "recallAtFpr": 0.986,
+      "auc": 0.9982554096520763,
+      "fprMediumPlus": 0.06710437710437711,
+      "recallAll": 0.982,
+      "recallAtFpr": 0.982,
       "recallT1Evasive": 1.0,
       "step": "drop_G"
     },
     {
-      "auc": 0.9964794567901234,
-      "fprMediumPlus": 0.06872053872053872,
-      "recallAll": 0.9373333333333334,
-      "recallAtFpr": 0.9373333333333334,
+      "auc": 0.9968693131313131,
+      "fprMediumPlus": 0.0687070707070707,
+      "recallAll": 0.9446666666666667,
+      "recallAtFpr": 0.9446666666666667,
       "recallT1Evasive": 1.0,
       "step": "drop_H"
     },
     {
-      "auc": 0.9971891470258136,
-      "fprMediumPlus": 0.06876767676767677,
+      "auc": 0.9974631470258136,
+      "fprMediumPlus": 0.06830303030303031,
       "recallAll": 0.93,
       "recallAtFpr": 0.93,
       "recallT1Evasive": 1.0,
       "step": "drop_S"
     },
     {
-      "auc": 0.9980053782267115,
-      "fprMediumPlus": 0.06743434343434343,
-      "recallAll": 0.9726666666666667,
-      "recallAtFpr": 0.9726666666666667,
+      "auc": 0.9982217553310887,
+      "fprMediumPlus": 0.06672053872053872,
+      "recallAll": 0.9713333333333334,
+      "recallAtFpr": 0.9713333333333334,
       "recallT1Evasive": 1.0,
       "step": "drop_R"
     }
@@ -60,18 +60,18 @@
   "baselines": [
     {
       "alertBudget": 750,
-      "auc": 0.99497121661055,
-      "diversionRate": 0.0006133910735825061,
-      "fprHardNegatives": 0.4757777777777778,
-      "fprMediumPlus": 0.06927272727272728,
+      "auc": 0.9970339573512907,
+      "diversionRate": 9.241668681866313e-05,
+      "fprHardNegatives": 0.476,
+      "fprMediumPlus": 0.06871380471380471,
       "name": "logistic_regression",
-      "precisionAtAlertBudget": 0.708,
-      "precisionHigh": 0.9532710280373832,
-      "recallAll": 0.924,
+      "precisionAtAlertBudget": 0.8493333333333334,
+      "precisionHigh": 0.9808917197452229,
+      "recallAll": 0.9833333333333333,
       "recallT1": 1.0,
       "recallT1Evasive": 1.0,
-      "stpRate": 0.9307272727272727,
-      "valueStoppedPct": 0.9402571879238528
+      "stpRate": 0.9312861952861953,
+      "valueStoppedPct": 0.9909988374609677
     },
     {
       "alertBudget": 750,
@@ -116,29 +116,29 @@
     },
     {
       "confidenceInterval95": [
-        0.9572832551045743,
-        0.9909645338109193
+        0.9882254603969247,
+        1.0
       ],
       "count": 300,
-      "recall": 0.9766666666666667,
+      "recall": 0.9966666666666667,
       "typology": "T2"
     },
     {
       "confidenceInterval95": [
-        0.9678991060025542,
-        0.9933340707964602
+        0.9724468857413773,
+        0.9937655446857901
       ],
       "count": 450,
-      "recall": 0.9822222222222222,
+      "recall": 0.9844444444444445,
       "typology": "T3"
     },
     {
       "confidenceInterval95": [
-        0.9366576433121019,
-        0.9805840901973066
+        0.9025248745267236,
+        0.9602654983623019
       ],
       "count": 300,
-      "recall": 0.96,
+      "recall": 0.9333333333333333,
       "typology": "T4"
     }
   ],
@@ -151,91 +151,115 @@
   },
   "degraded": [
     {
-      "fprMediumPlus": 0.16037037037037036,
+      "fprMediumPlus": 0.42997979797979796,
       "metrics": {
         "alertBudget": 750,
-        "auc": 0.8178099551066217,
-        "diversionRate": 0.002320989262907745,
-        "fprHardNegatives": 0.6424444444444445,
-        "fprMediumPlus": 0.16037037037037036,
-        "precisionAtAlertBudget": 0.2946666666666667,
-        "precisionHigh": 0.9779005524861878,
-        "recallAll": 0.772,
+        "auc": 0.8435012345679013,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.7604444444444445,
+        "fprMediumPlus": 0.42997979797979796,
+        "precisionAtAlertBudget": 0.35333333333333333,
+        "precisionHigh": 0.01819392980557059,
+        "recallAll": 1.0,
         "recallT1": 1.0,
         "recallT1Evasive": 1.0,
-        "stpRate": 0.8396296296296296,
-        "valueStoppedPct": 0.7739412402029335
+        "stpRate": 0.570020202020202,
+        "valueStoppedPct": 1.0
       },
       "mode": "model_missing_rules_only",
       "neverLooser": false,
-      "permissivePct": 0.007566666666666667,
-      "recallAll": 0.772,
+      "permissiveActionPct": 0.0010733333333333333,
+      "permissivePct": 0.00352,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 522,
+        "mediumToLow": 6
+      },
       "seed": "B"
     },
     {
-      "fprMediumPlus": 0.170013468013468,
+      "fprMediumPlus": 1.0,
       "metrics": {
         "alertBudget": 750,
-        "auc": 0.9847206195286194,
-        "diversionRate": 3.2011191295307756e-05,
-        "fprHardNegatives": 0.6435555555555555,
-        "fprMediumPlus": 0.170013468013468,
-        "precisionAtAlertBudget": 0.912,
-        "precisionHigh": 0.5954433497536946,
-        "recallAll": 0.9953333333333333,
+        "auc": 0.9805010168350169,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 1.0,
+        "fprMediumPlus": 1.0,
+        "precisionAtAlertBudget": 0.9173333333333333,
+        "precisionHigh": 0.07910658750353407,
+        "recallAll": 1.0,
         "recallT1": 1.0,
         "recallT1Evasive": 1.0,
-        "stpRate": 0.8299865319865319,
-        "valueStoppedPct": 0.9968821871262004
+        "stpRate": 0.0,
+        "valueStoppedPct": 1.0
       },
       "mode": "history_missing",
       "neverLooser": false,
-      "permissivePct": 0.00148,
-      "recallAll": 0.9953333333333333,
+      "permissiveActionPct": 0.00188,
+      "permissivePct": 4.6666666666666665e-05,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 7,
+        "mediumToLow": 0
+      },
       "seed": "B"
     },
     {
-      "fprMediumPlus": 0.17445791245791245,
+      "fprMediumPlus": 0.43256565656565654,
       "metrics": {
         "alertBudget": 750,
-        "auc": 0.8016452951739619,
-        "diversionRate": 0.002280541724461049,
-        "fprHardNegatives": 0.6377777777777778,
-        "fprMediumPlus": 0.17445791245791245,
-        "precisionAtAlertBudget": 0.19333333333333333,
-        "precisionHigh": 0.9541984732824428,
-        "recallAll": 0.768,
+        "auc": 0.8302090819304152,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.7568888888888889,
+        "fprMediumPlus": 0.43256565656565654,
+        "precisionAtAlertBudget": 0.24133333333333334,
+        "precisionHigh": 0.01827231645818325,
+        "recallAll": 1.0,
         "recallT1": 1.0,
         "recallT1Evasive": 1.0,
-        "stpRate": 0.8255420875420876,
-        "valueStoppedPct": 0.783065676220199
+        "stpRate": 0.5674343434343434,
+        "valueStoppedPct": 1.0
       },
       "mode": "model_missing_rules_only",
       "neverLooser": false,
-      "permissivePct": 0.00746,
-      "recallAll": 0.768,
+      "permissiveActionPct": 0.0010066666666666666,
+      "permissivePct": 0.00376,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 1,
+        "highToMedium": 554,
+        "mediumToLow": 9
+      },
       "seed": "C"
     },
     {
-      "fprMediumPlus": 0.1840942760942761,
+      "fprMediumPlus": 1.0,
       "metrics": {
         "alertBudget": 750,
-        "auc": 0.9837767811447812,
-        "diversionRate": 4.228003442704871e-05,
-        "fprHardNegatives": 0.6395555555555555,
-        "fprMediumPlus": 0.1840942760942761,
-        "precisionAtAlertBudget": 0.8733333333333333,
-        "precisionHigh": 0.5802005012531328,
-        "recallAll": 0.9966666666666667,
+        "auc": 0.9767473535353535,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 1.0,
+        "fprMediumPlus": 1.0,
+        "precisionAtAlertBudget": 0.8666666666666667,
+        "precisionHigh": 0.08005348526248474,
+        "recallAll": 1.0,
         "recallT1": 1.0,
         "recallT1Evasive": 1.0,
-        "stpRate": 0.8159057239057239,
-        "valueStoppedPct": 0.9959781526558186
+        "stpRate": 0.0,
+        "valueStoppedPct": 1.0
       },
       "mode": "history_missing",
       "neverLooser": false,
-      "permissivePct": 0.00122,
-      "recallAll": 0.9966666666666667,
+      "permissiveActionPct": 0.00172,
+      "permissivePct": 0.00013333333333333334,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 20,
+        "mediumToLow": 0
+      },
       "seed": "C"
     }
   ],
@@ -245,10 +269,10 @@
   },
   "frozenThresholds": {
     "precision_target_met": true,
-    "t_high": 0.4682277966097679,
-    "t_med": 0.0406830161495367
+    "t_high": 0.4510718837561716,
+    "t_med": 0.04457334309526271
   },
-  "generatedAt": "2026-10-11T01:00:31.209978+00:00",
+  "generatedAt": "2026-10-11T01:23:23.699268+00:00",
   "integrity": [
     {
       "case": "I1",
@@ -270,21 +294,21 @@
     "byCause": {
       "guarantee": {
         "count": 8035,
-        "shareOfHolds": 0.7973603254936985,
+        "shareOfHolds": 0.8048682760693179,
         "shareOfLegitimate": 0.054107744107744105
       },
       "modelOnly": {
-        "count": 755,
-        "shareOfHolds": 0.07492309219013596,
-        "shareOfLegitimate": 0.005084175084175084
+        "count": 661,
+        "shareOfHolds": 0.06621256135430231,
+        "shareOfLegitimate": 0.0044511784511784514
       },
       "otherRules": {
         "count": 1287,
-        "shareOfHolds": 0.12771658231616553,
+        "shareOfHolds": 0.12891916257637984,
         "shareOfLegitimate": 0.008666666666666666
       }
     },
-    "heldCount": 10077,
+    "heldCount": 9983,
     "legitimateCount": 148500
   },
   "limits": [
@@ -295,27 +319,27 @@
   ],
   "metrics": {
     "alertBudget": 750,
-    "auc": 0.998230630751964,
+    "auc": 0.9984556790123458,
     "confidenceIntervals95": {
       "fprHardNegatives": [
-        0.46134568729897985,
-        0.49017527103758574
+        0.4617246338456674,
+        0.49039839272869645
       ],
       "fprMediumPlus": [
-        0.06660570082299319,
-        0.06916893311688482
+        0.0659266304317205,
+        0.06851640811249114
       ],
       "precisionAtAlertBudget": [
-        0.98,
-        0.9986666666666667
+        0.9786666666666667,
+        0.9946666666666667
       ],
       "precisionHigh": [
-        0.8754997037329647,
-        0.912107672756283
+        0.880793722203173,
+        0.9143477277984564
       ],
       "recallAll": [
-        0.9740782194372464,
-        0.9883057935536516
+        0.9737725891400024,
+        0.9878728511029577
       ],
       "recallT1": [
         1.0,
@@ -326,34 +350,50 @@
         1.0
       ],
       "recallT2": [
-        0.9572832551045743,
-        0.9909645338109193
+        0.9882254603969247,
+        1.0
       ],
       "recallT3": [
-        0.9678991060025542,
-        0.9933340707964602
+        0.9724468857413773,
+        0.9937655446857901
       ],
       "recallT4": [
-        0.9366576433121019,
-        0.9805840901973066
+        0.9025248745267236,
+        0.9602654983623019
       ]
     },
-    "diversionRate": 8.855921331560704e-05,
-    "fprHardNegatives": 0.47555555555555556,
-    "fprMediumPlus": 0.06785858585858585,
-    "precisionAtAlertBudget": 0.9906666666666667,
-    "precisionHigh": 0.8945216680294358,
-    "recallAll": 0.982,
+    "diversionRate": 5.680753084098305e-05,
+    "fprHardNegatives": 0.4757777777777778,
+    "fprMediumPlus": 0.06722558922558923,
+    "precisionAtAlertBudget": 0.9866666666666667,
+    "precisionHigh": 0.8986212489862125,
+    "recallAll": 0.9813333333333333,
     "recallT1": 1.0,
     "recallT1Evasive": 1.0,
-    "stpRate": 0.9321414141414142,
-    "ttdP95Ms": 0.6589825500668667,
-    "valueStoppedPct": 0.9913745460822816
+    "stpRate": 0.9327744107744108,
+    "ttdP95Ms": 0.733122199471836,
+    "valueStoppedPct": 0.9944670834224548
   },
-  "modelVersion": "gbm-20261010",
+  "modelOnlyMetrics": {
+    "B": {
+      "fprMediumPlus": 0.0105993265993266,
+      "precisionHigh": 0.8986212489862125,
+      "recallAll": 0.962,
+      "recallT1": 0.94,
+      "recallT1Evasive": 0.8
+    },
+    "C": {
+      "fprMediumPlus": 0.00826936026936027,
+      "precisionHigh": 0.916243654822335,
+      "recallAll": 0.966,
+      "recallT1": 0.92,
+      "recallT1Evasive": 0.84
+    }
+  },
+  "modelVersion": "gbm-20261011",
   "outOfDistribution": {
     "alertBudget": 750,
-    "auc": 0.9983995914702581,
+    "auc": 0.9988092772166106,
     "byTypology": [
       {
         "confidenceInterval95": [
@@ -366,52 +406,52 @@
       },
       {
         "confidenceInterval95": [
-          0.9629629629629629,
-          0.9935489057151747
+          0.9896193771626297,
+          1.0
         ],
         "count": 300,
-        "recall": 0.98,
+        "recall": 0.9966666666666667,
         "typology": "T2"
       },
       {
         "confidenceInterval95": [
-          0.974941622200726,
-          0.9955866685862367
+          0.9700426160607611,
+          0.9932591810572355
         ],
         "count": 450,
-        "recall": 0.9866666666666667,
+        "recall": 0.9822222222222222,
         "typology": "T3"
       },
       {
         "confidenceInterval95": [
-          0.9665467097532315,
-          0.996700211004707
+          0.9624554655653867,
+          0.9937323485738132
         ],
         "count": 300,
-        "recall": 0.9833333333333333,
+        "recall": 0.98,
         "typology": "T4"
       }
     ],
     "confidenceIntervals95": {
       "fprHardNegatives": [
-        0.45564535526050887,
-        0.48378601381472813
+        0.45586172386297485,
+        0.4839676936236099
       ],
       "fprMediumPlus": [
-        0.0823955612333798,
-        0.0850867579097224
+        0.08179520131990847,
+        0.08449195231873737
       ],
       "precisionAtAlertBudget": [
-        0.9506666666666667,
-        0.9786666666666667
+        0.9626666666666667,
+        0.9853333333333333
       ],
       "precisionHigh": [
-        0.8955119507358313,
-        0.928962683532233
+        0.8994972734199105,
+        0.9315347573774541
       ],
       "recallAll": [
-        0.9823114160339904,
-        0.9934085835779691
+        0.9845555775633077,
+        0.994730340315427
       ],
       "recallT1": [
         1.0,
@@ -422,31 +462,31 @@
         1.0
       ],
       "recallT2": [
-        0.9629629629629629,
-        0.9935489057151747
+        0.9896193771626297,
+        1.0
       ],
       "recallT3": [
-        0.974941622200726,
-        0.9955866685862367
+        0.9700426160607611,
+        0.9932591810572355
       ],
       "recallT4": [
-        0.9665467097532315,
-        0.996700211004707
+        0.9624554655653867,
+        0.9937323485738132
       ]
     },
-    "diversionRate": 8.977081379241422e-05,
-    "fprHardNegatives": 0.47,
-    "fprMediumPlus": 0.08373737373737374,
-    "precisionAtAlertBudget": 0.964,
-    "precisionHigh": 0.912478336221837,
-    "recallAll": 0.9886666666666667,
+    "diversionRate": 8.237723587236701e-05,
+    "fprHardNegatives": 0.4702222222222222,
+    "fprMediumPlus": 0.08315151515151516,
+    "precisionAtAlertBudget": 0.976,
+    "precisionHigh": 0.916243654822335,
+    "recallAll": 0.99,
     "recallT1": 1.0,
     "recallT1Evasive": 1.0,
     "seed": "C",
-    "stpRate": 0.9162626262626262,
-    "ttdP95Ms": 0.6720149500779371,
-    "valueStoppedPct": 0.9914606382438268
+    "stpRate": 0.9168484848484848,
+    "ttdP95Ms": 0.6441549497139931,
+    "valueStoppedPct": 0.9921639451858553
   },
-  "runtimeSeconds": 511.538060803,
+  "runtimeSeconds": 490.38899990200025,
   "sample": false
 }
