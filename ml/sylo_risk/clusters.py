@@ -66,7 +66,7 @@ def _region_payload(region: str) -> tuple[str, str]:
         "Central": "GH-CP",
         "Eastern": "GH-EP",
         "Greater Accra": "GH-AA",
-        "Northern": "GH-NE",
+        "Northern": "GH-NP",
         "Upper East": "GH-UE",
         "Volta": "GH-TV",
         "Western": "GH-WP",
