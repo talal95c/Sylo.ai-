@@ -20,6 +20,8 @@ log = logging.getLogger("sylo.case_writer")
 
 PROMPT_VERSION = "s2-v1"
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+SAFE_FILENAME = re.compile(r"[A-Za-z0-9._-]+")
+DOCUMENTS_DIR = Path(__file__).resolve().parent / "fixtures" / "documents"
 SYSTEM_PROMPT = """You write an analyst case file for a payment that a bank's payment-integrity system has held or scored.
 You are advisory only: you cannot approve, release, block or move money, and nothing you write changes the decision.
 
@@ -159,9 +161,46 @@ def _bind_event_refs(raw: dict[str, Any], events: list[Any], template: CaseFile)
 
 
 def _safe_cache_path(cache_dir: Path, payment_id: str) -> Path | None:
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", payment_id) or payment_id in {".", ".."}:
+    if not _safe_filename(payment_id):
         return None
     return cache_dir / f"{payment_id}.json"
+
+
+def _safe_filename(value: str) -> bool:
+    return bool(SAFE_FILENAME.fullmatch(value)) and value not in {".", ".."}
+
+
+def _invoice_ref(events: list[Any]) -> str | None:
+    for event in events:
+        normalized = event_dict(event)
+        if normalized.get("type") not in {"payment.created", "payment.received"}:
+            continue
+        data = normalized.get("data")
+        if not isinstance(data, Mapping):
+            continue
+        value = data.get("invoiceRef", data.get("invoice_ref"))
+        if isinstance(value, str) and _safe_filename(value):
+            return value
+    return None
+
+
+def _resolve_document(
+    documents: Mapping[str, str], payment_id: str, events: list[Any]
+) -> str | None:
+    document = documents.get(payment_id)
+    if isinstance(document, str) and document.strip():
+        return document
+
+    invoice_ref = _invoice_ref(events)
+    if invoice_ref is None:
+        return None
+    document = documents.get(invoice_ref)
+    if isinstance(document, str) and document.strip():
+        return document
+    try:
+        return (DOCUMENTS_DIR / f"{invoice_ref}.txt").read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 class TemplateCaseWriter:
@@ -178,7 +217,7 @@ class TemplateCaseWriter:
         self.text_screen = text_screen or TextScreen()
 
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
-        document = self.documents.get(payment_id)
+        document = _resolve_document(self.documents, payment_id, events)
         signals = self.text_screen.screen(document) if document and document.strip() else None
         return template_case(payment_id, events, text_signals=signals)
 
@@ -259,12 +298,13 @@ class CaseWriter:
         events: list[Any],
         template: CaseFile,
         text_signals: TextSignals | None,
+        document: str | None,
     ) -> CaseFile:
         if not self.api_key:
             raise RuntimeError("MISTRAL_API_KEY is not configured")
         pseudonymized, replacements = _placeholder_events(events)
         refs = _allowed_refs(pseudonymized, template)
-        document = self.documents.get(payment_id, "none")
+        document = document or "none"
         if text_signals and text_signals.injection is not None and text_signals.injection >= 0.5:
             document = "withheld: embedded instructions detected"
         elif document != "none":
@@ -314,7 +354,7 @@ class CaseWriter:
         return validated
 
     def write(self, payment_id: str, events: list[Any]) -> CaseFile:
-        document = self.documents.get(payment_id)
+        document = _resolve_document(self.documents, payment_id, events)
         text_signals = (
             self.text_screen.screen(document)
             if isinstance(document, str) and document.strip()
@@ -329,7 +369,7 @@ class CaseWriter:
             log.warning("CaseWriter live mode has no API key; trying the cache before the template")
             return self._cached(payment_id, events, template) or template
         try:
-            return self._request(payment_id, events, template, text_signals)
+            return self._request(payment_id, events, template, text_signals, document)
         except Exception as error:
             log.warning("CaseWriter live generation failed (%s); using the template", type(error).__name__)
             return template

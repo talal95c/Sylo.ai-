@@ -3,10 +3,11 @@
     python -m sylo.record_fixtures          # write the files
     python -m sylo.record_fixtures --check  # exit 1 if re-recording would change them
 
-Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, default settings and dev keys (the
-environment is ignored so the files do not depend on the machine). The scenes run with ``auto``;
-``samples-v1`` is the diverted scenario with every human step done by hand, and the three
-``samples-scene*`` files are the v2 scenes (mule wave and breaker, guardian incident, rail outage).
+Virtual clock from 2026-10-11T09:00:00.000Z, seed 42, speed 1, and explicit model/cached/mock modes.
+The environment is cleared to exclude keys, so recording uses local model and case caches only.
+The scenes run with ``auto``; ``samples-v1`` is the diverted scenario with every human step done by
+hand, and the three ``samples-scene*`` files are the v2 scenes (mule wave and breaker, guardian
+incident, rail outage).
 """
 
 from __future__ import annotations
@@ -14,10 +15,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
 from typing import Any
+from unittest.mock import patch
 
 from . import REPO_DIR
 from .config import Settings
@@ -42,6 +45,12 @@ NAMES = (
     "samples-scene4-guardian",
     "samples-scene5-outage",
 )
+FIXTURE_ENV = {
+    "RISK_MODE": "model",
+    "LLM_MODE": "cached",
+    "JEV_MODE": "cached",
+    "CHAIN_MODE": "mock",
+}
 
 
 class _Timeline:
@@ -56,9 +65,26 @@ class _Timeline:
 
 
 def _orchestrator(timeline: _Timeline | None = None, **settings: Any) -> Orchestrator:
-    return build_orchestrator(
-        Settings(seed=SEED, **settings), env={}, pacer_factory=timeline or (lambda speed: VirtualPacer(START, speed))
+    orchestrator = build_orchestrator(
+        Settings(
+            seed=SEED,
+            risk_mode="model",
+            llm_mode="cached",
+            chain_mode="mock",
+            **settings,
+        ),
+        env=FIXTURE_ENV,
+        pacer_factory=timeline or (lambda speed: VirtualPacer(START, speed)),
     )
+    if "risk" in orchestrator.degraded or type(orchestrator.risk).__name__ != "CombinedRisk":
+        raise RuntimeError(
+            "fixture recording requires the sylo-risk model extra; install engine extras with `uv sync --all-extras`"
+        )
+    if orchestrator.case.writer is None:
+        raise RuntimeError(
+            "fixture recording requires the sylo-risk cached case writer; install engine extras with `uv sync --all-extras`"
+        )
+    return orchestrator
 
 
 async def _until(orchestrator: Orchestrator, payment_id: str, status: str, timeout: float = 10.0) -> PaymentRun:
@@ -72,13 +98,28 @@ async def _until(orchestrator: Orchestrator, payment_id: str, status: str, timeo
     raise RuntimeError(f"{payment_id} never reached {status}")
 
 
+async def _await_case_ready(run: PaymentRun) -> None:
+    if run.case_task is not None:
+        await run.case_task
+
+
 async def _denied_then(attack: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Diverted + deny on a fresh engine, then one attack. Returns (scenario events, attack events)."""
-    orchestrator = _orchestrator()
-    await orchestrator.run_to_end("diverted", auto=True, auto_answer="deny")
+    orchestrator = await _diverted_answer("deny")
     scenario = orchestrator.bus.events
     await orchestrator.attack(attack, DIVERTED)
     return scenario, orchestrator.bus.events[len(scenario) :]
+
+
+async def _diverted_answer(answer: str) -> Orchestrator:
+    orchestrator = _orchestrator()
+    payment_id = orchestrator.start("diverted", auto=False)
+    run = await _until(orchestrator, payment_id, "awaiting_supplier")
+    await _await_case_ready(run)
+    orchestrator.supplier_response(payment_id, answer)
+    assert orchestrator._task is not None
+    await orchestrator._task
+    return orchestrator
 
 
 async def _manual_sample() -> list[dict[str, Any]]:
@@ -91,6 +132,7 @@ async def _manual_sample() -> list[dict[str, Any]]:
     await run.pacer.wait(2400)
     orchestrator.approve(payment_id, "marc")
     await _until(orchestrator, payment_id, "awaiting_supplier")
+    await _await_case_ready(run)
     await run.pacer.wait(4200)
     orchestrator.supplier_response(payment_id, "deny")
     await _until(orchestrator, payment_id, "awaiting_analyst")
@@ -117,6 +159,7 @@ async def _guardian_sample() -> list[dict[str, Any]]:
     orchestrator = _orchestrator()
     payment_id = orchestrator.start("diverted", auto=False)
     run = await _until(orchestrator, payment_id, "awaiting_supplier")
+    await _await_case_ready(run)
     await run.pacer.wait(2500)
     tx = orchestrator.chain.freeze(run.chain_pid)  # the guardian acts on-chain with its own key
     orchestrator.guardian_incident(
@@ -135,21 +178,25 @@ async def _guardian_sample() -> list[dict[str, Any]]:
     return orchestrator.bus.events
 
 
-async def record() -> dict[str, list[dict[str, Any]]]:
+async def _record() -> dict[str, list[dict[str, Any]]]:
     legit = _orchestrator()
     await legit.run_to_end("legit", auto=True)
 
     deny_events, release_attack = await _denied_then("release_revoked")
-    split = next(i for i, e in enumerate(deny_events) if e["type"] == "verification.requested") + 1
+    verification_index = next(i for i, e in enumerate(deny_events) if e["type"] == "verification.requested")
+    case_ready_index = next(i for i, e in enumerate(deny_events) if e["type"] == "case.ready")
+    if case_ready_index <= verification_index:
+        raise RuntimeError("the case must be ready after verification is requested")
+    split = case_ready_index + 1
 
-    confirmed = _orchestrator()
-    await confirmed.run_to_end("diverted", auto=True, auto_answer="confirm")
+    confirmed = await _diverted_answer("confirm")
     confirm_events = confirmed.bus.events
     if confirm_events[:split] != deny_events[:split]:
-        raise RuntimeError("the diverted scenario is not deterministic up to verification.requested")
+        raise RuntimeError("the diverted scenario is not deterministic up to case.ready")
 
     simswap = _orchestrator()
-    await simswap.run_to_end("diverted_simswap", auto=True)
+    simswap_run = await simswap.run_to_end("diverted_simswap", auto=True)
+    await _await_case_ready(simswap_run)
 
     recorded = {
         "scene1-legit": legit.bus.events,
@@ -171,6 +218,20 @@ async def record() -> dict[str, list[dict[str, Any]]]:
     await outage.run_to_end("outage", auto=True)
     recorded["samples-scene5-outage"] = outage.bus.events
     return recorded
+
+
+async def record() -> dict[str, list[dict[str, Any]]]:
+    try:
+        from sylo_risk import ModelRisk
+
+        ModelRisk()
+    except Exception as err:
+        raise RuntimeError(
+            "fixture recording requires sylo-risk and its model extra; "
+            "install them with `cd engine && uv sync --all-extras`"
+        ) from err
+    with patch.dict(os.environ, FIXTURE_ENV, clear=True):
+        return await _record()
 
 
 def render(events: list[dict[str, Any]]) -> str:

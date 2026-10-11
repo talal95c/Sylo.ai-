@@ -219,6 +219,9 @@
       }
     }
   },
+  "compliance": {
+    "euAiActFraudDetectionCarveOut": "Annex III 5(b)"
+  },
   "dataset": {
     "days": 30,
     "payments": 150000,
@@ -466,6 +469,9 @@
       "recallT1": 0.92,
       "recallT1Evasive": 0.84
     }
+  },
+  "modelPolicy": {
+    "scoreCap": 89
   },
   "modelVersion": "gbm-20261011",
   "outOfDistribution": {

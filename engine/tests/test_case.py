@@ -82,6 +82,22 @@ def test_a_case_file_with_an_unknown_citation_or_too_long_is_rejected():
             validate_case(bad, known_refs=refs)
 
 
+def test_text_screen_citations_are_allowed_but_unknown_refs_are_not():
+    _, risk = diverted()
+    refs = known_refs(risk, EVENTS)
+    text_case = answer(
+        summary="Text screening found changed bank details [TX-CHANGE].",
+        sentences=[{"text": "Text screening found changed bank details.", "refs": ["TX-CHANGE"]}],
+        citations=[{"ref": "TX-CHANGE", "source": "reason"}],
+    )
+    assert validate_case(text_case, known_refs=refs).sentences[0].refs == ["TX-CHANGE"]
+    with pytest.raises(ValueError, match="not rules, signals or events"):
+        validate_case(
+            answer(citations=[{"ref": "TX-OTHER", "source": "reason"}]),
+            known_refs=refs,
+        )
+
+
 class _Writer:
     name = "fake-writer"
 
