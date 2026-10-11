@@ -137,9 +137,9 @@ The document only tells the engine **which recorded order it is about** (invoice
 `CONFIDENTIAL_MODE` is `off` (default), `simulated` or `eerc`; `system.mode.confidential` says which one runs.
 
 - **When.** Only for a payment that needs no hold (LOW, direct settlement on R3): after the adapter accepted the chain leg (`leg.sent`), the engine makes the confidential transfer and emits `confidential.transfer`, then `leg.settled`. A payment that must be held keeps the public escrow: a contract cannot hold and release eEURC by itself.
-- **`confidential.transfer`** `{ hop, from, to, token: "eEURC", amountHidden: true, txHash, explorerUrl, depositTxHash?, withdrawTxHash?, auditorDecryptedAmountEur, auditorMatches, metadataEncrypted, hidden: [...], visible: [...], text }`. With `eerc` the transactions are real (Lane C's service `chain/eerc`, `POST {EERC_URL}/transfer`, about 30 s per leg on Fuji) and `simulated` is false; with `simulated` the receipt is a labelled fake.
+- **`confidential.transfer`** `{ hop, from, to, token: "eEURC", amountHidden: true, txHash, explorerUrl, depositTxHash?, withdrawTxHash?, auditorDecryptedAmountEur, auditorMatches, metadataEncrypted, hidden: [...], visible: [...], text }`. With `eerc` the transfer is real (Lane C's service `chain/eerc`, `POST {EERC_URL}/transfer`: a confidential transfer from the sender's pre-funded eEURC float, about 10 s on Fuji; `depositTxHash` and `withdrawTxHash` are then null, the receiver unwraps netted totals later) and `simulated` is false; with `simulated` the receipt is a labelled fake.
 - **Fail safe.** If the service does not answer, the leg stays public: `system.mode.degraded` gains `"confidential"` and the analyst gets an `alert.raised` saying the amount is visible on-chain. If the amount the auditor decrypts does not match the payment, the next leg is not sent: `payment.stopped` and an analyst alert.
-- **Still visible:** the institutions' addresses and the amounts wrapped and unwrapped at the two ends. This is not anonymity: the designated auditor reads every amount.
+- **Still visible:** the institutions' addresses, the float wrapped at one end and the netted totals unwrapped at the other. This is not anonymity: the designated auditor reads every amount.
 
 ## Norms rules added after v2
 

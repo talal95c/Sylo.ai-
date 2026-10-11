@@ -4,8 +4,10 @@ A payment that needs no hold can cross the chain as an eERC confidential transfe
 readable on-chain, the recipient decrypts it, and a designated auditor can decrypt every amount. A
 payment that must be held keeps the public escrow, because a contract cannot hold and release eEURC.
 
-``CONFIDENTIAL_MODE=eerc`` calls Lane C's service (``chain/eerc``, ``POST /transfer``), which sends real
-transactions on Fuji. ``simulated`` returns a labelled fake receipt, for a laptop without that service.
+``CONFIDENTIAL_MODE=eerc`` calls Lane C's service (``chain/eerc``, ``POST /transfer``), which sends a real
+confidential transfer on Fuji from the sending institution's pre-funded eEURC float; the receiver unwraps
+netted totals later (``POST /settle``, not the engine's business). ``simulated`` returns a labelled fake
+receipt, for a laptop without that service.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from sylo_spec.canonical import keccak_text, to_hex
 log = logging.getLogger("sylo.confidential")
 
 TOKEN = "eEURC"
-VISIBLE = ("sender and receiver addresses", "amounts wrapped and unwrapped at the two ends")
+VISIBLE = ("sender and receiver addresses", "the float wrapped at one end and the netted totals unwrapped at the other")
 HIDDEN = ("transfer amount", "eEURC balances", "payment reference (encrypted metadata)")
 
 
@@ -63,7 +65,7 @@ class SimulatedConfidentialLeg:
 
 
 class EercServiceLeg:
-    """Client of Lane C's eERC service. One leg takes about 30 s on Fuji (proofs and transactions)."""
+    """Client of Lane C's eERC service. One leg takes about 10 s on Fuji (one proof and one transaction)."""
 
     mode = "eerc"
 

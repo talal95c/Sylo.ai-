@@ -33,10 +33,12 @@ def eerc_service():
             state["requests"].append((self.path, request))
             body = state["body"] or {
                 "paymentId": request["paymentId"],
-                "txs": {"deposit": "0x" + "40" * 32, "transfer": TRANSFER, "withdraw": "0x" + "68" * 32},
+                "txs": {"transfer": TRANSFER},
                 "links": {"transfer": f"{EXPLORER}/tx/{TRANSFER}"},
-                "auditor": {"decryptedAmountEur": request["amountEur"]},
+                "floatTopUp": None,
+                "auditor": {"decryptedAmountEur": request["amountEur"], "matches": True},
                 "receiverMetadata": {"paymentId": request["paymentId"]},
+                "balances": {"euCaspFloatEur": 915000, "ghVaspUnsettledEur": 85000},
             }
             payload = json.dumps(body).encode()
             self.send_response(state["status"])
@@ -122,11 +124,16 @@ def test_the_service_client_reads_the_documented_answer(eerc_service):
     assert eerc_service["requests"] == [("/transfer", {"paymentId": LEGIT, "amountEur": 85000.0})]
     assert receipt.tx_hash == TRANSFER and receipt.explorer_url == f"{EXPLORER}/tx/{TRANSFER}" and not receipt.simulated
     assert receipt.auditor_amount_eur == 85000.0 and receipt.metadata_payment_id == LEGIT
-    assert receipt.deposit_tx_hash == "0x" + "40" * 32 and receipt.withdraw_tx_hash == "0x" + "68" * 32
+    assert receipt.deposit_tx_hash is None and receipt.withdraw_tx_hash is None  # float and netted settlement
 
-    eerc_service["body"] = {"txs": {"transfer": TRANSFER}, "auditorDecryptedAmountEur": 12.5}
-    shorter = EercServiceLeg(eerc_service["url"], EXPLORER).transfer(LEGIT, 12.5)
-    assert shorter.auditor_amount_eur == 12.5 and shorter.deposit_tx_hash is None and shorter.explorer_url.endswith(TRANSFER)
+    # The first version of the service wrapped and unwrapped around each transfer: still understood.
+    eerc_service["body"] = {
+        "txs": {"deposit": "0x" + "40" * 32, "transfer": TRANSFER, "withdraw": "0x" + "68" * 32},
+        "auditorDecryptedAmountEur": 12.5,
+    }
+    older = EercServiceLeg(eerc_service["url"], EXPLORER).transfer(LEGIT, 12.5)
+    assert older.auditor_amount_eur == 12.5 and older.explorer_url.endswith(TRANSFER)
+    assert older.deposit_tx_hash == "0x" + "40" * 32 and older.withdraw_tx_hash == "0x" + "68" * 32
 
 
 def test_the_service_client_fails_safe(eerc_service):
@@ -149,4 +156,4 @@ async def test_with_the_service_the_event_carries_the_real_transaction(eerc_serv
     run = await orchestrator.run_to_end("legit")
     event = events_of(orchestrator, "confidential.transfer")[0]
     assert run.status == "credited" and not event["simulated"] and event["data"]["txHash"] == TRANSFER
-    assert event["data"]["explorerUrl"] == f"{EXPLORER}/tx/{TRANSFER}" and event["data"]["depositTxHash"]
+    assert event["data"]["explorerUrl"] == f"{EXPLORER}/tx/{TRANSFER}" and event["data"]["depositTxHash"] is None
