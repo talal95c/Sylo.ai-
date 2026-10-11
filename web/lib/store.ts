@@ -104,10 +104,13 @@ export interface ViewState {
     score?: number;
     routeId?: string;
     routeName?: string;
+    feesEur?: number;
     etaLabel?: string;
+    routeReason?: string;
     routeCostEur?: number;
     settlement?: string;
     intentHash?: string;
+    intentTxHash?: string;
     intentSimulated?: boolean;
   };
   risk: null | {
@@ -394,7 +397,9 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
               ...next.payment,
               routeId: String(data.routeId),
               routeName: String(data.name),
+              feesEur: Number(data.feesEur),
               etaLabel: String(data.etaLabel),
+              routeReason: String(data.reason),
               routeCostEur: ownScore ?? undefined,
               settlement: typeof data.settlement === "string" ? data.settlement : undefined,
               actionTier: data.tier as Tier,
@@ -414,6 +419,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
               status: "in_transit",
               actionTier: data.tier as Tier,
               intentHash: String(data.intentHash),
+              intentTxHash: String(data.txHash),
               intentSimulated: event.simulated,
             }
           : null,

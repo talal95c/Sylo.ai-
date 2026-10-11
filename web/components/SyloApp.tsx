@@ -185,7 +185,7 @@ export default function SyloApp() {
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>
             <aside data-globe-occluder="left" className="absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-hidden 2xl:w-[372px]">
-              <PaymentCard state={sylo.state} panelOpen={decisionsOpen} onViewAlert={sylo.actions.openAlert} />
+              <PaymentCard state={sylo.state} panelOpen={decisionsOpen} />
               <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} sourceKind={sylo.sourceKind} />
             </aside>
 
@@ -212,6 +212,7 @@ export default function SyloApp() {
         speed={sylo.speed}
         setSpeed={sylo.setSpeed}
         sourceKind={sylo.sourceKind}
+        onViewAlert={sylo.actions.openAlert}
       />
       <Toast toasts={sylo.toasts} onDismiss={sylo.dismissToast} />
       {!mobileDemoOpen ? (

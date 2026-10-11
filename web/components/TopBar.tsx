@@ -279,7 +279,7 @@ export function TopBar({
             <Dot color="var(--medium)" pulse /> Engine offline · replay
           </motion.span>
         ) : sourceKind === "replay" ? (
-          <span className="hidden whitespace-nowrap text-[10.5px] text-ink-3 sm:block" title="Recorded events">
+          <span className="hidden whitespace-nowrap text-[11px] text-ink-3 sm:block" title="Recorded events">
             Recorded events
           </span>
         ) : null}

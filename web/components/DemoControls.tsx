@@ -177,6 +177,7 @@ export function DemoControls({
   speed,
   setSpeed,
   sourceKind,
+  onViewAlert,
 }: {
   state: ViewState;
   actions: Actions;
@@ -184,6 +185,7 @@ export function DemoControls({
   speed: 1 | 2;
   setSpeed: (speed: 1 | 2) => void;
   sourceKind: SourceKind;
+  onViewAlert?: () => void;
 }) {
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [invoiceText, setInvoiceText] = useState(SIMULATED_JURY_INVOICE);
@@ -192,6 +194,7 @@ export function DemoControls({
   const status = state.payment?.status;
   const busy = status === "deciding" || status === "in_transit" || status === "held" || status === "frozen";
   const phase = available.confirm ? "supplier" : busy ? "busy" : "start";
+  const alertAvailable = Boolean(state.held) || status === "credited" || status === "stopped" || state.attack.reverted;
   const reducedMotion = useReducedMotion();
   const caption = state.attack.reverted
     ? "Rejected by the smart contract"
@@ -238,6 +241,18 @@ export function DemoControls({
         data-globe-occluder="bottom"
         className="glass absolute bottom-4 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-1.5 rounded-full p-2"
       >
+      {alertAvailable && !state.alertOpen && onViewAlert ? (
+        <button
+          type="button"
+          onClick={onViewAlert}
+          className={cx(
+            "absolute left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--line-strong)] bg-white/95 px-3 py-2 text-center text-[11px] font-medium leading-tight text-ink-2 shadow-[0_4px_20px_rgba(20,24,40,0.1)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
+            phase === "supplier" ? "bottom-[calc(100%+48px)]" : "bottom-[calc(100%+8px)]",
+          )}
+        >
+          View alert
+        </button>
+      ) : null}
       {showFloatingCaption ? (
         <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap text-[14px] text-ink-2" aria-live="polite">
           <AnimatePresence mode="wait" initial={false}>

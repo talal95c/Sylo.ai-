@@ -16,7 +16,7 @@ export function StatusPill({ meta }: { meta: ReturnType<typeof paymentStatusView
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -3 }}
         transition={{ duration: 0.2, ease }}
-        className="inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium"
+        className="inline-flex h-7 whitespace-nowrap items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium"
         style={{ color: meta.color, borderColor: `color-mix(in srgb, ${meta.color} 20%, white)`, background: `color-mix(in srgb, ${meta.color} 5%, white)` }}
       >
         {meta.busy ? <Spinner size={11} color={meta.color} /> : <Dot color={meta.color} />}
@@ -26,19 +26,15 @@ export function StatusPill({ meta }: { meta: ReturnType<typeof paymentStatusView
   );
 }
 
-export function PaymentCard({ state, panelOpen = false, onViewAlert }: { state: ViewState; panelOpen?: boolean; onViewAlert?: () => void }) {
+export function PaymentCard({ state, panelOpen = false }: { state: ViewState; panelOpen?: boolean }) {
   const payment = state.payment;
   const status = paymentStatusView(state);
-  const alertAvailable = Boolean(state.held) || payment?.status === "credited" || payment?.status === "stopped" || state.attack.reverted;
 
   return (
     <motion.section layout initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease }} className={cx("card overflow-clip rounded-[18px]", panelOpen ? "flex min-h-0 flex-1 flex-col" : "shrink-0")} aria-label="Payment">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[18px] bg-white px-4 pb-2 pt-4">
         <Tag index="01">Payment</Tag>
-        <div className="flex items-center gap-2">
-          {alertAvailable && !state.alertOpen && onViewAlert ? <button type="button" onClick={onViewAlert} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-medium text-ink-2">View alert</button> : null}
-          <StatusPill meta={status} />
-        </div>
+        <StatusPill meta={status} />
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
