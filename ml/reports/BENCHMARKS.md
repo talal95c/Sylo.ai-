@@ -10,6 +10,12 @@ All evaluation data are synthetic. Passes 1–4 document the prior baselines; Pa
 - Scene 2 cache: live `mistral-small-latest` result.
 - Decision: the CaseWriter is advisory only; invalid or less-strict output falls back to the deterministic template.
 
+### Strict-schema and repair telemetry — 2026-10-11
+
+- Old-code baseline (`json_object`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=223.40097699998296`, `latencyMs.p95=276.91554900047777`.
+- Strict-schema run (`json_schema-strict`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=227.49815599991052`, `latencyMs.p95=244.1048390001015`.
+- Both runs returned HTTP 401 for every request, so they do not measure model output or schema conformance; the strict run returned no HTTP 400 schema rejection. The earlier 50%/50% run above used a prior credential state.
+
 ## Block 2 — evaluation harness
 
 ### Model history
