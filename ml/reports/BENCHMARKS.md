@@ -10,6 +10,12 @@ All evaluation data are synthetic. Passes 1–4 document the prior baselines; Pa
 - Scene 2 cache: live `mistral-small-latest` result.
 - Decision: the CaseWriter is advisory only; invalid or less-strict output falls back to the deterministic template.
 
+### Strict-schema and repair telemetry — 2026-10-11
+
+- Old-code baseline (`json_object`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=223.40097699998296`, `latencyMs.p95=276.91554900047777`.
+- Strict-schema run (`json_schema-strict`, 20 variants): `passValidatorRate=0.0`, `fallbackRate=1.0`, `acceptedLessStrictCount=0`, `fallbackReasons={"http_401": 20}`, `repairedCount=0`, `latencyMs.p50=227.49815599991052`, `latencyMs.p95=244.1048390001015`.
+- Both runs returned HTTP 401 for every request, so they do not measure model output or schema conformance; the strict run returned no HTTP 400 schema rejection. The earlier 50%/50% run above used a prior credential state.
+
 ## Block 2 — evaluation harness
 
 ### Model history
@@ -95,6 +101,70 @@ The baseline and earlier feature-on columns are from the read-only experiment; P
 | B | 30/30 (100.0%) | 7 / 10.1 | 0 / 0 / 30 | 30/30 (100.0%) | 11.5 / 16.1 | 14 | 4.51 s |
 | C | 30/30 (100.0%) | 7.5 / 10.2 | 0 / 0 / 30 | 29/30 (96.7%) | 10 / 15.2 | 15 | 4.49 s |
 
-The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; the old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
+The synthetic T3 fan-in is easy to detect: median 14–15 distinct payers per campaign, well above the three-payer threshold. The young-popular hard negatives trigger all 30 false clusters per seed; old popular suppliers and original legitimate transactions trigger none. This is a measured limit, not evidence that the detector separates real mule activity from legitimate account growth. `metrics.json` contains the seed-level results and rates.
 
-The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. No engine/web wiring was done. Lane A will need to invoke the `ClusterPort` implementation from the future mule-wave scene and publish the resulting roadmap-shaped `cluster.detected` event before wiring the breaker or globe.
+- Engine window detector (`WindowClusterDetector`, main 5971aaa): ≥3 payments into young/thin accounts at a border bank; offline benchmark unchanged.
+
+The risk package had institution-to-region mappings but no regional coordinates. Coarse one-decimal region representative centroids were added; output points are region-level only and never use institution coordinates. The engine's `WindowClusterDetector` is covered by the scene 3 engine test, not by this offline benchmark.
+
+## Pass 6 — T1 evasion
+
+- Command: `cd engine && uv run --extra model python -m sylo_risk.evasion --seed B`; the frozen `gbm-20261011` model and thresholds were used. Each level bootstraps 2,000 rows with replacement from seed B's 450 T1 rows. The prior-payment levels are set on observed aggregate fields, not simulated events.
+
+| Level | Definition | Recall MEDIUM+ | Recall HIGH+ | HIGH + OOB escrow | Action ≥HIGH | Model-only MEDIUM+ |
+|---|---|---:|---:|---:|---:|---:|
+| E0 | Current T1 | 100.00% | 76.45% | 19.85% | 56.60% | 92.95% |
+| E1 | Trusted `verified_registry` provenance | 92.95% | 76.45% | 19.85% | 56.60% | 92.95% |
+| E2 | E1; age ≥90 days, ≥3 successful payments (aggregate), not payee-owned, previous nominated account remains in history (`history_count` ≥1) | 92.65% | 75.30% | 19.85% | 55.45% | 92.65% |
+| E3 | E2; payee owns account and `last_account_id` is that account, with `history_count` ≥1 | 75.50% | 51.50% | 13.75% | 37.75% | 67.35% |
+
+E0–E3 fired rule counts (top five per level; counts can overlap):
+
+| Level | Fired rules |
+|---|---|
+| E0 | R-PV-01: 2,000; R-FL-01: 1,522; R-NM-01: 1,286; R-FL-03: 982; R-FL-02: 14 |
+| E1 | R-NM-01: 1,286; R-FL-03: 982; R-FL-02: 14 |
+| E2 | R-NM-01: 1,286; R-FL-03: 982 |
+| E3 | R-NM-01: 1,286 |
+
+The five most common E3 positive SHAP reason features (top three per payment, not gated by the user-facing score threshold) were `log1p_successful_payments` (2,000), `norm_R1` (915), `name_match` (901), `log1p_account_age_days` (807), and `domain_lookalike` (784).
+
+Seed B prevalence estimates:
+
+| Threshold | Fraud TPR | Legitimate FPR | Prevalence | Precision | Legitimate holds / fraud caught |
+|---|---:|---:|---:|---:|---:|
+| MEDIUM+ | 98.13% | 6.72% | 1% | 12.85% | 6.78 |
+| MEDIUM+ | 98.13% | 6.72% | 0.1% | 1.44% | 68.44 |
+| MEDIUM+ | 98.13% | 6.72% | 0.01% | 0.15% | 684.97 |
+| HIGH+ | 73.87% | 0.0842% | 1% | 89.86% | 0.11 |
+| HIGH+ | 73.87% | 0.0842% | 0.1% | 46.76% | 1.14 |
+| HIGH+ | 73.87% | 0.0842% | 0.01% | 8.07% | 11.39 |
+
+MEDIUM+ TPR/FPR cite `metrics.json#/metrics/recallAll` and `#/metrics/fprMediumPlus`. `metrics.json` has no legitimate HIGH+ FPR, so HIGH+ TPR/FPR were counted from seed B's existing labels and frozen full-engine tiers using `evaluate._score_engine` (1,108/1,500 frauds and 125/148,500 legitimate payments at HIGH+; no retraining). All figures are synthetic-evaluation measurements, not production efficacy. Full per-level metrics, rules, SHAP examples, formulas, and source paths are in `evasion.json`.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 628.4 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 2.604 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 2.587 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 443.8 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 0.585 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 3.998 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.
+
+#### Hard blocks (vs PRD ≤2%) / Verifications / Total friction
+
+| Seed | Hard blocks (vs PRD ≤2%) | Verifications | Total friction |
+|---|---:|---:|---:|
+| B | 0.07% | 6.66% | 6.72% |
+| C | 0.04% | 8.27% | 8.32% |

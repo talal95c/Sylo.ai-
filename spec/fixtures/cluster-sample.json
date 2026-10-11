@@ -1,5 +1,5 @@
 {
-  "$comment": "Synthetic. Used by the engine's stub ClusterPort until Lane B's detector (B2.1) is installed, and by the web as a sample for the hexagons. Coordinates are coarse, region-level points near Aflao and the Togo border; they are not real locations of anyone.",
+  "$comment": "Synthetic. The cluster is the engine's fallback when Lane B's detector (sylo_risk.clusters) is not installed, and the web's sample for the hexagons. The wave is what POST /v1/sim/mule-wave plays: three unrelated payers are each told that their supplier's new account is the same nine-day-old account. Coordinates are coarse, region-level points near Aflao and the Togo border; they are not real locations of anyone.",
   "clusterId": "CL-AFLAO-01",
   "region": "GH-TV",
   "regionName": "Volta Region (Aflao border)",
@@ -68,7 +68,9 @@
       "accountMasked": "GH•• •••• 4410",
       "payeeName": "Keta Cocoa Traders Ltd",
       "amount": "23400.00",
-      "invoiceRef": "KCT-2026-041"
+      "invoiceRef": "KCT-2026-041",
+      "accountAgeDays": 9,
+      "successfulPayments": 0
     },
     {
       "paymentId": "PAY-2026-0102",
@@ -77,12 +79,14 @@
         "id": "payer_maison",
         "name": "Maison Lenoir SAS"
       },
-      "accountId": "acc-aflao-04",
-      "accountHolder": "D. KPODO ENTERPRISE",
-      "accountMasked": "GH•• •••• 7726",
+      "accountId": "acc-aflao-02",
+      "accountHolder": "E. AGBEKO TRADING",
+      "accountMasked": "GH•• •••• 4410",
       "payeeName": "Volta Pineapple Growers",
       "amount": "41250.00",
-      "invoiceRef": "VPG-2026-233"
+      "invoiceRef": "VPG-2026-233",
+      "accountAgeDays": 9,
+      "successfulPayments": 0
     },
     {
       "paymentId": "PAY-2026-0103",
@@ -91,12 +95,14 @@
         "id": "payer_garonne",
         "name": "Garonne Négoce SA"
       },
-      "accountId": "acc-aflao-05",
-      "accountHolder": "S. DOGBE GLOBAL",
-      "accountMasked": "GH•• •••• 1958",
+      "accountId": "acc-aflao-02",
+      "accountHolder": "E. AGBEKO TRADING",
+      "accountMasked": "GH•• •••• 4410",
       "payeeName": "Ho Timber Exports Ltd",
       "amount": "18900.00",
-      "invoiceRef": "HTE-2026-077"
+      "invoiceRef": "HTE-2026-077",
+      "accountAgeDays": 9,
+      "successfulPayments": 0
     }
   ]
 }

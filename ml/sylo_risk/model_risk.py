@@ -8,7 +8,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import lightgbm as lgb
 import numpy as np
 from sylo_spec.models import PaymentOrder, RiskContext, RiskResult
 from sylo_spec.models import RiskReason, Tier, band
@@ -20,7 +19,9 @@ from .scores import probability_to_score
 
 
 @lru_cache(maxsize=1)
-def _load_artifacts() -> tuple[lgb.Booster, dict[str, Any], HistoryIndex]:
+def _load_artifacts() -> tuple[Any, dict[str, Any], HistoryIndex]:
+    import lightgbm as lgb
+
     model_dir = Path(__file__).resolve().parents[1] / "models"
     artifact = json.loads((model_dir / "model.json").read_text(encoding="utf-8"))
     booster = lgb.Booster(model_file=str(model_dir / artifact["tree_model"]))

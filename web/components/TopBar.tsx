@@ -36,13 +36,19 @@ function ModeIcon({ name, color }: { name: IconName; color: string }) {
   );
 }
 
-export function ModeBanner({ mode }: { mode: SystemModeData | null }) {
+export function ModeBanner({
+  mode,
+  riskMode,
+}: {
+  mode: SystemModeData | null;
+  riskMode?: "rules" | "model";
+}) {
   const value = mode ?? { risk: "rules", chain: "mock", llm: "off", rails: "simulated", degraded: [] };
   const degraded = value.degraded.map((item) => item.toLowerCase());
   const items: { icon: IconName; label: string; color: string }[] = [
     {
       icon: "risk",
-      label: `Risk · ${String(value.risk).toLowerCase()}`,
+      label: `Risk · ${String(riskMode ?? value.risk).toLowerCase()}`,
       color: degraded.some((item) => item.includes("risk")) ? "var(--medium)" : "var(--low)",
     },
     {
@@ -95,6 +101,7 @@ function ViewIcon({ name }: { name: DemoView }) {
 
 export function TopBar({
   mode,
+  riskMode,
   sourceKind,
   notice,
   onSource,
@@ -102,6 +109,7 @@ export function TopBar({
   onView,
 }: {
   mode: SystemModeData | null;
+  riskMode: "rules" | "model";
   sourceKind: SourceKind;
   notice?: string;
   onSource: (kind: SourceKind) => void;
@@ -155,7 +163,7 @@ export function TopBar({
       </div>
 
       <div className="hidden whitespace-nowrap xl:block">
-        <ModeBanner mode={mode} />
+        <ModeBanner mode={mode} riskMode={riskMode} />
       </div>
 
       <div className="flex min-w-0 items-center justify-end gap-2.5">

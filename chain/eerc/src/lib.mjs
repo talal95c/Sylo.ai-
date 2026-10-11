@@ -21,19 +21,37 @@ import {
 } from "maci-crypto";
 import { poseidon3 } from "poseidon-lite";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const EERC_DIR = path.resolve(HERE, "..");
 export const REPO_ROOT = path.resolve(EERC_DIR, "../..");
 export const VENDOR = path.join(EERC_DIR, "vendor/EncryptedERC");
 export const DEPLOYMENTS_FILE = path.join(EERC_DIR, "deployments/43113.json");
+export const DEMO_RUNS_FILE = path.join(EERC_DIR, "deployments/demo-runs-43113.json");
 export const CHAIN_ID = 43113n;
 export const EXPLORER = "https://testnet.snowtrace.io";
 export const MOCK_EURC = "0xd1A86C8Fc2a693E9C81E6ddC2924179e82A407bD";
 export const EERC_DECIMALS = 2;
 export const TOKEN_DECIMALS = 6;
 
-dotenv.config({ path: path.join(REPO_ROOT, ".env"), quiet: true });
+/** Repo-root .env; SYLO_ENV_FILE overrides, and a git worktree falls back to the main checkout's .env. */
+export function envFile() {
+	if (process.env.SYLO_ENV_FILE) return process.env.SYLO_ENV_FILE;
+	const local = path.join(REPO_ROOT, ".env");
+	if (fs.existsSync(local)) return local;
+	try {
+		const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+			cwd: REPO_ROOT,
+			encoding: "utf8",
+		}).trim();
+		const main = path.join(path.dirname(common), ".env");
+		if (fs.existsSync(main)) return main;
+	} catch {}
+	return local;
+}
+
+dotenv.config({ path: envFile(), quiet: true });
 
 export const txLink = (hash) => `${EXPLORER}/tx/${hash}`;
 export const addrLink = (a) => `${EXPLORER}/address/${a}`;
@@ -44,7 +62,14 @@ export function provider() {
 	return new ethers.JsonRpcProvider(url, Number(CHAIN_ID), { staticNetwork: true });
 }
 
-const ROLE_ENV = { auditor: "DEPLOYER_PK", euCasp: "EU_CASP_PK", ghVasp: "GH_VASP_PK" };
+// deployer only deploys; admin owns EncryptedERC; auditor holds the audit decryption key.
+export const ROLE_ENV = {
+	deployer: "DEPLOYER_PK",
+	admin: "EERC_ADMIN_PK",
+	auditor: "AUDITOR_PK",
+	euCasp: "EU_CASP_PK",
+	ghVasp: "GH_VASP_PK",
+};
 
 export function wallet(role, p = provider()) {
 	const pk = process.env[ROLE_ENV[role]];
@@ -304,6 +329,17 @@ export function linkBytecode(art, libs) {
 export function loadDeployments() {
 	if (!fs.existsSync(DEPLOYMENTS_FILE)) return null;
 	return JSON.parse(fs.readFileSync(DEPLOYMENTS_FILE, "utf8"));
+}
+
+export function saveDeployments(d) {
+	fs.writeFileSync(DEPLOYMENTS_FILE, `${JSON.stringify(d, null, 2)}\n`);
+}
+
+/** Append one record to deployments/demo-runs-43113.json (older runs are kept). */
+export function appendDemoRun(record) {
+	const runs = fs.existsSync(DEMO_RUNS_FILE) ? JSON.parse(fs.readFileSync(DEMO_RUNS_FILE, "utf8")) : [];
+	runs.push(record);
+	fs.writeFileSync(DEMO_RUNS_FILE, `${JSON.stringify(runs, null, 2)}\n`);
 }
 
 export function contracts(runner) {

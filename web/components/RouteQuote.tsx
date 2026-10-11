@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { buildQuote, cedis, etaShare, pct, type QuoteView } from "@/lib/quote";
+import { buildQuote, cedis, etaShare, pct, type QuoteView } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { cx, ease, euros } from "./ui";
 

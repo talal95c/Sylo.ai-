@@ -26,7 +26,7 @@ export function IncidentDrawer({ incident, open, onClose }: { incident: Incident
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
           transition={{ duration: 0.25, ease }}
-          className="card absolute bottom-4 right-4 top-[76px] z-40 flex w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[18px]"
+          className="card absolute bottom-[88px] right-4 top-[76px] z-40 flex w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[18px]"
         >
           <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
             <div>

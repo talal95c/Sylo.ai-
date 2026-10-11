@@ -9,7 +9,9 @@
       "withdraw": "0x68ffba7cff7c751fd9946306362b7da3ca496604cc9a60e2e4535569e15d32f1"
     },
     "auditorDecryptedAmountEur": 85000,
-    "receiverMetadata": { "paymentId": "PAY-2026-0001" }
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0001"
+    }
   },
   {
     "paymentId": "PAY-2026-0002",
@@ -21,6 +23,92 @@
       "withdraw": "0x3b395e53ab5c6e1e7346badd1a9dcba3816ea5fcad63fc558ee559220b1a94c2"
     },
     "auditorDecryptedAmountEur": 1250.5,
-    "receiverMetadata": { "paymentId": "PAY-2026-0002" }
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0002"
+    }
+  },
+  {
+    "step": "float",
+    "at": "2026-10-11T03:38:35.750Z",
+    "via": "cli",
+    "wrappedEur": 998749.5,
+    "floatAfterEur": 1000000,
+    "txs": {
+      "approve": "0xfd4d7922208df550cb223646a661ceb97a8d1f7b5e0990a3e5ba8310778f5f20",
+      "deposit": "0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b"
+    },
+    "links": {
+      "approve": "https://testnet.snowtrace.io/tx/0xfd4d7922208df550cb223646a661ceb97a8d1f7b5e0990a3e5ba8310778f5f20",
+      "deposit": "https://testnet.snowtrace.io/tx/0x904ff9c88f0ac3b13d9c7bc996402d37ca529dacea53d900713f492cb04d019b"
+    }
+  },
+  {
+    "step": "transfer",
+    "at": "2026-10-11T03:38:54.019Z",
+    "via": "cli",
+    "paymentId": "PAY-2026-0101",
+    "amountEur": 85000,
+    "txs": {
+      "transfer": "0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c"
+    },
+    "links": {
+      "transfer": "https://testnet.snowtrace.io/tx/0x9a08aebebe5ffcc2090ee88cc1a2472201e6be9ebdc73e69b3a127b204a16b9c"
+    },
+    "auditor": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+    "auditorDecryptedAmountEur": 85000,
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0101"
+    }
+  },
+  {
+    "step": "transfer",
+    "at": "2026-10-11T03:39:45.508Z",
+    "via": "POST /transfer",
+    "txs": {
+      "transfer": "0xeb011a5d5814e7552a3a95353c96d701f2a565ffac98121e0ce87a1756b66c65"
+    },
+    "links": {
+      "transfer": "https://testnet.snowtrace.io/tx/0xeb011a5d5814e7552a3a95353c96d701f2a565ffac98121e0ce87a1756b66c65"
+    },
+    "paymentId": "PAY-2026-0102",
+    "amountEur": 12400.75,
+    "auditor": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+    "auditorDecryptedAmountEur": 12400.75,
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0102"
+    }
+  },
+  {
+    "step": "transfer",
+    "at": "2026-10-11T03:39:55.794Z",
+    "via": "POST /transfer",
+    "txs": {
+      "transfer": "0x1b8cd84674010e669c20e758f22a8d1373f61a76332ede8a0bcb45042c7e8bca"
+    },
+    "links": {
+      "transfer": "https://testnet.snowtrace.io/tx/0x1b8cd84674010e669c20e758f22a8d1373f61a76332ede8a0bcb45042c7e8bca"
+    },
+    "paymentId": "PAY-2026-0103",
+    "amountEur": 230000,
+    "auditor": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+    "auditorDecryptedAmountEur": 230000,
+    "receiverMetadata": {
+      "paymentId": "PAY-2026-0103"
+    }
+  },
+  {
+    "step": "settle",
+    "at": "2026-10-11T03:40:13.004Z",
+    "via": "POST /settle",
+    "txs": {
+      "withdraw": "0x6f55d7fcb23b2a2a540f61d52cd6f51256fc97e20f7f2a20741ef8d6d728e9a4"
+    },
+    "links": {
+      "withdraw": "https://testnet.snowtrace.io/tx/0x6f55d7fcb23b2a2a540f61d52cd6f51256fc97e20f7f2a20741ef8d6d728e9a4"
+    },
+    "amountEur": 300000,
+    "auditor": "0x6AcA6b52befC051af9b88C0d64C5b136B249c145",
+    "auditorDecryptedAmountEur": 300000,
+    "ghVaspUnsettledAfterEur": 27400.75
   }
 ]

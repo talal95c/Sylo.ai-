@@ -1,8 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { loadGeo, type Institution } from "@/lib/geo";
+import { riskModeForSource } from "@/lib/store";
 import { useSylo } from "@/lib/useSylo";
 import { AlertOverlay } from "./AlertOverlay";
 import { DecisionSteps } from "./DecisionSteps";
@@ -49,6 +50,19 @@ export default function SyloApp() {
     window.history.replaceState(null, "", url);
   }, []);
 
+  const autoplayed = useRef(false);
+  const { sourceKind, actions } = sylo;
+  useEffect(() => {
+    if (autoplayed.current || sourceKind !== "replay") return;
+    const url = new URL(window.location.href);
+    const scene = url.searchParams.get("scene");
+    if (scene !== "legit" && scene !== "diverted") return;
+    autoplayed.current = true;
+    url.searchParams.delete("scene");
+    window.history.replaceState(null, "", url);
+    setTimeout(() => void (scene === "legit" ? actions.runLegit() : actions.runDiverted()).catch(() => undefined), 600);
+  }, [sourceKind, actions]);
+
   const globe = view === "globe";
 
   return (
@@ -92,7 +106,7 @@ export default function SyloApp() {
         )}
       </AnimatePresence>
 
-      <TopBar mode={sylo.state.mode} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
+      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
       <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
 
       <AnimatePresence>

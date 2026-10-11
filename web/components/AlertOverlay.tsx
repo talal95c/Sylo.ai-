@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
-import { buildQuote, pct, secondsBetween } from "@/lib/quote";
+import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
 import { MarketCompare } from "./MarketCompare";
 import { Savings } from "./RouteQuote";
 import { ease, euros, LockIcon, Spinner } from "./ui";
@@ -63,7 +63,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   const showOutcome = terminal;
   const receipt = buildQuote(state);
   const paymentId = state.payment?.paymentId;
-  const detailsKey = `${paymentId ?? "none"}:${held?.headline ?? "none"}`;
+  const detailsKey = `${state.feed[0]?.seq ?? 0}:${paymentId ?? "none"}:${held?.headline ?? "none"}`;
   const detailsOpen = detailsFor === detailsKey;
 
   const check = verificationChip(state);

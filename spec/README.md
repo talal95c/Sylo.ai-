@@ -27,9 +27,9 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 | File | Content |
 |---|---|
 | `scene1-legit.jsonl` | Scene 1: the legitimate payment, from `scenario.started` to `payment.credited` |
-| `scene2-diverted.jsonl` | Scene 2 up to `verification.requested` (the money is held in escrow) |
-| `scene2-deny.jsonl` | Continues Scene 2 after the supplier answers "deny": revoked, refunded, stopped |
-| `scene2-confirm.jsonl` | Continues Scene 2 after "confirm": released, credited |
+| `scene2-diverted.jsonl` | Scene 2 through `case.ready`: the money is held in escrow and the analyst dossier is ready while awaiting the supplier |
+| `scene2-deny.jsonl` | Continues Scene 2 after the shared `case.ready` event and the supplier's "deny" answer: revoked, refunded, stopped |
+| `scene2-confirm.jsonl` | Continues Scene 2 after the shared `case.ready` event and the supplier's "confirm" answer: released, credited |
 | `scene2b-release-revoked.jsonl` | Continues `scene2-deny`: the attacker's `release()` is rejected |
 | `scene2b-swap-beneficiary.jsonl` | v1. Continues `scene2-deny`: a leg with a changed beneficiary is refused by the rail adapter, then `deposit` of the modified intent reverts |
 | `scene2b-replay.jsonl` | v1. Continues `scene2-deny`: the signed intent is committed a second time and reverts |
@@ -38,7 +38,9 @@ Everything that two lanes must agree on lives here: event schema, API, EIP-712 t
 | `samples-scene3-mule-wave.jsonl` | v2. Three payments of other payers (`traffic.sample`), `cluster.detected`, `breaker.on`, then the diverted payment into the same region: HIGH with rule R-CB-01, held, revoked |
 | `samples-scene4-guardian.jsonl` | v2. While the diverted payment is held, `guardian.incident` (the guardian froze it); the supplier confirms, `release` reverts, the analyst revokes |
 | `samples-scene5-outage.jsonl` | v2. Scenario `outage`: `rail.down` for R3, the legitimate payment goes through R1, `rail.up` |
-| `cluster-sample.json` | v2. One synthetic mule cluster near Aflao (coarse points only) and the three payments of the mule wave. Read by the engine's stub `ClusterPort` |
+| `samples-confidential.jsonl` | The legitimate payment with `CONFIDENTIAL_MODE=simulated`: its chain leg is an eERC confidential transfer (`confidential.transfer`) |
+| `samples-hold-expiry.jsonl`, `samples-time-lock.jsonl` | Demo clock: a hold that expires and is refunded (`diverted_expiry`), and a confirmed first payment to a new account that waits for its 24-hour time-lock at the bank (`diverted_timelock`) |
+| `cluster-sample.json` | v2. One synthetic mule cluster near Aflao (coarse points only), the engine's fallback when Lane B's detector is not installed, and the three payments of the mule wave (three payers, one young account; `accountAgeDays` and `successfulPayments` feed the detector) |
 
 Recorded with a virtual clock starting `2026-10-11T09:00:00.000Z`, seed 42, speed 1. Recording twice gives identical files (`make fixtures-check`). The scenes are recorded with `auto: true`; from v1 they contain `approval.required`, `alert.raised`, `case.ready` and `case.action` (see [`api.md`](api.md)). The three `scene2b-*` files each start right after `scene2-deny`, so they can be replayed in any order.
 
@@ -47,7 +49,7 @@ Recorded with a virtual clock starting `2026-10-11T09:00:00.000Z`, seed 42, spee
 - `RiskPort.score(order, ctx) -> RiskResult` — implemented by `RulesRisk` (engine) and `ModelRisk` (Lane B, v1). Must pass `sylo_spec.conformance.run_risk_conformance`.
 - `CasePort.write(payment_id, events) -> CaseFile` — System 2 case file, implemented by `sylo_risk.CaseWriter` (Lane B). Advisory: no decision reads it; the engine emits it as `case.ready`. The engine checks the answer (summary of at most 120 words, every citation and sentence ref is a rule, signal or event of the payment) and otherwise builds the case file from the rules (`llm: "off"`).
 - `RiskResult.oobResolvable` (optional, default false) — true when only the beneficiary's identity is in doubt, so an out-of-band confirmation can lift the risk. The engine then treats a HIGH payment like a MEDIUM one: conditional settlement, never a direct payment.
-- `ClusterPort.detect(window) -> list[Cluster]` — v2. `window` is the payments of the last hour (`WindowPayment`: ids, amount, time; no names). Implemented by the engine's stub (`SampleClusterPort`, which reads `fixtures/cluster-sample.json`) until Lane B's `sylo_risk.clusters.detect` is installed. A returned cluster proposes a circuit breaker.
+- `ClusterPort.detect(window) -> list[Cluster]` — v2. `window` is the payments of the last hour (`WindowPayment`: ids, amount, time, and when known the payer id, payee id, account age in days and number of past payments; no names). Implemented by the engine's adapter over Lane B's `sylo_risk.clusters.detect` (`DetectorClusterPort`), with the sample (`SampleClusterPort`, which reads `fixtures/cluster-sample.json`) as the fallback. A returned cluster proposes a circuit breaker.
 - `ChainPort` — implemented by `MockChain` (engine) and `FujiChain` (Lane C, v1). Must pass `sylo_spec.conformance.run_chain_conformance`. The engine also calls `freeze(payment_id)` when the chain client has it (analyst action `FREEZE`).
 
 `sylo_spec.devkeys` holds the **public** Anvil keys (mnemonic `test test … junk`). Use them only in mock and local mode; never fund them on Fuji.

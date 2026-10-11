@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MARKET_CAPTURED_ON, marketRows } from "@/lib/market";
-import { pct, type QuoteView } from "@/lib/quote";
+import { pct, type QuoteView } from "@/lib/routeQuote";
 import { cx, ease, euros } from "./ui";
 
 export function MarketCompare({ quote }: { quote: QuoteView }) {

@@ -15,7 +15,7 @@ import {
   type Lane,
   type NarrationTone,
 } from "@/lib/flow";
-import { buildQuote, pct } from "@/lib/quote";
+import { buildQuote, pct } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { Check, cx, ease, euros, formatMoney, shortHash, Spinner } from "./ui";
 

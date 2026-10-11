@@ -279,6 +279,10 @@ class WindowPayment(SpecModel):
     institution_id: str
     amount_eur: float
     at: str
+    payer_id: str | None = None
+    payee_id: str | None = None
+    account_age_days: float | None = None
+    successful_payments: int | None = None
 
 
 class Cluster(SpecModel):

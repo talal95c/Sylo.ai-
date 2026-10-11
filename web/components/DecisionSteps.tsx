@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { buildQuote } from "@/lib/quote";
+import { buildQuote } from "@/lib/routeQuote";
 import type { ViewState } from "@/lib/store";
 import { GlowingShadow } from "./glowing-shadow";
 import { Check, cx, ease, euros, PanelHeaderButton, shortHash, Spinner } from "./ui";

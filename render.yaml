@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: sylo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    numInstances: 1
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - engine/**
+        - ml/**
+        - spec/**
+        - chain/**
+        - web/**
+        - contracts/deployments/**
+        - Dockerfile
+        - scripts/start-render.sh
+        - render.yaml
+    envVars:
+      - key: RISK_MODE
+        value: model
+      - key: LLM_MODE
+        value: cached
+      - key: JEV_MODE
+        value: cached
+      - key: CHAIN_MODE
+        value: mock
+      - key: MISTRAL_API_KEY
+        sync: false

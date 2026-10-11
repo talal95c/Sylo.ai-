@@ -79,6 +79,7 @@ export interface ViewState {
     amount: { value: string; currency: string };
     status: PaymentStatus;
     tier?: Tier;
+    actionTier?: Tier;
     score?: number;
     routeId?: string;
     routeName?: string;
@@ -93,6 +94,7 @@ export interface ViewState {
   risk: null | {
     score: number;
     tier: Tier;
+    model: string;
     reasons: { ref: string; text: string }[];
     rulesFired: string[];
     oobResolvable: boolean;
@@ -154,6 +156,19 @@ export const initialState: ViewState = {
   timing: {},
   feed: [],
 };
+
+export function resetForSourceChange(state: ViewState): ViewState {
+  return { ...initialState, mode: state.mode };
+}
+
+export function riskModeForSource(
+  state: ViewState,
+  sourceKind: "live" | "replay",
+): "rules" | "model" {
+  const model = state.risk?.model.toLowerCase();
+  if (model) return model.startsWith("rules") ? "rules" : "model";
+  return sourceKind === "replay" ? "rules" : (state.mode?.risk ?? "rules");
+}
 
 function eventData(event: SyloEvent): Record<string, unknown> {
   return event.data as Record<string, unknown>;
@@ -252,6 +267,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
         risk: {
           score: Number(data.score),
           tier: data.tier as Tier,
+          model: String(data.model ?? ""),
           reasons: data.reasons as { ref: string; text: string }[],
           rulesFired: data.rulesFired as string[],
           oobResolvable: data.oobResolvable === true,
@@ -282,7 +298,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
               etaLabel: String(data.etaLabel),
               routeReason: String(data.reason),
               routeCostEur: ownScore ?? undefined,
-              tier: data.tier as Tier,
+              actionTier: data.tier as Tier,
             }
           : null,
       };
@@ -297,7 +313,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
           ? {
               ...next.payment,
               status: "in_transit",
-              tier: data.tier as Tier,
+              actionTier: data.tier as Tier,
               intentHash: String(data.intentHash),
               intentTxHash: String(data.txHash),
               intentSimulated: event.simulated,

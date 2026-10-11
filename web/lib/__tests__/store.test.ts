@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SyloEvent } from "../events";
-import { availableActions, initialState, reduce } from "../store";
+import {
+  availableActions,
+  initialState,
+  reduce,
+  resetForSourceChange,
+  riskModeForSource,
+} from "../store";
 
 function fixture(name: string): SyloEvent[] {
   const contents = readFileSync(
@@ -32,6 +38,57 @@ function synthetic(type: string, data: Record<string, unknown>, seq = 1): SyloEv
 }
 
 describe("store reducer", () => {
+  it("keeps fraud risk tier separate from route and action tier", () => {
+    const events = fixture("scene1-legit");
+    const created = events.find((event) => event.type === "payment.created")!;
+    const scored = events.find((event) => event.type === "risk.scored")!;
+    const route = events.find((event) => event.type === "route.selected")!;
+    const committed = events.find((event) => event.type === "intent.committed")!;
+    const withData = (
+      event: SyloEvent,
+      seq: number,
+      data: Record<string, unknown>,
+    ) =>
+      ({
+        ...event,
+        seq,
+        id: `evt-${String(seq).padStart(6, "0")}`,
+        data,
+      }) as SyloEvent;
+    const risk = withData(scored, 3, {
+      ...scored.data,
+      tier: "HIGH",
+      model: "gbm-20261011",
+    });
+    const selected = withData(route, 4, { ...route.data, tier: "MEDIUM" });
+    const intent = withData(committed, 5, {
+      ...committed.data,
+      tier: "MEDIUM",
+    });
+
+    const state = replay(created, risk, selected, intent);
+
+    expect(state.payment?.tier).toBe("HIGH");
+    expect(state.payment?.actionTier).toBe("MEDIUM");
+    expect(state.risk?.model).toBe("gbm-20261011");
+  });
+
+  it("uses the current source's risk model after switching from live to replay", () => {
+    const event = fixture("scene1-legit").find(
+      (candidate) => candidate.type === "risk.scored",
+    )!;
+    const liveState = reduce(initialState, {
+      ...event,
+      data: { ...event.data, model: "gbm-20261011" },
+    });
+
+    expect(riskModeForSource(liveState, "live")).toBe("model");
+
+    const replayState = resetForSourceChange(liveState);
+    expect(replayState.risk).toBeNull();
+    expect(riskModeForSource(replayState, "replay")).toBe("rules");
+  });
+
   it("replays the legitimate payment to credit across five settled hops", () => {
     const state = replay(...fixture("scene1-legit"));
 

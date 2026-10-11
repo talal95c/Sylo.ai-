@@ -1,108 +1,99 @@
-import type { RouteScore } from "./events";
-import type { ViewState } from "./store";
+import type { HopKind, Tier } from "./events";
+import { engineUrl } from "./engine";
+import diverted from "../samples/quotes/diverted.json";
+import legit from "../samples/quotes/legit.json";
 
-export interface QuoteRow extends RouteScore {
-  chosen: boolean;
-  excluded: boolean;
-  cost?: number;
-}
+export type OrderName = "legit" | "diverted";
 
-export interface QuoteView {
-  amountEur: number;
+export interface QuoteRoute {
   routeId: string;
-  routeName: string;
-  etaLabel: string;
-  etaMinutes?: number;
-  feesEur: number;
-  fxMarginEur?: number;
-  cost: number;
-  costPct: number;
-  basis: "cash" | "all-in";
-  totalCostEur?: number;
-  recipientGetsGhs?: number;
-  midRateEurGhs?: number;
-  priceOfSafetyEur: number;
-  swift?: { cost: number; etaLabel?: string; etaMinutes?: number; totalCostEur?: number; recipientGetsGhs?: number };
-  savedEur?: number;
-  savedPct?: number;
-  rows: QuoteRow[];
+  name: string;
+  settlement: string;
+  hops: { from: string; to: string; kind: HopKind }[];
+  status: string;
+  excludedBy?: string | null;
+  reason?: string;
 }
 
-export function buildQuote(state: ViewState): QuoteView | null {
-  const quote = state.quote;
-  const payment = state.payment;
-  if (!quote || !payment) return null;
-  const amountEur = Number(payment.amount.value) || 0;
-  const scores = quote.scores ?? [];
-  const own = scores.find((score) => score.routeId === quote.routeId);
-  const swiftScore = scores.find((score) => score.routeId === "R1");
-  const basis = quote.cost?.cashCostEur !== undefined ? "cash" : "all-in";
-  const costOf = (score?: RouteScore) => (basis === "cash" ? score?.cashCostEur : score?.s ?? undefined);
-  const cost = basis === "cash" ? quote.cost!.cashCostEur : own?.s ?? quote.feesEur;
-  const swiftCost = quote.routeId === "R1" ? undefined : costOf(swiftScore);
-  const savedEur = swiftCost !== undefined ? round2(swiftCost - cost) : undefined;
-
-  const rows: QuoteRow[] = scores.map((score) => ({
-    ...score,
-    name: score.name ?? state.routes.find((route) => route.routeId === score.routeId)?.name ?? score.routeId,
-    chosen: score.routeId === quote.routeId,
-    excluded: score.s === null || Boolean(score.excludedBy),
-    cost: costOf(score),
-  }));
-  const rank = (row: QuoteRow) => (row.chosen ? -1 : row.excluded ? 1e12 + (row.cost ?? 0) : row.cost ?? 1e11);
-  rows.sort((a, b) => rank(a) - rank(b));
-
-  return {
-    amountEur,
-    routeId: quote.routeId,
-    routeName: quote.name,
-    etaLabel: quote.etaLabel,
-    etaMinutes: quote.etaMinutes,
-    feesEur: quote.feesEur,
-    fxMarginEur: quote.cost?.fxMarginEur,
-    cost,
-    costPct: amountEur ? (cost / amountEur) * 100 : 0,
-    basis,
-    totalCostEur: quote.cost?.totalCostEur ?? own?.s ?? undefined,
-    recipientGetsGhs: quote.recipientGetsGhs,
-    midRateEurGhs: quote.midRateEurGhs,
-    priceOfSafetyEur: quote.priceOfSafetyEur ?? 0,
-    swift:
-      swiftCost !== undefined
-        ? {
-            cost: swiftCost,
-            etaLabel: swiftScore?.etaLabel,
-            etaMinutes: swiftScore?.etaMinutes,
-            totalCostEur: swiftScore?.s ?? undefined,
-            recipientGetsGhs: swiftScore?.recipientGetsGhs,
-          }
-        : undefined,
-    savedEur,
-    savedPct: savedEur !== undefined && swiftCost ? (savedEur / swiftCost) * 100 : undefined,
-    rows,
+export interface Quote {
+  quoteId?: string;
+  executable: boolean;
+  paymentId: string;
+  currency: string;
+  routes: QuoteRoute[];
+  route: {
+    chosen: string | null;
+    settlement: string;
+    reason: string;
+    feesEur: number | null;
+    etaLabel: string | null;
+    priceOfSafetyEur: number | null;
+    blockedBy: string | null;
+    candidates: { routeId: string; s: number | null; excludedBy: string | null }[];
   };
+  risk: { score: number; tier: Tier; topReasons: { ref: string; text: string }[] };
+  rails: { routeId: string; feesEur: number; etaLabel: string; available: boolean; simulated: boolean }[];
+  approval: { required: { id: string; name: string; role: string }[]; method: string; conditional: boolean };
+  /** True when the engine was unreachable and this is the quote recorded from it. */
+  recorded?: boolean;
 }
 
-/** Seconds between two event timestamps of the log (demo pacing included). */
-export function secondsBetween(from?: string, to?: string) {
-  if (!from || !to) return undefined;
-  const ms = Date.parse(to) - Date.parse(from);
-  return Number.isFinite(ms) && ms >= 0 ? ms / 1000 : undefined;
+const RECORDED: Record<OrderName, Quote> = {
+  legit: legit as Quote,
+  diverted: diverted as Quote,
+};
+
+export const INVOICE_AMOUNT = 85000;
+
+export function liveEngineEnabled() {
+  return process.env.NEXT_PUBLIC_SOURCE !== "replay";
 }
 
-export function cedis(value: number) {
-  return `GH₵${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+async function call<T>(pathname: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
+  const response = await fetch(`${engineUrl.replace(/\/$/, "")}${pathname}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new EngineError(response.status, typeof detail?.detail === "string" ? detail.detail : null);
+  }
+  return (await response.json()) as T;
 }
 
-export function pct(value: number) {
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })} %`;
+export class EngineError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string | null,
+  ) {
+    super(detail ?? `Engine request failed (${status})`);
+  }
 }
 
-export function etaShare(minutes: number | undefined, slowest: number | undefined) {
-  if (!minutes || !slowest) return 0;
-  return Math.max(0.04, Math.log10(1 + minutes) / Math.log10(1 + slowest));
+/** The engine's decision for one of the recorded orders; falls back to the recorded quote offline. */
+export async function fetchQuote(order: OrderName, amount: number, signal?: AbortSignal): Promise<Quote> {
+  const custom = amount !== INVOICE_AMOUNT;
+  if (!liveEngineEnabled()) {
+    if (custom) throw new EngineError(0, null);
+    return { ...RECORDED[order], recorded: true };
+  }
+  try {
+    const body = custom ? { order, amount: amount.toFixed(2) } : { order };
+    return await Promise.race([
+      call<Quote>("/v1/quotes", body),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new EngineError(0, null)), 4000);
+        signal?.addEventListener("abort", () => clearTimeout(timer));
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof EngineError && error.status !== 0) throw error;
+    if (custom) throw new EngineError(0, null);
+    return { ...RECORDED[order], recorded: true };
+  }
 }
 
-function round2(value: number) {
-  return Math.round(value * 100) / 100;
+export function submitPayment(quoteId: string) {
+  return call<{ paymentId: string }>("/v1/payments", { quoteId }, { "Idempotency-Key": `web-${quoteId}` });
 }
