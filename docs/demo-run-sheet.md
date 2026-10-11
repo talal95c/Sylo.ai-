@@ -19,8 +19,8 @@ Flags in `.env` (the banner shows what is really running):
 | Flag | For the demo | If the component is not ready |
 |---|---|---|
 | `CHAIN_MODE` | `fuji` once Lane C's client passes conformance | `mock`: same story, events labelled simulated, no explorer link |
-| `RISK_MODE` | `model` once Lane B's model is installed | `rules`: diverted is MEDIUM 64 instead of HIGH 77, same hold |
-| `LLM_MODE` | `cached` once Lane B's case writer exists | `off`: the case file is built from the rules |
+| `RISK_MODE` | `model` (rehearsed 11 Oct: legitimate LOW 25, diverted HIGH 77 held in escrow, model `gbm-20261011`) | `rules`: diverted is MEDIUM 64 instead of HIGH 77, same hold |
+| `LLM_MODE` | `cached` (rehearsed 11 Oct: the scene 2 case file shows `llm: cached`, the reviewed Mistral text) | `off`: the case file is built from the rules |
 | `HUMAN_STEPS` | `manual` once the payer panel and the analyst drawer call the API | `auto`: the engine plays the approvals and the analyst |
 | `DEMO_SPEED` | `1` | `2` if the slot is short |
 
@@ -32,8 +32,8 @@ Times are at speed 1. "UI" means a button exists on the demo screen today; "curl
 
 | # | Scene | How | What must appear | Time |
 |---|---|---|---|---|
-| 1 | Legitimate payment | UI: **Legitimate payment** | R4 excluded by Ghana's export-proceeds rule; LOW 10; R3 chosen; two approvals; intent committed; five hops; "Credited" | 16 s |
-| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
+| 1 | Legitimate payment | UI: **Legitimate payment** | R4 excluded by Ghana's export-proceeds rule; LOW 10 (rules) or LOW 25 (model); R3 chosen; two approvals; intent committed; five hops; "Credited" | 16 s |
+| 2 | Diverted invoice | UI: **Diverted invoice** | Four reasons (six with the model); HIGH 77 with the model, handled like MEDIUM because only the beneficiary's identity is in doubt; conditional approval; the comet stops on the Avalanche arc; "Payment held"; case file; Kwame is asked | held after 11 s |
 | 2 | Supplier denies | UI: **"We never changed it"** | Denial recorded; analyst confirms; revoked; refunded; freeze request to the mule's bank; "Payment stopped" | 7 s |
 | 2 | Supplier confirms (variant) | UI: **"Yes, it's our account"** | Released; two more hops; credited at the new account | 5 s |
 | 2b | Attack 1: release a revoked payment | UI: **Try release() attack** | `tx.reverted`, `PaymentNotReleasable` | 1 s |
@@ -66,7 +66,7 @@ Three terminals, from the repository root:
 
 ```bash
 # 1. Engine on Fuji. HUMAN_STEPS=manual is required: with auto the engine answers for the supplier and revokes the payment before the attack.
-cd engine && set -a && . ../.env && set +a && CHAIN_MODE=fuji HUMAN_STEPS=manual uv run uvicorn sylo.main:app --port 8000
+cd engine && set -a && . ../.env && set +a && CHAIN_MODE=fuji RISK_MODE=model LLM_MODE=cached HUMAN_STEPS=manual uv run uvicorn sylo.main:app --port 8000
 
 # 2. Guardian (polls both RPC endpoints every 2 s, posts incidents to the engine)
 cd chain && uv run python -m sylo_chain.guardian watch

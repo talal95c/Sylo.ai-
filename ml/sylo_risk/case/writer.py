@@ -129,6 +129,35 @@ def _allowed_refs(
     return sorted(refs)
 
 
+def _bind_event_refs(raw: dict[str, Any], events: list[Any], template: CaseFile) -> dict[str, Any]:
+    """A cached case file cites events by type (``risk.scored``) because event ids depend on what ran
+    before in the session. Bind each type to this run's latest event of that type; unknown types stay
+    as they are, so validation rejects the file."""
+    latest = {str(event["type"]): str(event["id"]) for event in map(event_dict, events) if event.get("id")}
+
+    def bind(ref: Any) -> Any:
+        return latest.get(ref, ref) if isinstance(ref, str) else ref
+
+    bound = dict(raw)
+    bound["sentences"] = [
+        {**sentence, "refs": [bind(ref) for ref in sentence.get("refs", [])]}
+        for sentence in raw.get("sentences", [])
+        if isinstance(sentence, Mapping)
+    ]
+    citations = []
+    for citation in raw.get("citations", []):
+        if not isinstance(citation, Mapping):
+            continue
+        ref = bind(citation.get("ref"))
+        source = citation.get("source")
+        if isinstance(source, str) and source.startswith("event:"):
+            source = f"event:{bind(source.removeprefix('event:'))}"
+        citations.append({**citation, "ref": ref, "source": source})
+    bound["citations"] = citations
+    bound["timeline"] = template.model_dump(by_alias=True, mode="json")["timeline"]
+    return bound
+
+
 def _safe_cache_path(cache_dir: Path, payment_id: str) -> Path | None:
     if not re.fullmatch(r"[A-Za-z0-9._-]+", payment_id) or payment_id in {".", ".."}:
         return None
@@ -213,6 +242,7 @@ class CaseWriter:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
+                raw = _bind_event_refs(raw, events, template)
                 raw["llm"] = "cached"
             case = validate_case(raw, events, template)
             if case is None:
