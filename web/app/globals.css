@@ -102,13 +102,31 @@ body {
 }
 
 .globe-label {
-  --globe-label-x-offset: 0px;
+  --globe-label-shift-x: 0px;
+  --globe-label-connector-length: 18px;
+  --globe-label-connector-angle: 0deg;
   pointer-events: none;
   position: relative;
   width: 0;
   height: 0;
   display: block;
-  transition: opacity 200ms ease;
+  transition: opacity 160ms ease;
+}
+.globe-label-connector {
+  position: absolute;
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
+  height: var(--globe-label-connector-length);
+  background: rgba(0, 0, 0, 0.2);
+  content: "";
+  transform: rotate(var(--globe-label-connector-angle));
+  transform-origin: 50% 100%;
+}
+.globe-label.below .globe-label-connector {
+  top: 0;
+  bottom: auto;
+  transform-origin: 50% 0;
 }
 .globe-label-pill {
   position: absolute;
@@ -117,7 +135,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transform: translate(calc(-50% + var(--globe-label-x-offset)), calc(-100% - 26px));
+  max-width: 200px;
+  transform: translate(calc(-50% + var(--globe-label-shift-x)), calc(-100% - 18px));
   white-space: nowrap;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   font-size: 12px;
@@ -129,64 +148,18 @@ body {
   color: rgba(0, 0, 0, 0.78);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.2);
-  animation: globe-label-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.globe-label-pill::after {
-  position: absolute;
-  top: calc(100% - 1px);
-  left: 50%;
-  width: 1px;
-  height: 26px;
-  background: rgba(0, 0, 0, 0.18);
-  content: "";
-  transform: translateX(-50%) scaleY(1);
-  transform-origin: top;
-  animation: globe-label-leader 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+.globe-label.below .globe-label-pill {
+  transform: translate(calc(-50% + var(--globe-label-shift-x)), 18px);
 }
-@keyframes globe-label-enter {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-    scale: 0.92;
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    scale: 1;
-  }
-}
-@keyframes globe-label-leader {
-  from {
-    transform: translateX(-50%) scaleY(0);
-  }
-  to {
-    transform: translateX(-50%) scaleY(1);
-  }
-}
-.globe-label.flip .globe-label-pill {
-  transform: translate(calc(-50% + var(--globe-label-x-offset)), 26px);
-}
-.globe-label.flip .globe-label-pill::after {
-  top: auto;
-  bottom: calc(100% - 1px);
-  transform-origin: bottom;
-}
-.globe-label.west-europe {
-  --globe-label-x-offset: -100px;
-}
-.globe-label.east-europe {
-  --globe-label-x-offset: 100px;
-}
-.globe-label.east-rhone {
-  --globe-label-x-offset: 80px;
-}
-.globe-label.west-ghana {
-  --globe-label-x-offset: -70px;
-}
-.globe-label.east-ghana {
-  --globe-label-x-offset: 70px;
+.globe-label-name {
+  display: block;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .globe-label-city {
+  flex: 0 0 auto;
   color: rgba(0, 0, 0, 0.44);
 }
 .globe-live {
@@ -310,16 +283,6 @@ body {
     animation: none !important;
   }
 
-  .globe-label-pill {
-    animation: none !important;
-    filter: none;
-    scale: 1;
-  }
-
-  .globe-label-pill::after {
-    animation: none !important;
-    transform: translateX(-50%) scaleY(1);
-  }
 }
 
 .landing-pin {
