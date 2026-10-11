@@ -208,19 +208,20 @@ function CaseFile({ state }: { state: ViewState }) {
               <span>{LLM_LABEL[file.llm] ?? file.llm} · advisory only</span>
             </span>
           </summary>
-          <p className="mt-3 leading-snug text-ink-2">{file.explanation}</p>
-          {file.sentences?.length ? (
-            <ul className="mt-3 space-y-1.5">
-              {file.sentences.map((sentence) => (
-                <li key={sentence.text} className="flex flex-wrap items-baseline gap-x-2 leading-snug text-ink-2">
-                  <span>{sentence.text}</span>
-                  {sentence.refs.map((ref) => (
-                    <span key={ref} className="font-mono text-[10.5px] text-ink-3">[{ref}]</span>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <div className="mt-3 max-h-[150px] overflow-y-auto pr-1">
+            {file.sentences?.length ? (
+              <ul className="space-y-1.5">
+                {file.sentences.map((sentence) => (
+                  <li key={sentence.text} className="leading-snug text-ink-2">
+                    {sentence.text}{" "}
+                    <span className="font-mono text-[10.5px] text-ink-3">{sentence.refs.join(" · ")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="leading-snug text-ink-2">{file.explanation}</p>
+            )}
+          </div>
           <div className="mt-3 text-[11px] text-ink-3">{file.typology} · {file.model} · every sentence cites a system event or rule</div>
         </motion.details>
       ) : null}
