@@ -15,8 +15,10 @@ from typing import Any, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sse_starlette.sse import EventSourceResponse
+from sylo_spec.ports import ChainReverted
 
 from .approvals import ApprovalError
 from .config import Settings
@@ -236,6 +238,12 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(ChainReverted)
+    async def chain_reverted(request: Request, err: ChainReverted) -> JSONResponse:
+        """A contract refusal is a conflict with the on-chain state, not a server error."""
+        where = f"{err.function} " if err.function else ""
+        return JSONResponse(status_code=409, content={"detail": f"the chain refused {where}({err.reason})", "reason": err.reason})
 
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator

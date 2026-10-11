@@ -190,6 +190,12 @@ STOPPED_DETAIL = (
 CHAIN_REFUSED_HEADLINE = "Payment stopped: the smart contract refused a step"
 CHAIN_REFUSED_DETAIL = "The chain rejected {function} with {reason}. No money moved beyond the last confirmed step."
 CHAIN_REFUSED_HELD = "{detail} The money stays in the hold until an analyst decides."
+ENGINE_ERROR_HEADLINE = "Payment stopped: the engine hit an unexpected error"
+ENGINE_ERROR_DETAIL = (
+    "The engine stopped this payment at {status} after an unexpected error. Nothing more is sent; "
+    "an analyst must review it."
+)
+ENGINE_ERROR_HELD = "The engine hit an unexpected error while the payment was held. The money stays in the hold until an analyst decides."
 CHAIN_DOWN_HEADLINE = "Chain unavailable: the payment stays where it is"
 CHAIN_DOWN_DETAIL = (
     "The chain did not answer during {step}. Nothing is released by default: the payment stays held "

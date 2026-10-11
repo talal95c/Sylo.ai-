@@ -34,7 +34,7 @@ Without a running engine, the page replays recorded events (`spec/fixtures`) and
 - Visitors share one demo session and its in-memory state. `DEMO_PUBLIC=1` (set in `render.yaml`) closes the operator endpoints there; the demo buttons and Reset still work.
 - Live demo: <https://sylo-0wck.onrender.com/demo>.
 - `MISTRAL_API_KEY` is optional; without it, the engine uses its cached LLM mode.
-- `LIVE_INVOICE=on` enables the Live-only jury invoice experiment; it defaults to `off` and requires both `MISTRAL_API_KEY` and `JEV_API_KEY`. The invoice can affect only the analyst dossier, never the payment decision.
+- `LIVE_INVOICE=on` enables the Live-only jury invoice experiment; it defaults to `off` locally, is `on` in `render.yaml`, and requires both `MISTRAL_API_KEY` and `JEV_API_KEY`. The invoice can affect only the analyst dossier, never the payment decision.
 - For a split web/engine setup, `engine/Dockerfile` and `web/vercel.json` remain available.
 
 ### Engine v1 (Lane A)

@@ -137,7 +137,7 @@ Lecture à assumer : une régression logistique fait presque aussi bien → **no
 - Lien avec le terrain : la fraude « SIM swap » figure comme catégorie dans le rapport 2025 de la Bank of Ghana ✅ [3].
 
 ### A11. Fail safe, et on le dit à l'écran — *Faisabilité*
-- Sans modèle, sans chaîne, sans LLM : le système devient **plus strict**, une bannière l'indique, rien n'est libéré par défaut.
+- Sans modèle, sans chaîne, sans LLM : le système devient **plus strict dans l'ensemble**, une bannière l'indique, rien n'est libéré par défaut. Pas sur chaque paiement : sans modèle, 0,1 % des actions sont moins strictes que le système complet (`neverLooser: false`), et on le dit.
 - Échelle de repli : LightGBM → régression logistique numpy → règles strictes. En repli, rappel **100 %**, mais la friction monte fortement (régression logistique : **71,9 %** des légitimes retenus ; historique absent : 100 %). C'est volontaire et affiché, pas un mode de croisière.
 - Panne de rail (scène 5) : la route change (R3 → R1), **le niveau de risque ne change jamais**.
 

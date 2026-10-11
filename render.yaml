@@ -33,9 +33,9 @@ services:
       - key: JEV_API_KEY
         sync: false
       - key: LIVE_INVOICE
-        value: on
+        value: "on"
       - key: CHAIN_MODE
-        value: mock
+        value: "fuji"
       - key: FUJI_RPC_URL
         value: https://api.avax-test.network/ext/bc/C/rpc
       - key: CHAIN_ID

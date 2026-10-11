@@ -167,7 +167,7 @@ All of this section is Youssef's, including the two web items in P1. From a read
   - Add an integrity case for a tampered leg amount or an extra hop.
 - [x] **Rule 6: a model crash at run time falls back to the *lenient* rules, with no banner** (Lane A). `engine/sylo/risk_rules.py:142-145`: on an exception, `CombinedRisk` returns non-strict `RulesRisk()` and nothing marks `risk` as degraded. Use `RulesRisk(strict=True)` and call `_degrade("risk")`.
 - [x] **Rule 2: the model can lower the tier the rules would give** (Lane A). `engine/sylo/risk_rules.py:150` computes `max(base.floor_tier, band(model))`, which ignores the rules' own score band. Example: rules 74 is HIGH; model 50 makes it MEDIUM. The breaker path has the same issue (`engine/sylo/breakers.py:152`). The demo scenes are unaffected. Use `max(base.tier, band(model))`.
-- [ ] **Rule 6 again: degraded mode is measured as looser** (Lane B). In `ml/reports/metrics.json`, `degraded[*].neverLooser` is `false`: rules-only gives 554 HIGH→MEDIUM transitions on seed C. Either make strict mode floor at MEDIUM (HIGH when R-PV-01 or R-FL-01 fire) and re-run `make eval`, or reword the claim before judging.
+- [x] **Rule 6 again: degraded mode is measured as looser** (Lane B). In `ml/reports/metrics.json`, `degraded[*].neverLooser` is `false`: rules-only gives 554 HIGH→MEDIUM transitions on seed C. Either make strict mode floor at MEDIUM (HIGH when R-PV-01 or R-FL-01 fire) and re-run `make eval`, or reword the claim before judging. (Claim reworded: no doc, README or screen says "never looser"; the pitch says "stricter overall" and gives the 0.1%. The strict-mode floor is left to Lane B.)
 - [x] **The public Render URL is one shared, unauthenticated session** (engine side done: `DEMO_PUBLIC=1` in `render.yaml` closes the operator endpoints; Reset and scenarios stay open, so still press Reset before going on stage) (Lane A, plus web). Covered on the UI side above. On the engine side:
   - any visitor can `POST /v1/reset`;
   - a diverted run started with `auto:false` holds the engine busy, so everyone else gets 409 until it ends;
@@ -177,11 +177,11 @@ All of this section is Youssef's, including the two web items in P1. From a read
 
 ### P1
 
-- [ ] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
+- [x] **An unexpected exception in a run freezes the UI.** `engine/sylo/orchestrator.py:1396-1398` sets the status to `stopped` without emitting an event, and calls money in a hold "stopped". Emit `payment.stopped`, or keep `held`, and degrade.
 - [x] **Every attack or chain revert is narrated as "release() on the revoked payment"** (web). `web/lib/flow.ts:116-118` and `web/lib/store.ts:413-434`. Read `attack.attempted.data.attack` and narrate per attack.
 - [x] **The web infers "escrow" from the tier** (`web/lib/flow.ts:42-45`, `:139-141`), which is wrong for a bank hold (time-lock on R1) and for a blocked payment. The rules say the web never decides, so use `route.selected.settlement` and `payment.stopped`.
-- [ ] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode.
-- [ ] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
+- [x] **A Mistral failure is silent** (Lane B / A). A failed live call falls back to the template without degrading `llm` (`ml/sylo_risk/case/writer.py:367-375`). Degrade when the returned case's `llm` differs from the requested mode. (Done in the engine for `LLM_MODE=live`; in cached mode the template for a scene without cached text is expected.)
+- [x] **A hung eERC service stalls Scene 1 for up to 120 s** (`engine/sylo/confidential.py:72`). Set the timeout to about 25 s; the public-leg fallback already exists.
 - [ ] **Render free plan:** the service sleeps after 15 minutes and takes about a minute to wake, and state and the journal are lost on sleep. The engine peaks at about 196 MB, which fits in 512 MB with Next.js, but tightly. Ping `/health` a few minutes before the slot, and don't enable eERC or Fuji there.
 - [x] **The run sheet has drifted** (`docs/demo-run-sheet.md`):
   - "six with the model" should be 7 reasons;
@@ -196,11 +196,11 @@ All of this section is Youssef's, including the two web items in P1. From a read
 
 ### P2
 
-- [ ] Fuji mode silently signs with the Anvil dev keys when a signer key is missing (`engine/sylo/signer.py:27-37`). Pass `allow_dev_keys=False` on Fuji.
-- [ ] `ChainReverted` isn't caught in some API routes (attack, FREEZE, proof), giving a 500 (`engine/sylo/main.py:233-255`, `:380-392`). Map it to 409.
+- [x] Fuji mode silently signs with the Anvil dev keys when a signer key is missing (`engine/sylo/signer.py:27-37`). Pass `allow_dev_keys=False` on Fuji.
+- [x] `ChainReverted` isn't caught in some API routes (attack, FREEZE, proof), giving a 500 (`engine/sylo/main.py:233-255`, `:380-392`). Map it to 409.
 - [ ] A Fuji receipt timeout is treated as a revert (`chain/sylo_chain/fuji.py:323-325`). Treat it as "chain unavailable" instead.
-- [ ] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
-- [ ] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
+- [x] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
+- [x] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
 - [ ] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
 - [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused (Lane B to decide). The pitch handoff has one open TODO (team credits: ask each person). Done: the "skeleton" descriptions in `ml/` and `chain/`.
 
