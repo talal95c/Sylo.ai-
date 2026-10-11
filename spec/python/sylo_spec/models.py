@@ -180,6 +180,12 @@ class PayerSession(SpecModel):
     country: str = "FR"
 
 
+class PairHistory(SpecModel):
+    successful_count: int = 0
+    median_amount_eur: float | None = None
+    payments_24h: int = 0
+
+
 class RiskContext(SpecModel):
     payee: Payee | None
     account: Account | None
@@ -189,6 +195,7 @@ class RiskContext(SpecModel):
     account_age_hours: float
     amount_eur: float
     sanctions_hit: bool = False
+    history: PairHistory | None = None
 
 
 class RiskReason(SpecModel):

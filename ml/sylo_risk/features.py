@@ -135,7 +135,13 @@ def raw_from_order(
 ) -> dict[str, float]:
     account = ctx.account
     payee = ctx.payee
-    entry = _history_entry(history, order.debtor.id, order.payee_id)
+    if ctx.history is not None:
+        history_median_amount = ctx.history.median_amount_eur
+        pair_payments_24h = ctx.history.payments_24h
+    else:
+        entry = _history_entry(history, order.debtor.id, order.payee_id)
+        history_median_amount = _history_value(entry, "median_amount")
+        pair_payments_24h = _history_value(entry, "pair_payments_24h", 0)
     age_days = max(0.0, float(ctx.account_age_hours) / 24.0)
     provenance = order.provenance.get("creditorAccount", "")
     return _derive(
@@ -155,8 +161,8 @@ def raw_from_order(
             "bene_bank_institution_id": account.institution_id if account else order.creditor.institution_id,
             "supplier_institution_id": payee.institution_id if payee else None,
             "amount_eur": order.amount.as_float,
-            "history_median_amount": _history_value(entry, "median_amount"),
-            "pair_payments_24h": _history_value(entry, "pair_payments_24h", 0),
+            "history_median_amount": history_median_amount,
+            "pair_payments_24h": pair_payments_24h,
             "declared_split": order.purpose == "DECLARED_SPLIT",
             "norm_signals": ctx.norm_signals,
         }

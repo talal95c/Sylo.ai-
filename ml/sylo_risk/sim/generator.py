@@ -17,6 +17,7 @@ from sylo_spec.models import (
     Party,
     Payee,
     PaymentOrder,
+    PairHistory,
     PayerSession,
     RiskContext,
 )
@@ -604,6 +605,9 @@ def row_to_order_ctx(row: Any) -> tuple[PaymentOrder, RiskContext]:
         provenance={"creditorAccount": text("provenance")},
         channel=Channel(device_id="synthetic-device", msisdn="+33 •• •• 00 00", session_country=text("session_country")),
     )
+    history_count = get("history_count", 0)
+    history_median = get("history_median_amount")
+    payments_24h = get("pair_payments_24h", 0)
     norm_signals = text("norm_signals")
     context = RiskContext(
         payee=payee,
@@ -617,6 +621,13 @@ def row_to_order_ctx(row: Any) -> tuple[PaymentOrder, RiskContext]:
         name_match=float(get("name_match")),
         account_age_hours=float(get("account_age_days")) * 24,
         amount_eur=amount_eur,
+        history=PairHistory(
+            successful_count=0 if pd.isna(history_count) else int(history_count),
+            median_amount_eur=(
+                None if pd.isna(history_median) else float(history_median)
+            ),
+            payments_24h=0 if pd.isna(payments_24h) else int(payments_24h),
+        ),
     )
     return order, context
 
