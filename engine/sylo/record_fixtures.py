@@ -174,7 +174,16 @@ async def record() -> dict[str, list[dict[str, Any]]]:
 
 
 def render(events: list[dict[str, Any]]) -> str:
-    return "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events)
+    rendered = []
+    for event in events:
+        if (
+            event["type"] == "verification.requested"
+            and event["data"].get("simSwapSource") == "mock"
+        ):
+            event = {**event, "data": dict(event["data"])}
+            event["data"].pop("simSwapSource")
+        rendered.append(json.dumps(event, ensure_ascii=False) + "\n")
+    return "".join(rendered)
 
 
 def main(argv: list[str] | None = None) -> int:
