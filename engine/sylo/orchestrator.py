@@ -667,9 +667,14 @@ class Orchestrator:
         pack = engine.pack
         norms = engine.evaluate(order)
         context = (
-            build_risk_context(order, norms.signal_codes)
+            build_risk_context(order, norms.signal_codes, sanctions_hit=norms.sanctions_hit)
             if own
-            else build_risk_context(order, norms.signal_codes, session=PayerSession(country=order.channel.session_country))
+            else build_risk_context(
+                order,
+                norms.signal_codes,
+                session=PayerSession(country=order.channel.session_country),
+                sanctions_hit=norms.sanctions_hit,
+            )
         )
         risk = self._overlays(order, self.risk.score(order, context))
         amount = order.amount.as_float
@@ -1796,7 +1801,8 @@ class Orchestrator:
         self._emit(run, "norms.checked", norms.to_event_data())
 
         await pacer.wait(900)
-        risk = self._overlays(order, self.risk.score(order, build_risk_context(order, norms.signal_codes)))
+        context = build_risk_context(order, norms.signal_codes, sanctions_hit=norms.sanctions_hit)
+        risk = self._overlays(order, self.risk.score(order, context))
         run.risk = risk
         self._emit(
             run,

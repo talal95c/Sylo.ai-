@@ -88,6 +88,8 @@ def test_a_sanctioned_name_is_stopped_before_any_money_moves():
         payment(typed(name="Northwind Mule Trading Ltd", accountHolder="NORTHWIND MULE TRADING LTD", bankId="bank_gh_takoradi"))
     )
     assert quote["route"]["chosen"] is None
+    assert quote["risk"]["tier"] == "CRITICAL"
+    assert "sanctions list" in quote["route"]["reason"]
     _, payment_run = run(orchestrator, quote)
     assert payment_run.status == "stopped"
     assert not [e for e in orchestrator.bus.events if e["type"] == "leg.sent"]

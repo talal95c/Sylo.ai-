@@ -329,7 +329,7 @@ export default function TestTransaction() {
   const [step, setStep] = useState(0);
   const [order, setOrder] = useState<OrderName | null>(null);
   const [amountText, setAmountText] = useState("85,000");
-  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoted, setQuoted] = useState<{ key: string; quote: Quote } | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -373,6 +373,10 @@ export default function TestTransaction() {
         }
       : null;
   const draftKey = draft && step >= 1 ? JSON.stringify(draft) : null;
+  const requestKey = draftKey ?? (!live && order && amount !== null ? `${order}|${amount}` : null);
+  // A quote only counts for the exact draft it priced: any edit hides it until the engine re-prices.
+  const quote = quoted && quoted.key === requestKey ? quoted.quote : null;
+  const setQuote = (next: Quote | null) => setQuoted(next && requestKey ? { key: requestKey, quote: next } : null);
   const to = live
     ? tab === "saved"
       ? saved
@@ -408,17 +412,17 @@ export default function TestTransaction() {
         : !live && order && amount !== null
           ? () => fetchQuote(order, amount, controller.signal)
           : null;
-    if (!request) return;
+    if (!request || requestKey === null) return;
     const timer = setTimeout(() => {
       setQuoting(true);
       setQuoteError(null);
       request()
         .then((next) => {
-          if (!controller.signal.aborted) setQuote(next);
+          if (!controller.signal.aborted) setQuoted({ key: requestKey, quote: next });
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          setQuote(null);
+          setQuoted(null);
           setQuoteError(
             live
               ? error instanceof EngineError && error.status !== 0 && error.detail
@@ -437,7 +441,7 @@ export default function TestTransaction() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [order, amount, live, draftKey]);
+  }, [order, amount, live, draftKey, requestKey]);
 
   function applyIntake(result: IntakeResponse) {
     const fields = result.intake.fields;
@@ -493,7 +497,7 @@ export default function TestTransaction() {
         ? beneficiary !== null
         : Boolean(order)
       : step === 1
-        ? Boolean(quote) && !quoting && amount !== null && (!live || draft !== null)
+        ? Boolean(quote) && !quoting && amount !== null && (!live || draftKey !== null)
         : step === 2 ? Boolean(quote) : false;
 
   return (

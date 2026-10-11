@@ -313,6 +313,10 @@ class NormsResult:
         return next(r for r in self.routes if r.route.id == route_id)
 
     @property
+    def sanctions_hit(self) -> bool:
+        return any(r.excluded_by == "SANCTIONS_SCREEN" for r in self.routes)
+
+    @property
     def signal_codes(self) -> list[str]:
         return [s["code"] for s in self.signals]
 

@@ -153,6 +153,10 @@ NO_ROUTE_LIMITS = (
     "{usual} to come back, or for the payer to accept the other route."
 )
 ALERT_WAITING_ROUTE = "Your payment is waiting: its usual route is unavailable and the other one costs more than your limit."
+NO_ROUTE_SANCTIONS = (
+    "A party is on the sanctions list (synthetic list). The payment is blocked before any money moves "
+    "and a case is opened for the analyst."
+)
 NO_ROUTE_DETAIL = "Risk is {tier}. The payment is blocked before any money moves and a case is opened for the analyst."
 
 # --- Approval --------------------------------------------------------------------------------
