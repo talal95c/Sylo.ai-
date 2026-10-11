@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { wakeEngine } from "../lib/engine";
 import { cx, ease } from "./ui";
 
 const LandingGlobe = dynamic(() => import("./LandingGlobe"), { ssr: false });
@@ -40,6 +42,10 @@ const reveal = (delay: number) => ({
 });
 
 export default function Landing() {
+  useEffect(() => {
+    wakeEngine();
+  }, []);
+
   return (
     <main className="relative flex h-dvh w-full flex-col items-center overflow-hidden bg-white">
       <motion.header {...reveal(0)} className="flex w-full items-center justify-between px-6 pt-5 sm:px-8">
