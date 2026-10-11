@@ -44,6 +44,52 @@ const RECORDED: Record<OrderName, Quote> = {
 };
 
 export const INVOICE_AMOUNT = 85000;
+export const INVOICE_REFERENCE = "SSE-2026-118";
+
+export interface QuoteDetails {
+  invoiceRef?: string;
+  account?: "verified" | "new";
+  accountNumber?: string;
+  holderName?: string;
+  senderDomain?: string;
+  newAccountSelected?: boolean;
+}
+
+type CustomQuoteBody = {
+  custom: {
+    amount: string;
+    invoiceRef: string;
+    account: "verified" | "new";
+    accountNumber?: string;
+    holderName?: string;
+    senderDomain?: string;
+  };
+};
+
+export function buildQuoteBody(
+  order: OrderName,
+  amount: number,
+  details: QuoteDetails = {},
+): { order: OrderName } | CustomQuoteBody {
+  const invoiceRef = details.invoiceRef ?? INVOICE_REFERENCE;
+  const usesCustomQuote =
+    amount !== INVOICE_AMOUNT ||
+    invoiceRef !== INVOICE_REFERENCE ||
+    details.newAccountSelected === true;
+
+  if (!usesCustomQuote) return { order };
+
+  return {
+    custom: {
+      amount: amount.toFixed(2),
+      invoiceRef,
+      account: details.account ?? "verified",
+      ...(details.accountNumber ? { accountNumber: details.accountNumber } : {}),
+      ...(details.holderName ? { holderName: details.holderName } : {}),
+      ...(details.senderDomain ? { senderDomain: details.senderDomain } : {}),
+    },
+  };
+}
 
 export function liveEngineEnabled() {
   return process.env.NEXT_PUBLIC_SOURCE !== "replay";
@@ -71,15 +117,23 @@ export class EngineError extends Error {
   }
 }
 
-/** The engine's decision for one of the recorded orders; falls back to the recorded quote offline. */
-export async function fetchQuote(order: OrderName, amount: number, signal?: AbortSignal): Promise<Quote> {
-  const custom = amount !== INVOICE_AMOUNT;
+/** The engine's decision for one payment; recorded quotes remain available offline. */
+export async function fetchQuote(
+  order: OrderName,
+  amount: number,
+  signal?: AbortSignal,
+  details: QuoteDetails = {},
+): Promise<Quote> {
+  const body = buildQuoteBody(order, amount, details);
+  const custom = "custom" in body;
   if (!liveEngineEnabled()) {
+    if (custom && details.newAccountSelected && amount === INVOICE_AMOUNT && (details.invoiceRef ?? INVOICE_REFERENCE) === INVOICE_REFERENCE) {
+      return { ...RECORDED.diverted, recorded: true };
+    }
     if (custom) throw new EngineError(0, null);
     return { ...RECORDED[order], recorded: true };
   }
   try {
-    const body = custom ? { order, amount: amount.toFixed(2) } : { order };
     return await Promise.race([
       call<Quote>("/v1/quotes", body),
       new Promise<never>((_, reject) => {

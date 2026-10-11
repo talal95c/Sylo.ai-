@@ -106,8 +106,9 @@ describe("store reducer", () => {
     expect(reduce(state, revert).attack).toEqual(state.attack);
   });
 
-  it("enables the swap and replay attacks only after a diverted payment", () => {
-    expect(availableActions(replay(...fixture("scene1-legit"))).swapAttack).toBe(false);
+  it("enables the swap and replay attacks for any signed payment", () => {
+    const legit = availableActions(replay(...fixture("scene1-legit")));
+    expect(legit.swapAttack && legit.replayAttack).toBe(true);
     const diverted = availableActions(replay(...fixture("scene2-diverted")));
     expect(diverted.swapAttack && diverted.replayAttack).toBe(true);
   });
