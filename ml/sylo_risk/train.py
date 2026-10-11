@@ -12,6 +12,10 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.isotonic import IsotonicRegression
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from .features import FEATURES, FEATURE_NAMES, MONOTONE_CONSTRAINTS, features_from_frame, to_matrix
 from .history import build_history
@@ -157,14 +161,117 @@ def train_model(frame: pd.DataFrame, model_dir: Path | None = None) -> dict[str,
     return artifact
 
 
+def train_fallback_model(
+    frame: pd.DataFrame | None = None, model_dir: Path | None = None
+) -> dict[str, Any]:
+    """Train the baseline logistic regression and calibrate conservative degraded cutoffs."""
+    if frame is None:
+        frame = generate_dataset("A")
+    if model_dir is None:
+        model_dir = Path(__file__).resolve().parents[1] / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    train_rows = frame.loc[frame["day"] <= 20]
+    calibration_rows = frame.loc[frame["day"].between(21, 25)]
+    if train_rows.empty or calibration_rows.empty:
+        raise ValueError("fallback training requires seed-A payment rows from days 1–25")
+
+    def feature_frame(rows: pd.DataFrame) -> pd.DataFrame:
+        if set(FEATURE_NAMES).issubset(rows.columns):
+            return rows.loc[:, FEATURE_NAMES]
+        return features_from_frame(rows)
+
+    features_train = feature_frame(train_rows)
+    features_calibration = feature_frame(calibration_rows)
+    logistic = make_pipeline(
+        SimpleImputer(strategy="median", add_indicator=True),
+        StandardScaler(),
+        LogisticRegression(
+            class_weight="balanced",
+            random_state=0,
+            max_iter=1_000,
+            solver="liblinear",
+        ),
+    )
+    logistic.fit(
+        features_train.loc[:, FEATURE_NAMES],
+        train_rows["label"].to_numpy(dtype=int),
+    )
+    calibration_probabilities = logistic.predict_proba(
+        features_calibration.loc[:, FEATURE_NAMES]
+    )[:, 1]
+
+    from sylo.risk_rules import CombinedRisk, RulesRisk
+
+    from .model_risk import ModelRisk
+    from .sim.generator import row_to_order_ctx
+
+    normal = CombinedRisk(RulesRisk(), ModelRisk())
+    normal_tiers = np.fromiter(
+        (
+            int(normal.score(*row_to_order_ctx(row)).tier)
+            for _, row in calibration_rows.iterrows()
+        ),
+        dtype=np.int8,
+        count=len(calibration_rows),
+    )
+    medium_scores = calibration_probabilities[normal_tiers >= 1]
+    high_scores = calibration_probabilities[normal_tiers >= 2]
+    if not len(medium_scores) or not len(high_scores):
+        raise ValueError("seed-A calibration rows must contain normal MEDIUM and HIGH cases")
+
+    percentile = 0.5
+    t_med = float(np.percentile(medium_scores, percentile))
+    t_high = float(np.percentile(high_scores, percentile))
+    imputer = logistic.named_steps["simpleimputer"]
+    scaler = logistic.named_steps["standardscaler"]
+    classifier = logistic.named_steps["logisticregression"]
+    artifact = {
+        "version": f"fallback-lr-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "feature_order": list(FEATURE_NAMES),
+        "imputer_statistics": imputer.statistics_.tolist(),
+        "missing_indicator_features": [
+            FEATURE_NAMES[index] for index in imputer.indicator_.features_
+        ],
+        "scaler_mean": scaler.mean_.tolist(),
+        "scaler_scale": scaler.scale_.tolist(),
+        "coefficients": classifier.coef_[0].tolist(),
+        "intercept": float(classifier.intercept_[0]),
+        "degraded_thresholds": {
+            "percentile": percentile,
+            "t_med": t_med,
+            "t_high": t_high,
+            "calibration_medium_rows": int(len(medium_scores)),
+            "calibration_high_rows": int(len(high_scores)),
+        },
+        "history": build_history(train_rows, max_day=20).to_dict(),
+        "training_rows": int(len(train_rows)),
+        "calibration_rows": int(len(calibration_rows)),
+    }
+    with (model_dir / "fallback_lr.json").open("w", encoding="utf-8") as handle:
+        json.dump(artifact, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return artifact
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train the calibrated Lane B risk model")
+    parser = argparse.ArgumentParser(description="Train Lane B risk models")
     parser.add_argument("--data", type=Path, help="optional seed-A CSV or CSV.GZ")
     parser.add_argument("--model-dir", type=Path, default=Path(__file__).resolve().parents[1] / "models")
+    parser.add_argument(
+        "--fallback-only",
+        action="store_true",
+        help="train only the logistic-regression fallback; leave the frozen LightGBM model unchanged",
+    )
     args = parser.parse_args()
     frame = pd.read_csv(args.data) if args.data else generate_dataset("A")
-    artifact = train_model(frame, args.model_dir)
-    print(json.dumps({"version": artifact["version"], **artifact["validation_metrics"]}, indent=2))
+    if args.fallback_only:
+        artifact = train_fallback_model(frame, args.model_dir)
+        print(json.dumps({"version": artifact["version"], **artifact["degraded_thresholds"]}, indent=2))
+    else:
+        artifact = train_model(frame, args.model_dir)
+        print(json.dumps({"version": artifact["version"], **artifact["validation_metrics"]}, indent=2))
 
 
 if __name__ == "__main__":
