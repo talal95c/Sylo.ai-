@@ -5,7 +5,6 @@ description = "Sylo.ai Lane C: Avalanche Fuji client implementing ChainPort (ske
 requires-python = ">=3.11"
 dependencies = [
   "web3>=7",
-  "requests>=2.23",
   "sylo-spec",
 ]
 
