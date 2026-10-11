@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   output:
     process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
+  compress: !process.env.ENGINE_INTERNAL_URL,
   cacheComponents: true,
   partialPrefetching: true,
   async rewrites() {

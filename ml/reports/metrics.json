@@ -142,86 +142,6 @@
       "typology": "T4"
     }
   ],
-  "clusters": {
-    "hardNegativeSeedFormula": "np.random.default_rng(SEEDS[seed] + 1_000_003)",
-    "hardNegativeSeeds": {
-      "B": 21261005,
-      "C": 21261006
-    },
-    "hardNegatives": "30 old popular suppliers and 30 young popular accounts per seed; evaluation only",
-    "limits": [
-      "Synthetic T3 accounts concentrate payer fan-in and are easy to detect.",
-      "Region points are coarse region centroids, not account locations."
-    ],
-    "method": "NetworkX payer-account bipartite windows; age <120 days or <10 successes",
-    "results": {
-      "B": {
-        "campaignCount": 30,
-        "campaignDetectionRate": 1.0,
-        "campaignsDetected": 30,
-        "detectedClusters": 31,
-        "falseClusters": {
-          "legit": 0,
-          "popularSupplier": 0,
-          "youngPopular": 30
-        },
-        "hardNegativeAccounts": {
-          "popularSupplier": 30,
-          "youngPopular": 30
-        },
-        "isolatedClusters": 72,
-        "isolatedInstitution": {
-          "campaignDetectionRate": 1.0,
-          "campaignsDetected": 30,
-          "paymentsToDetect": {
-            "p50": 11.5,
-            "p90": 16.1
-          }
-        },
-        "payments": 150000,
-        "paymentsToDetect": {
-          "p50": 7.0,
-          "p90": 10.100000000000001
-        },
-        "runtimeSeconds": 4.5143065829997795,
-        "t3FanInP50": 14.0
-      },
-      "C": {
-        "campaignCount": 30,
-        "campaignDetectionRate": 1.0,
-        "campaignsDetected": 30,
-        "detectedClusters": 33,
-        "falseClusters": {
-          "legit": 0,
-          "popularSupplier": 0,
-          "youngPopular": 30
-        },
-        "hardNegativeAccounts": {
-          "popularSupplier": 30,
-          "youngPopular": 30
-        },
-        "isolatedClusters": 60,
-        "isolatedInstitution": {
-          "campaignDetectionRate": 0.9666666666666667,
-          "campaignsDetected": 29,
-          "paymentsToDetect": {
-            "p50": 10.0,
-            "p90": 15.2
-          }
-        },
-        "payments": 150000,
-        "paymentsToDetect": {
-          "p50": 7.5,
-          "p90": 10.200000000000003
-        },
-        "runtimeSeconds": 4.486946434999481,
-        "t3FanInP50": 15.0
-      }
-    }
-  },
-  "compliance": {
-    "euAiActFraudDetectionCarveOut": "Annex III 5(b)"
-  },
   "dataset": {
     "days": 30,
     "payments": 150000,
@@ -230,6 +150,62 @@
     "synthetic": true
   },
   "degraded": [
+    {
+      "fprMediumPlus": 1.0,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.9805010168350169,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 1.0,
+        "fprMediumPlus": 1.0,
+        "precisionAtAlertBudget": 0.9173333333333333,
+        "precisionHigh": 0.07910658750353407,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.0,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "history_missing",
+      "neverLooser": false,
+      "permissiveActionPct": 0.00188,
+      "permissivePct": 4.6666666666666665e-05,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 7,
+        "mediumToLow": 0
+      },
+      "seed": "B"
+    },
+    {
+      "fprMediumPlus": 0.7188686868686869,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.996318408529742,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.888,
+        "fprMediumPlus": 0.7188686868686869,
+        "precisionAtAlertBudget": 0.6573333333333333,
+        "precisionHigh": 0.029813138744985788,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.2811313131313131,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "model_missing_fallback_lr",
+      "neverLooser": false,
+      "permissiveActionPct": 0.0,
+      "permissivePct": 8e-05,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 12,
+        "mediumToLow": 0
+      },
+      "seed": "B"
+    },
     {
       "fprMediumPlus": 0.42997979797979796,
       "metrics": {
@@ -262,12 +238,12 @@
       "fprMediumPlus": 1.0,
       "metrics": {
         "alertBudget": 750,
-        "auc": 0.9805010168350169,
+        "auc": 0.9767473535353535,
         "diversionRate": 0.0,
         "fprHardNegatives": 1.0,
         "fprMediumPlus": 1.0,
-        "precisionAtAlertBudget": 0.9173333333333333,
-        "precisionHigh": 0.07910658750353407,
+        "precisionAtAlertBudget": 0.8666666666666667,
+        "precisionHigh": 0.08005348526248474,
         "recallAll": 1.0,
         "recallT1": 1.0,
         "recallT1Evasive": 1.0,
@@ -276,15 +252,43 @@
       },
       "mode": "history_missing",
       "neverLooser": false,
-      "permissiveActionPct": 0.00188,
-      "permissivePct": 4.6666666666666665e-05,
+      "permissiveActionPct": 0.00172,
+      "permissivePct": 0.00013333333333333334,
       "recallAll": 1.0,
       "riskTierTransitions": {
         "highToLow": 0,
-        "highToMedium": 7,
+        "highToMedium": 20,
         "mediumToLow": 0
       },
-      "seed": "B"
+      "seed": "C"
+    },
+    {
+      "fprMediumPlus": 0.7171851851851851,
+      "metrics": {
+        "alertBudget": 750,
+        "auc": 0.9984382626262627,
+        "diversionRate": 0.0,
+        "fprHardNegatives": 0.8811111111111111,
+        "fprMediumPlus": 0.7171851851851851,
+        "precisionAtAlertBudget": 0.8773333333333333,
+        "precisionHigh": 0.031386537771492494,
+        "recallAll": 1.0,
+        "recallT1": 1.0,
+        "recallT1Evasive": 1.0,
+        "stpRate": 0.2828148148148148,
+        "valueStoppedPct": 1.0
+      },
+      "mode": "model_missing_fallback_lr",
+      "neverLooser": false,
+      "permissiveActionPct": 1.3333333333333333e-05,
+      "permissivePct": 0.00014,
+      "recallAll": 1.0,
+      "riskTierTransitions": {
+        "highToLow": 0,
+        "highToMedium": 21,
+        "mediumToLow": 0
+      },
+      "seed": "C"
     },
     {
       "fprMediumPlus": 0.43256565656565654,
@@ -313,34 +317,6 @@
         "mediumToLow": 9
       },
       "seed": "C"
-    },
-    {
-      "fprMediumPlus": 1.0,
-      "metrics": {
-        "alertBudget": 750,
-        "auc": 0.9767473535353535,
-        "diversionRate": 0.0,
-        "fprHardNegatives": 1.0,
-        "fprMediumPlus": 1.0,
-        "precisionAtAlertBudget": 0.8666666666666667,
-        "precisionHigh": 0.08005348526248474,
-        "recallAll": 1.0,
-        "recallT1": 1.0,
-        "recallT1Evasive": 1.0,
-        "stpRate": 0.0,
-        "valueStoppedPct": 1.0
-      },
-      "mode": "history_missing",
-      "neverLooser": false,
-      "permissiveActionPct": 0.00172,
-      "permissivePct": 0.00013333333333333334,
-      "recallAll": 1.0,
-      "riskTierTransitions": {
-        "highToLow": 0,
-        "highToMedium": 20,
-        "mediumToLow": 0
-      },
-      "seed": "C"
     }
   ],
   "evaluationRows": {
@@ -352,7 +328,7 @@
     "t_high": 0.4510718837561716,
     "t_med": 0.04457334309526271
   },
-  "generatedAt": "2026-10-11T01:23:23.699268+00:00",
+  "generatedAt": "2026-10-11T07:04:17.419136+00:00",
   "integrity": [
     {
       "case": "I1",
@@ -451,7 +427,7 @@
     "recallT1": 1.0,
     "recallT1Evasive": 1.0,
     "stpRate": 0.9327744107744108,
-    "ttdP95Ms": 0.733122199471836,
+    "ttdP95Ms": 2.6039779001621355,
     "valueStoppedPct": 0.9944670834224548
   },
   "modelOnlyMetrics": {
@@ -469,9 +445,6 @@
       "recallT1": 0.92,
       "recallT1Evasive": 0.84
     }
-  },
-  "modelPolicy": {
-    "scoreCap": 89
   },
   "modelVersion": "gbm-20261011",
   "outOfDistribution": {
@@ -567,9 +540,9 @@
     "recallT1Evasive": 1.0,
     "seed": "C",
     "stpRate": 0.9168484848484848,
-    "ttdP95Ms": 0.6441549497139931,
+    "ttdP95Ms": 2.5870813999063103,
     "valueStoppedPct": 0.9921639451858553
   },
-  "runtimeSeconds": 490.38899990200025,
+  "runtimeSeconds": 628.3547129889994,
   "sample": false
 }

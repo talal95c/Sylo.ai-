@@ -135,3 +135,13 @@ Seed B prevalence estimates:
 | HIGH+ | 73.87% | 0.0842% | 0.01% | 8.07% | 11.39 |
 
 MEDIUM+ TPR/FPR cite `metrics.json#/metrics/recallAll` and `#/metrics/fprMediumPlus`. `metrics.json` has no legitimate HIGH+ FPR, so HIGH+ TPR/FPR were counted from seed B's existing labels and frozen full-engine tiers using `evaluate._score_engine` (1,108/1,500 frauds and 125/148,500 legitimate payments at HIGH+; no retraining). All figures are synthetic-evaluation measurements, not production efficacy. Full per-level metrics, rules, SHAP examples, formulas, and source paths are in `evasion.json`.
+
+
+## Evaluation harness — B / C
+
+- Command: `make eval SEED=B`.
+- Dataset: 150,000 payments per seed, 30 days.
+- Runtime: 628.4 s.
+- B: recall T1/all 100.00%/98.13%; precision HIGH 89.86%; FPR MEDIUM+ 6.72%; hard-negative FPR 47.58%; p95 2.604 ms.
+- C: recall T1/all 100.00%/99.00%; precision HIGH 91.62%; FPR MEDIUM+ 8.32%; hard-negative FPR 47.02%; p95 2.587 ms.
+- Decision: retain the frozen model; report B/C metrics and confidence intervals without retuning.

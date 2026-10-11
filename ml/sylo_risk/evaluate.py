@@ -34,6 +34,7 @@ from sylo_spec.models import (
 from sylo_spec.ports import ChainReverted
 
 from .features import FEATURES, FEATURE_NAMES, features_from_frame
+from .fallback_risk import FallbackRisk
 from .history import HistoryIndex
 from .model_risk import ModelRisk
 from .scores import probability_to_score
@@ -114,9 +115,10 @@ def _score_engine(
     no_history: bool = False,
     strict_rules: bool = False,
     rules_only: bool = False,
+    fallback_lr: bool = False,
 ) -> dict[str, np.ndarray]:
     rules = _RecordingRules(strict=strict_rules)
-    model = None if rules_only else ModelRisk()
+    model = None if rules_only else FallbackRisk() if fallback_lr else ModelRisk()
     if no_history and model is not None:
         model._history = HistoryIndex({})
     combined = rules if model is None else CombinedRisk(rules, model)
@@ -621,13 +623,23 @@ def evaluate(seed: str = "B") -> dict[str, Any]:
             history_missing["tiers"],
             include_ci=False,
         )
+        fallback_lr = _score_engine(
+            degraded_frame, strict_rules=True, fallback_lr=True
+        )
+        fallback_lr_metrics = _evaluate_predictions(
+            degraded_frame,
+            fallback_lr["scores"],
+            fallback_lr["tiers"],
+            include_ci=False,
+        )
         normal_tiers = result_by_seed[name]["tiers"]
         normal_action_tiers = _action_tiers(
             normal_tiers, result_by_seed[name]["oobResolvable"]
         )
         for mode, degraded_result, degraded_metrics in (
-            ("model_missing_rules_only", rules_only, rules_only_metrics),
             ("history_missing", history_missing, history_metrics),
+            ("model_missing_fallback_lr", fallback_lr, fallback_lr_metrics),
+            ("model_missing_rules_only", rules_only, rules_only_metrics),
         ):
             permissive_pct = float(
                 np.mean(degraded_result["tiers"] < normal_tiers)

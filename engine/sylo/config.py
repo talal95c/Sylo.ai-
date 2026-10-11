@@ -9,6 +9,24 @@ from dataclasses import dataclass
 from . import ENGINE_DIR
 
 
+ORANGE_PLAYGROUND_PHONE_NUMBERS = {
+    "+233 •• ••• 4471": {
+        "default": "+990100000000",
+        "diverted_simswap": "+990100000001",
+    }
+}
+ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS = 240
+
+
+def orange_playground_number(msisdn: str, scenario: str) -> str:
+    """Map the demo supplier contact to the Playground's documented test profiles."""
+    numbers = ORANGE_PLAYGROUND_PHONE_NUMBERS.get(msisdn)
+    if numbers is None:
+        return msisdn
+    profile = "diverted_simswap" if scenario == "diverted_simswap" else "default"
+    return numbers[profile]
+
+
 def _get(env: Mapping[str, str], name: str, default: str) -> str:
     value = env.get(name)
     return default if value is None or not value.strip() else value.strip()
@@ -28,6 +46,7 @@ class Settings:
     risk_mode: str = "rules"
     chain_mode: str = "mock"
     llm_mode: str = "off"
+    telecom_mode: str = "mock"
     demo_speed: float = 1.0
     engine_port: int = 8000
     cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
@@ -60,10 +79,14 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         env = os.environ if env is None else env
         origins = _get(env, "CORS_ORIGINS", ",".join(cls.cors_origins))
+        telecom_mode = _get(env, "TELECOM_MODE", "mock").lower()
+        if telecom_mode not in {"mock", "orange-playground"}:
+            raise ValueError("TELECOM_MODE must be 'mock' or 'orange-playground'")
         return cls(
             risk_mode=_get(env, "RISK_MODE", "rules").lower(),
             chain_mode=_get(env, "CHAIN_MODE", "mock").lower(),
             llm_mode=_get(env, "LLM_MODE", "off").lower(),
+            telecom_mode=telecom_mode,
             demo_speed=float(_get(env, "DEMO_SPEED", "1")),
             engine_port=int(_get(env, "ENGINE_PORT", "8000")),
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),

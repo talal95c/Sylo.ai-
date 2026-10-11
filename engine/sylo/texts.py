@@ -208,6 +208,10 @@ NEXT_STEP_ANALYST = (
     "The SIM card behind Kwame Asante's number changed {hours:.0f} hours ago, so we do not text it (rule R-OOB-01). "
     "The analyst decides."
 )
+NEXT_STEP_ANALYST_UNAVAILABLE = (
+    "The SIM-swap check was unavailable, so the known contact cannot be trusted and we do not text it "
+    "(rule R-OOB-01). The analyst decides."
+)
 STOPPED_DETAIL_ANALYST = (
     "The out-of-band check could not be trusted, and the analyst revoked the payment. It was refunded from escrow."
 )

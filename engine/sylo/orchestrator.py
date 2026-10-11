@@ -60,7 +60,11 @@ from .case import CaseService, rules_case_file
 from .clusters import cluster_sample, load_cluster_port, wave_payments
 from .confidential import HIDDEN, TOKEN, VISIBLE, ConfidentialLeg, load_confidential_leg
 from .intake import extract, match_order
-from .config import Settings
+from .config import (
+    ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS,
+    Settings,
+    orange_playground_number,
+)
 from .journal import Journal
 from .norms import NormsEngine, NormsResult, load_pack
 from .pacer import Pacer, RealPacer, iso_ms
@@ -69,7 +73,7 @@ from .rails import LegMessage, LegRejected, RailAdapter, Rails
 from .risk_rules import CombinedRisk
 from .router import PAYER_LIMIT, RerouteLimits, RouteDecision, choose_route
 from .signer import Signer
-from .telecom import SimSwapMock
+from .telecom import OrangeSimSwap, SimSwapMock
 
 log = logging.getLogger("sylo.orchestrator")
 
@@ -285,6 +289,7 @@ class Orchestrator:
         case: CaseService | None = None,
         journal: Journal | None = None,
         confidential: ConfidentialLeg | None = None,
+        telecom: SimSwapMock | OrangeSimSwap | None = None,
     ) -> None:
         self.bus = bus
         self.risk = risk
@@ -302,7 +307,7 @@ class Orchestrator:
         self.confidential = confidential
         self.boot_id = uuid.uuid4().hex[:12]
         self.chain_simulated = chain.mode != "fuji"
-        self.telecom = SimSwapMock(clock=self.now)
+        self.telecom = telecom or SimSwapMock(clock=self.now)
         self.rails = Rails(norms.pack, chain, clock=lambda: self.now().timestamp())
         self.breakers = Breakers()
         self.cluster_port, self.cluster_stub = load_cluster_port(settings.cluster_mode)
@@ -1915,13 +1920,28 @@ class Orchestrator:
 
         payee = PAYEES[order.payee_id]
         contact = payee.known_contacts[0]
-        sim_swap_recent = self.telecom.check(contact.msisdn_masked, self.settings.sim_swap_max_age_hours)
+        telecom_msisdn = (
+            orange_playground_number(contact.msisdn_masked, run.scenario)
+            if isinstance(self.telecom, OrangeSimSwap)
+            else contact.msisdn_masked
+        )
+        max_age_hours = self.settings.sim_swap_max_age_hours
+        if isinstance(self.telecom, OrangeSimSwap):
+            max_age_hours = max(max_age_hours, ORANGE_PLAYGROUND_MIN_MAX_AGE_HOURS)
+        sim_swap_recent = self.telecom.check(telecom_msisdn, max_age_hours)
+        if getattr(self.telecom, "degraded", False):
+            self._degrade("telecom")
         reasons = list(risk.reasons)
         next_step = texts.NEXT_STEP
         if sim_swap_recent:
-            changed = self.telecom.retrieve_date(contact.msisdn_masked)
-            hours = (pacer.now() - changed).total_seconds() / 3600 if changed else 0.0
-            next_step = texts.NEXT_STEP_ANALYST.format(hours=hours)
+            changed = self.telecom.retrieve_date(telecom_msisdn)
+            if getattr(self.telecom, "degraded", False):
+                self._degrade("telecom")
+            if changed is None and getattr(self.telecom, "degraded", False):
+                next_step = texts.NEXT_STEP_ANALYST_UNAVAILABLE
+            else:
+                hours = (pacer.now() - changed).total_seconds() / 3600 if changed else 0.0
+                next_step = texts.NEXT_STEP_ANALYST.format(hours=hours)
             reasons.append(RiskReason(ref="O", text=next_step, rule_id="R-OOB-01"))
         if risk.tier == Tier.HIGH and risk.oob_resolvable:
             next_step = f"{next_step}\n{texts.HIGH_IDENTITY_ONLY_HOLD}"
@@ -1961,6 +1981,7 @@ class Orchestrator:
                 "channel": "ANALYST" if sim_swap_recent else "SMS",
                 "simSwapChecked": True,
                 "simSwapRecent": sim_swap_recent,
+                "simSwapSource": self.telecom.source,
             },
             simulated=True,
         )
@@ -2344,6 +2365,14 @@ def build_orchestrator(
     )
     if confidential_degraded:
         degraded.append("confidential")
+    telecom = (
+        OrangeSimSwap(
+            client_id=env.get("ORANGE_CLIENT_ID", ""),
+            client_secret=env.get("ORANGE_CLIENT_SECRET", ""),
+        )
+        if settings.telecom_mode == "orange-playground"
+        else None
+    )
     journal = Journal(settings.journal_path)
     bus = bus or EventBus()
     bus.add_listener(journal.record_event)
@@ -2362,6 +2391,7 @@ def build_orchestrator(
         case=CaseService(settings.llm_mode, writer),
         journal=journal,
         confidential=confidential,
+        telecom=telecom,
     )
     holder["o"] = orchestrator
     return orchestrator
