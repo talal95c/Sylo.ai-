@@ -26,6 +26,7 @@ import {
   type Rect,
 } from "@/lib/globeFrame";
 import { isOnVisibleHemisphere } from "@/lib/globeVisibility";
+import { resolveLabelOverlap } from "@/lib/labelPlacement";
 
 export interface GlobeCanvasProps {
   state: ViewState;
@@ -707,7 +708,12 @@ export default function GlobeCanvas({
         })
         .filter((rect) => rect.width > 0 && rect.height > 0);
 
-      for (const label of htmlData) {
+      const orderedLabels = [...htmlData].sort((left, right) => {
+        const priority = (id: string) =>
+          id === "mule_bank" ? 0 : id === "accra" || id === "tamale" ? 1 : 2;
+        return priority(left.id) - priority(right.id);
+      });
+      for (const label of orderedLabels) {
         if (!label.className.startsWith("globe-label")) continue;
         const element = document.querySelector<HTMLElement>(
           `.globe-label[data-globe-label-id="${label.id}"]`,
@@ -752,45 +758,24 @@ export default function GlobeCanvas({
         if (collision) {
           element.classList.toggle("below", !below);
           const alternateRect = pill.getBoundingClientRect();
-          const alternateFits =
-            alternateRect.top >= viewportTop &&
-            alternateRect.bottom <= viewportBottom &&
-            !placed.some(
-              (other) =>
-                alternateRect.left < other.right + 8 &&
-                alternateRect.right > other.left - 8 &&
-                alternateRect.top < other.bottom + 6 &&
-                alternateRect.bottom > other.top - 6,
-            );
-          if (alternateFits) {
-            below = !below;
-            rect = alternateRect;
-          } else {
-            element.classList.toggle("below", below);
-            const shiftRight = collision.right + 8 - rect.left;
-            const shiftLeft = collision.left - 8 - rect.right;
-            shiftX += rect.right + shiftRight <= viewportRight ? shiftRight : shiftLeft;
-            shiftX = clamp(
-              shiftX,
-              viewportLeft - rect.left + shiftX,
-              viewportRight - rect.right + shiftX,
-            );
-            element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
-            rect = pill.getBoundingClientRect();
+          element.classList.toggle("below", below);
+          const placement = resolveLabelOverlap(
+            rect,
+            alternateRect,
+            placed,
+            { left: viewportLeft, right: viewportRight, top: viewportTop, bottom: viewportBottom },
+            below ? "below" : "above",
+          );
+          if (placement.hidden) {
+            element.classList.add("panel-hidden");
+            element.style.opacity = "0";
+            continue;
           }
-        }
-
-        const stillCollides = placed.some(
-          (other) =>
-            rect.left < other.right + 8 &&
-            rect.right > other.left - 8 &&
-            rect.top < other.bottom + 6 &&
-            rect.bottom > other.top - 6,
-        );
-        if (stillCollides) {
-          element.classList.add("panel-hidden");
-          element.style.opacity = "0";
-          continue;
+          below = placement.side === "below";
+          element.classList.toggle("below", below);
+          shiftX += placement.shiftX;
+          element.style.setProperty("--globe-label-shift-x", `${shiftX}px`);
+          rect = pill.getBoundingClientRect();
         }
 
         const connectorLength = Math.hypot(shiftX, gap);
