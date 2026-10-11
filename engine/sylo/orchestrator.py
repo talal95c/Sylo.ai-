@@ -2283,7 +2283,7 @@ class Orchestrator:
                 "answerText": texts.ANSWER_CONFIRM if result == VerificationResult.CONFIRMED else texts.ANSWER_DENY,
                 **self._tx_fields(tx),
             },
-            simulated=True,
+            simulated=tx.simulated,
         )
 
         if result == VerificationResult.DENIED:
@@ -2448,7 +2448,12 @@ class Orchestrator:
         await pacer.wait(2000)
         self._alert(run, "payer", PAYER.approvers[0].name, "SMS", payer_alert)
         run.status = "stopped"
-        self._emit(run, "payment.stopped", {"headline": texts.STOPPED_HEADLINE, "detail": detail}, simulated=True)
+        headline = (
+            texts.STOPPED_HEADLINE_AMOUNT.format(amount=texts.eur(float(run.order.amount.value)))
+            if run.scenario in self._custom_scenarios
+            else texts.STOPPED_HEADLINE
+        )
+        self._emit(run, "payment.stopped", {"headline": headline, "detail": detail}, simulated=True)
 
     # --- attacks -----------------------------------------------------------------------------
 

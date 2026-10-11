@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ViewState } from "@/lib/store";
 import { REFUND_COLOR, TIER_COLORS } from "@/lib/colors";
+import { revertMessage } from "@/lib/revert";
 import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
 import { MarketCompare } from "./MarketCompare";
 import { Savings } from "./RouteQuote";
@@ -177,9 +178,14 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
                 {status === "credited"
                   ? creditedDetail(state)
                   : state.attack.reverted
-                    ? `The smart contract rejected ${state.attack.reason}.`
+                    ? revertMessage(state.attack.reason)
                     : state.stopped?.detail}
               </div>
+              {status !== "credited" && state.attack.reverted && state.attack.reason ? (
+                <span className="mt-1 block font-mono text-[9px] text-ink-3" title={state.attack.reason}>
+                  {state.attack.reason}
+                </span>
+              ) : null}
               {status === "credited" && receipt?.swift && receipt.savedEur !== undefined ? <Savings quote={receipt} compact /> : null}
               {status === "credited" && receipt ? <MarketCompare quote={receipt} /> : null}
             </div>

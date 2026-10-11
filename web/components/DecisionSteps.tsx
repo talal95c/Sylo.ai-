@@ -101,7 +101,7 @@ function buildSteps(state: ViewState): Step[] {
   ];
 
   let runningAssigned = false;
-  const waiting = p?.status === "held" || p?.status === "awaiting_supplier";
+  const waiting = p?.status === "held" || p?.status === "awaiting_supplier" || p?.status === "awaiting_analyst";
   return definitions.map((step) => {
     let value: StepState = "pending";
     if (step.done) value = step.fail ? "fail" : step.warn ? "warn" : "done";
@@ -168,7 +168,7 @@ function decisionSummary(state: ViewState) {
   if (!status) return { title: "Ready for a scenario", detail: "No payment decision has been requested.", color: "var(--ink-3)" };
   if (status === "deciding") return { title: "Decision in progress", detail: "The engine is evaluating legal routes and fraud controls.", color: "var(--accent)" };
   if (status === "in_transit") return { title: "Payment released", detail: "The approved payment is following its signed route.", color: "var(--accent)" };
-  if (status === "held" || status === "awaiting_supplier") return { title: "Conditional hold active", detail: "Funds remain protected while the known-contact check is completed.", color: "var(--medium)" };
+  if (status === "held" || status === "awaiting_supplier" || status === "awaiting_analyst") return { title: "Conditional hold active", detail: "Funds remain protected while the known-contact check is completed.", color: "var(--medium)" };
   if (status === "frozen") return { title: "Guardian freeze active", detail: state.incident?.headline ?? "The payment is frozen and the corridor is paused.", color: "var(--danger)" };
   if (status === "stopped") return { title: "Payment stopped", detail: "The intent was revoked and the funds were returned to the payer.", color: "var(--danger)" };
   if (status === "credited") return { title: "Payment cleared", detail: "The supplier was credited through the approved route.", color: "var(--low)" };

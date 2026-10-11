@@ -20,6 +20,17 @@ function fixture(name: string): SyloEvent[] {
     .map((line) => JSON.parse(line) as SyloEvent);
 }
 
+function specFixture(name: string): SyloEvent[] {
+  const contents = readFileSync(
+    new URL(`../../../spec/fixtures/${name}.jsonl`, import.meta.url),
+    "utf8",
+  );
+  return contents
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line) as SyloEvent);
+}
+
 function replay(...events: SyloEvent[]) {
   return events.reduce(reduce, initialState);
 }
@@ -306,6 +317,55 @@ describe("store reducer", () => {
     expect(reduce(nextScenario, synthetic("session.reset", {}, 3)).killSwitch).toBeNull();
   });
 
+  it("keeps mule-wave samples through the stopped follow-up payment", () => {
+    const state = replay(...specFixture("samples-scene3-mule-wave"));
+
+    expect(state.feed).toHaveLength(12);
+    expect(state.scenario).toBe("mule_wave");
+    expect(state.wave?.samples).toHaveLength(3);
+    expect(state.wave?.cluster?.clusterId).toBeTruthy();
+    expect(state.wave?.breaker?.breakerId).toBeTruthy();
+    expect(state.payment).toMatchObject({
+      paymentId: "PAY-2026-0002",
+      status: "stopped",
+    });
+
+    const restarted = reduce(
+      state,
+      synthetic(
+        "scenario.started",
+        { scenario: "legit", speed: 1, auto: true },
+        state.lastSeq + 1,
+      ),
+    );
+    expect(restarted.scenario).toBe("legit");
+    expect(restarted.wave).toBeNull();
+    expect(restarted.feed).toHaveLength(1);
+  });
+
+  it("starts a fresh session for a backwards sequence and drops equal duplicates", () => {
+    const prior = replay(...fixture("scene1-legit"));
+    const backwards = synthetic(
+      "payment.stopped",
+      { headline: "Stopped", detail: "New engine session" },
+      1,
+    );
+    const restarted = reduce(prior, backwards);
+
+    expect(restarted.lastSeq).toBe(1);
+    expect(restarted.mode).toEqual(prior.mode);
+    expect(restarted.payment).toBeNull();
+    expect(restarted.stopped?.detail).toBe("New engine session");
+    expect(restarted.feed).toHaveLength(1);
+
+    const duplicate = synthetic(
+      "payment.stopped",
+      { headline: "Ignored", detail: "Duplicate sequence" },
+      restarted.lastSeq,
+    );
+    expect(reduce(restarted, duplicate)).toBe(restarted);
+  });
+
   it.each([
     "samples-scene3-mule-wave",
     "samples-scene4-guardian",
@@ -319,9 +379,20 @@ describe("store reducer", () => {
       (event) => event.type === "scenario.started",
     );
     const visibleEvents = events.slice(Math.max(0, lastScenarioIndex));
+    const expectedFeedLength =
+      name === "samples-scene3-mule-wave" ? events.length : visibleEvents.length;
 
     expect(events.length).toBeGreaterThan(0);
-    expect(state.feed).toHaveLength(visibleEvents.length);
+    expect(state.feed).toHaveLength(expectedFeedLength);
     expect(state.lastSeq).toBe(Math.max(...events.map((event) => event.seq)));
+  });
+});
+
+describe("analyst-only verification", () => {
+  it("waits for the analyst and offers no supplier answer when no contact can be asked", () => {
+    const state = replay(...fixture("scene2-simswap").filter((event) => event.type !== "verification.recorded" && !["payment.stopped", "escrow.refunded", "intent.revoked", "case.action"].includes(event.type)));
+    if (state.verification.requested?.channel !== "ANALYST") return;
+    expect(state.payment?.status).toBe("awaiting_analyst");
+    expect(availableActions(state).confirm).toBe(false);
   });
 });

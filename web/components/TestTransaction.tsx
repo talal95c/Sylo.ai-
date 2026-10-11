@@ -21,6 +21,7 @@ import {
   type Quote,
   type QuoteRoute,
 } from "@/lib/quote";
+import { submitIntake, type IntakeResponse } from "@/lib/intake";
 import { Check, cx, ease, euros, Spinner } from "./ui";
 
 const STEPS = ["Recipient", "Amount", "Route", "Review"] as const;
@@ -232,6 +233,97 @@ function RecipientCard({
   );
 }
 
+const SAMPLE_INVOICES = {
+  legitimate: ["From: payments@savanna-shea.com", "Invoice no: SSE-2026-118", "Amount due: EUR 85,000.00", "Beneficiary: Savanna Shea Exports Ltd", "Account: GH•• •••• 2207"],
+  diverted: ["From: accounts@savannashea-exports.com", "Invoice no: SSE-2026-118", "Amount due: EUR 85,000.00", "Beneficiary: K. MENSAH VENTURES", "Account: GH•• •••• 9083", "New bank details are included on this invoice."],
+};
+
+function InvoiceIntake({ onRead }: { onRead: (result: IntakeResponse) => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<IntakeResponse | null>(null);
+
+  async function read() {
+    setReading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const next = await submitIntake(text);
+      setResult(next);
+      onRead(next);
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message.startsWith("Engine unreachable")
+          ? "Reading an invoice needs the live engine."
+          : err instanceof Error
+            ? err.message
+            : "The engine could not read this document.",
+      );
+    } finally {
+      setReading(false);
+    }
+  }
+
+  const fields = result?.intake.fields;
+  return (
+    <div className="mt-4 rounded-2xl border border-[var(--line)] px-4 py-3">
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-[12.5px] font-medium text-ink">
+        Fill from an invoice or e-mail
+        <span className="text-ink-3">{open ? "−" : "+"}</span>
+      </button>
+      {open ? (
+        <div className="mt-3 grid gap-2.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {(["legitimate", "diverted"] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => setText(SAMPLE_INVOICES[kind].join("\n"))}
+                className="text-[11.5px] text-ink-2 underline underline-offset-2 transition-colors hover:text-ink"
+              >
+                Use a {kind} invoice
+              </button>
+            ))}
+          </div>
+          <textarea
+            aria-label="Invoice or e-mail"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            rows={5}
+            className="w-full resize-y rounded-xl border border-[var(--line-strong)] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-ink outline-none focus:border-ink"
+          />
+          <button
+            type="button"
+            disabled={reading || !text.trim()}
+            onClick={read}
+            className="h-9 justify-self-start rounded-full bg-ink px-4 text-[12px] font-medium text-white transition-colors hover:bg-[#222] disabled:cursor-not-allowed disabled:bg-[rgba(0,0,0,0.12)] disabled:text-ink-3"
+          >
+            {reading ? "Reading…" : "Read it"}
+          </button>
+          {error ? (
+            <p role="alert" className="text-[12px] text-[var(--danger)]">
+              {error}
+            </p>
+          ) : null}
+          {fields ? (
+            <div className="rounded-xl border border-[var(--line)] px-3.5">
+              <Row label="Payee">{fields.accountHolder?.value ?? "—"}</Row>
+              <Row label="Account">{fields.account?.value ?? "—"}</Row>
+              <Row label="Amount">{fields.amount?.value ?? "—"}</Row>
+              <Row label="Reference">{fields.invoiceRef?.value ?? "—"}</Row>
+              <p className="py-2.5 text-[11.5px] leading-relaxed text-ink-3">
+                Read by the engine as data, never as instructions. An invoice only shows the last four digits: type the full account number.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function TestTransaction() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -346,6 +438,33 @@ export default function TestTransaction() {
       clearTimeout(timer);
     };
   }, [order, amount, live, draftKey]);
+
+  function applyIntake(result: IntakeResponse) {
+    const fields = result.intake.fields;
+    const holder = fields.accountHolder?.value ?? "";
+    const last4 = (fields.account?.value ?? "").replace(/\D/g, "").slice(-4);
+    const amount = fields.amount?.value?.replace(/[^\d.]/g, "");
+    if (amount) setAmountText(formatInput(amount));
+    if (fields.invoiceRef?.value) setInvoiceRef(fields.invoiceRef.value.slice(0, 40));
+    setQuote(null);
+    const match = last4
+      ? savedAccounts.find(({ account }) => account.accountMasked.replace(/\D/g, "").endsWith(last4))
+      : undefined;
+    if (match) {
+      setTab("saved");
+      setAccountId(match.account.accountId);
+      return;
+    }
+    setTab("new");
+    setForm({
+      ...form,
+      name: cleanName(holder),
+      accountHolder: cleanName(holder.toUpperCase()),
+      accountNumber: "",
+      detailsSource: "invoice_email",
+      senderDomain: result.intake.senderDomain?.value ?? form.senderDomain,
+    });
+  }
 
   async function send() {
     if (!quote) return;
@@ -539,6 +658,7 @@ export default function TestTransaction() {
                         <p className="text-[11.5px] text-ink-3">Synthetic banks · only the last four digits leave the engine.</p>
                       </div>
                     )}
+                    <InvoiceIntake onRead={applyIntake} />
                   </>
                 ) : (
                   <div className="mt-7 flex flex-col gap-2.5">

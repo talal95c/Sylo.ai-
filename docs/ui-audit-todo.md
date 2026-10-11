@@ -201,8 +201,8 @@ All of this section is Youssef's, including the two web items in P1. From a read
 - [ ] A Fuji receipt timeout is treated as a revert (`chain/sylo_chain/fuji.py:323-325`). Treat it as "chain unavailable" instead.
 - [x] Mistyped `RISK_MODE`, `CHAIN_MODE` or `LLM_MODE` values are silently ignored (`engine/sylo/config.py:85-112`). Validate them like `TELECOM_MODE`.
 - [x] `reset()` keeps run-time degradations and incidents (`engine/sylo/orchestrator.py:487-513`). An attack on an old payment overwrites the session pacer (`:2211`).
-- [ ] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
-- [ ] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused (Lane B to decide). The pitch handoff has one open TODO (team credits: ask each person). Done: the "skeleton" descriptions in `ml/` and `chain/`.
+- [x] `verification.recorded` is always labelled simulated, even on Fuji, where its transaction is real (`engine/sylo/orchestrator.py:2041`).
+- [x] `ml/models/gbm-20261010.txt` (417 KB) is tracked but unused (Lane B to decide; removed, `model.json` uses `gbm-20261011`). The pitch handoff has one open TODO (team credits: ask each person). Done: the "skeleton" descriptions in `ml/` and `chain/`.
 
 ## What already works well (keep it)
 

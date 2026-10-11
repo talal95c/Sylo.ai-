@@ -160,7 +160,9 @@ export function DemoControls({
       ? "Engine deciding…"
       : status === "in_transit"
         ? "Payment moving…"
-        : status === "held" || status === "awaiting_supplier"
+        : status === "awaiting_analyst"
+          ? "Waiting for the analyst"
+          : status === "held" || status === "awaiting_supplier"
           ? `Waiting for ${state.verification.requested?.contactName ?? "the supplier"}`
           : status === "frozen"
             ? "Frozen by the guardian"

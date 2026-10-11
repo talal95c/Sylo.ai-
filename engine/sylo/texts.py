@@ -192,6 +192,7 @@ ANSWER_CONFIRM = 'Kwame Asante: "Yes, this is our new account."'
 REVOKED_BY = "Analyst (auto-confirmed)"
 ANALYST = "Julien (fraud analyst)"
 STOPPED_HEADLINE = "Payment stopped. EUR 85,000 returned to Rhône Cosmétiques."
+STOPPED_HEADLINE_AMOUNT = "Payment stopped. EUR {amount} returned to Rhône Cosmétiques."
 STOPPED_DETAIL = (
     "The supplier denied the new bank details. The payment was revoked on-chain and refunded from escrow. "
     "A case was opened for the analyst."

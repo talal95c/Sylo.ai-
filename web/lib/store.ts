@@ -1,5 +1,8 @@
 import type {
   ApprovalGrantedData,
+  BreakerOffData,
+  BreakerOnData,
+  ClusterDetectedData,
   NormsRoute,
   RouteSelectedData,
   PaymentCreditedData,
@@ -15,6 +18,7 @@ import type {
   VerificationRecordedData,
   VerificationRequestedData,
   SystemModeData,
+  TrafficSampleData,
 } from "./events";
 import { describe, distinctReasons } from "./feed";
 
@@ -24,6 +28,7 @@ export type PaymentStatus =
   | "in_transit"
   | "held"
   | "awaiting_supplier"
+  | "awaiting_analyst"
   | "frozen"
   | "stopped"
   | "credited";
@@ -67,10 +72,24 @@ export interface KillSwitchView extends KillSwitchData {
   simulated: boolean;
 }
 
+export interface WaveSample {
+  paymentId: string;
+  from: string;
+  to: string;
+  payerName: string;
+  amountLabel: string;
+}
+
+export interface WaveView {
+  samples: WaveSample[];
+  cluster: ClusterDetectedData | null;
+  breaker: BreakerOnData | null;
+}
+
 export interface ViewState {
   mode: SystemModeData | null;
   lastSeq: number;
-  scenario: "legit" | "diverted" | null;
+  scenario: "legit" | "diverted" | "mule_wave" | null;
   lastEvent: SyloEvent | null;
   payment: null | {
     paymentId: string;
@@ -133,6 +152,7 @@ export interface ViewState {
   quote: RouteSelectedData | null;
   timing: { createdTs?: string; committedTs?: string; creditedTs?: string };
   feed: FeedItem[];
+  wave: WaveView | null;
 }
 
 export const initialState: ViewState = {
@@ -164,6 +184,7 @@ export const initialState: ViewState = {
   quote: null,
   timing: {},
   feed: [],
+  wave: null,
 };
 
 export function resetForSourceChange(state: ViewState): ViewState {
@@ -213,25 +234,50 @@ function selectedHops(routes: NormsRoute[], routeId: string): HopView[] {
 }
 
 export function reduce(state: ViewState, event: SyloEvent): ViewState {
-  if (event.type !== "system.mode" && event.seq <= state.lastSeq) {
+  if (
+    event.type !== "system.mode" &&
+    event.type !== "session.reset" &&
+    event.seq === state.lastSeq
+  ) {
     return state;
   }
 
+  const sequenceRestart =
+    event.type !== "system.mode" &&
+    event.type !== "session.reset" &&
+    event.seq < state.lastSeq;
+  const current = sequenceRestart
+    ? { ...initialState, mode: state.mode }
+    : state;
   const isSessionReset = event.type === "session.reset";
   const isScenarioStart = event.type === "scenario.started";
+  const isWaveFollowUp =
+    isScenarioStart &&
+    current.scenario === "mule_wave" &&
+    current.payment === null;
   const base = isSessionReset
-    ? { ...initialState, mode: state.mode }
-    : isScenarioStart
+    ? { ...initialState, mode: current.mode }
+    : isScenarioStart && isWaveFollowUp
       ? {
           ...initialState,
-          mode: state.mode,
-          rails: state.rails,
-          killSwitch: state.killSwitch,
+          mode: current.mode,
+          rails: current.rails,
+          killSwitch: current.killSwitch,
+          feed: current.feed,
+          wave: current.wave,
+          scenario: "mule_wave" as const,
         }
-      : state;
+      : isScenarioStart
+      ? {
+          ...initialState,
+          mode: current.mode,
+          rails: current.rails,
+          killSwitch: current.killSwitch,
+        }
+      : current;
   const next: ViewState = {
     ...base,
-    lastSeq: event.type === "system.mode" ? state.lastSeq : event.seq,
+    lastSeq: event.type === "system.mode" ? current.lastSeq : event.seq,
     lastEvent: event,
     feed: [...base.feed, feedItem(event)],
   };
@@ -243,10 +289,58 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "session.reset":
       return { ...next, feed: [] };
     case "scenario.started":
+      if (data.scenario === "mule_wave" || isWaveFollowUp) {
+        return { ...next, scenario: "mule_wave" };
+      }
       return {
         ...next,
         scenario: String(data.scenario ?? "").startsWith("diverted") ? "diverted" : "legit",
       };
+    case "traffic.sample": {
+      const sample = data as unknown as TrafficSampleData;
+      const amount = `${sample.amount.currency} ${Number(sample.amount.value).toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      })}`;
+      const samples = sample.arcs.map((arc) => ({
+        paymentId: event.paymentId ?? "",
+        from: arc.from,
+        to: arc.to,
+        payerName: sample.payer.name,
+        amountLabel: amount,
+      }));
+      return {
+        ...next,
+        wave: {
+          ...(next.wave ?? { samples: [], cluster: null, breaker: null }),
+          samples: [...(next.wave?.samples ?? []), ...samples],
+        },
+      };
+    }
+    case "cluster.detected":
+      return {
+        ...next,
+        wave: {
+          ...(next.wave ?? { samples: [], cluster: null, breaker: null }),
+          cluster: data as unknown as ClusterDetectedData,
+        },
+      };
+    case "breaker.on":
+      return {
+        ...next,
+        wave: {
+          ...(next.wave ?? { samples: [], cluster: null, breaker: null }),
+          breaker: data as unknown as BreakerOnData,
+        },
+      };
+    case "breaker.off": {
+      const breaker = data as unknown as BreakerOffData;
+      if (next.wave?.breaker?.breakerId !== breaker.breakerId) return next;
+      return {
+        ...next,
+        wave: { ...next.wave, breaker: null },
+      };
+    }
     case "payment.created": {
       const payer = data.payer as Record<string, unknown>;
       const beneficiary = data.beneficiary as Record<string, unknown>;
@@ -384,7 +478,7 @@ export function reduce(state: ViewState, event: SyloEvent): ViewState {
     case "verification.requested":
       return {
         ...next,
-        payment: paymentWithStatus(next.payment, "awaiting_supplier"),
+        payment: paymentWithStatus(next.payment, data.channel === "ANALYST" ? "awaiting_analyst" : "awaiting_supplier"),
         verification: {
           ...next.verification,
           requested: data as unknown as VerificationRequestedData,
