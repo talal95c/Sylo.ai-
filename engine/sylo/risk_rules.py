@@ -43,7 +43,13 @@ class RulesRisk:
             fired.append(("R-FL-01", 15, "B", texts.reason_first_payment(ctx.amount_eur)))
         if ctx.account_age_hours < 72 and ctx.amount_eur >= 5_000:
             fired.append(("R-FL-02", 10, "B", texts.reason_young_account(ctx.account_age_hours, ctx.amount_eur)))
-        if ctx.name_match < 0.85:
+        established_owned_account = (
+            account is not None
+            and account.successful_payments >= 1
+            and ctx.payee is not None
+            and ctx.payee.owns(account.id)
+        )
+        if ctx.name_match < 0.85 and not established_owned_account:
             holder = account.holder_name if account else order.creditor.name
             payee_name = ctx.payee.legal_name if ctx.payee else order.creditor.name
             fired.append(("R-FL-03", 12, "B", texts.reason_name_mismatch(holder, payee_name, ctx.name_match)))

@@ -34,6 +34,25 @@ def test_diverted_is_medium_64_with_four_rules_sorted_by_weight():
     ]
 
 
+def test_established_owned_account_name_mismatch_does_not_fire_r_fl_03():
+    order, ctx = golden_case("legit")
+    assert ctx.account is not None and ctx.payee is not None
+    assert ctx.account.successful_payments >= 1 and ctx.payee.owns(ctx.account.id)
+
+    result = RISK.score(order, ctx.model_copy(update={"name_match": 0.80}))
+
+    assert "R-FL-03" not in result.rules_fired
+
+
+def test_new_account_name_mismatch_fires_r_fl_03():
+    order, ctx = golden_case("diverted")
+    assert ctx.account is not None and ctx.account.successful_payments == 0
+
+    result = RISK.score(order, ctx.model_copy(update={"name_match": 0.80}))
+
+    assert "R-FL-03" in result.rules_fired
+
+
 def test_sanctions_hit_is_critical():
     order, _ = golden_case("legit")
     result = RISK.score(order, build_risk_context(order, [], sanctions_hit=True))
