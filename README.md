@@ -28,10 +28,11 @@ Without a running engine, the page replays recorded events (`spec/fixtures`) and
 
 ## Deploy
 
-- **Render:** choose **New → Blueprint** for this repository, then set `CORS_ORIGINS` to the Vercel URL(s).
-- **Vercel:** import the repository, set Root Directory to `web`, and keep **Include files outside the Root Directory** enabled (the prebuild copies `../spec`).
-- Set `NEXT_PUBLIC_ENGINE_URL=https://<render-service>.onrender.com`, `NEXT_PUBLIC_SOURCE=live`, and `NEXT_PUBLIC_ENGINE_CONNECT_TIMEOUT_MS=60000`.
-- One engine is one shared demo session: visitors to that deployment share its in-memory state and event stream.
+- **Render:** choose **New → Blueprint** and import this repository; one service serves both the web app and engine at the same URL.
+- The free service sleeps after 15 minutes idle; its first load after sleeping can take about a minute.
+- Visitors share one demo session and its in-memory state.
+- `MISTRAL_API_KEY` is optional; without it, the engine uses its cached LLM mode.
+- For a split web/engine setup, `engine/Dockerfile` and `web/vercel.json` remain available.
 
 ### Engine v1 (Lane A)
 
