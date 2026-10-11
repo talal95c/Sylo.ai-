@@ -12,6 +12,7 @@ import { EventFeed } from "./EventFeed";
 import { FlowGraph } from "./FlowGraph";
 import GlobeStage from "./GlobeStage";
 import { IncidentDrawer } from "./IncidentDrawer";
+import { Onboarding, onboardingSeen } from "./Onboarding";
 import { PaymentCard } from "./PaymentCard";
 import { StatusBanner } from "./StatusBanner";
 import { TopBar, type DemoView } from "./TopBar";
@@ -29,6 +30,28 @@ export default function SyloApp() {
   const [incidentOpen, setIncidentOpen] = useState(false);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
+  const autoRunRef = useRef(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    const fromTest = new URLSearchParams(window.location.search).has("scene");
+    if (fromTest || onboardingSeen()) return;
+    const timer = window.setTimeout(() => setTourOpen(true), 900);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!sylo.ready || autoRunRef.current) return;
+    const url = new URL(window.location.href);
+    const run = url.searchParams.get("scene");
+    if (run !== "legit" && run !== "diverted") return;
+    autoRunRef.current = true;
+    url.searchParams.delete("scene");
+    window.history.replaceState(null, "", url);
+    if (run === "legit") void sylo.actions.runLegit();
+    else void sylo.actions.runDiverted();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sylo.ready]);
 
   useEffect(() => {
     let alive = true;
@@ -49,19 +72,6 @@ export default function SyloApp() {
     else url.searchParams.delete("view");
     window.history.replaceState(null, "", url);
   }, []);
-
-  const autoplayed = useRef(false);
-  const { sourceKind, actions } = sylo;
-  useEffect(() => {
-    if (autoplayed.current || sourceKind !== "replay") return;
-    const url = new URL(window.location.href);
-    const scene = url.searchParams.get("scene");
-    if (scene !== "legit" && scene !== "diverted") return;
-    autoplayed.current = true;
-    url.searchParams.delete("scene");
-    window.history.replaceState(null, "", url);
-    setTimeout(() => void (scene === "legit" ? actions.runLegit() : actions.runDiverted()).catch(() => undefined), 600);
-  }, [sourceKind, actions]);
 
   const globe = view === "globe";
 
@@ -101,23 +111,23 @@ export default function SyloApp() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.45, ease }}
           >
-            <FlowGraph state={sylo.state} />
+            <FlowGraph state={sylo.state} speed={sylo.speed} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} />
+      <TopBar mode={sylo.state.mode} riskMode={riskModeForSource(sylo.state, sylo.sourceKind)} sourceKind={sylo.sourceKind} notice={sylo.notice} onSource={sylo.setSourceKind} view={view} onView={setView} onHelp={() => setTourOpen(true)} />
       <StatusBanner state={sylo.state} onOpenIncident={() => setIncidentOpen(true)} />
 
       <AnimatePresence>
         {globe ? (
           <motion.div key="panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease }}>
-            <aside className="thin-scrollbar absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-x-hidden overflow-y-auto 2xl:w-[372px]">
+            <aside data-globe-occluder="left" className="absolute bottom-[88px] left-4 top-[76px] z-10 flex min-h-0 w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-hidden 2xl:w-[372px]">
               <PaymentCard state={sylo.state} />
               <DecisionSteps state={sylo.state} expanded={decisionsOpen} onExpandedChange={setDecisionsOpen} />
             </aside>
 
-            <aside className={cx("absolute right-4 top-[76px] z-10 flex min-h-0 w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden 2xl:w-[360px]", feedOpen ? "bottom-[88px]" : "bottom-auto")}>
+            <aside data-globe-occluder="right" className={cx("absolute right-4 top-[76px] z-10 flex min-h-0 w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden 2xl:w-[360px]", feedOpen ? "bottom-[88px]" : "bottom-auto")}>
               <EventFeed feed={sylo.state.feed} expanded={feedOpen} onExpandedChange={setFeedOpen} onOpenIncident={() => setIncidentOpen(true)} />
             </aside>
 
@@ -125,6 +135,7 @@ export default function SyloApp() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <Onboarding open={tourOpen} onClose={() => setTourOpen(false)} onRunLegit={() => void sylo.actions.runLegit()} onRunDiverted={() => void sylo.actions.runDiverted()} />
       <IncidentDrawer incident={sylo.state.incident} open={incidentOpen} onClose={() => setIncidentOpen(false)} />
       <DemoControls
         state={sylo.state}

@@ -40,6 +40,7 @@ export function useSylo() {
   );
   const [notice, setNotice] = useState<string>();
   const [speed, setSpeedState] = useState<1 | 2>(1);
+  const [ready, setReady] = useState(false);
   const sourceRef = useRef<Source | null>(null);
   const activePaymentId = state.payment?.paymentId;
 
@@ -65,6 +66,7 @@ export function useSylo() {
       },
       onStatus(status) {
         if (status.notice) setNotice(status.notice);
+        if (status.connected) setReady(true);
         if (status.kind !== "live") return;
         if (status.connected) {
           opened = true;
@@ -135,6 +137,7 @@ export function useSylo() {
     state,
     sourceKind,
     notice,
+    ready,
     speed,
     setSpeed,
     setSourceKind,

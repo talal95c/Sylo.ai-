@@ -80,6 +80,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.45, ease }}
+            data-globe-occluder="bottom"
             className="card pointer-events-auto max-h-[calc(100dvh-196px)] w-[min(560px,100%)] overflow-y-auto overscroll-contain rounded-[20px]"
           >
             <div className="h-1 w-full" style={{ background: state.incident ? "var(--danger)" : state.revoked ? "var(--danger)" : state.released ? "var(--low)" : TIER_COLORS[held.tier] }} />
@@ -160,6 +161,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={{ duration: 0.55, ease }}
+            data-globe-occluder="bottom"
             className="card pointer-events-auto flex w-[min(560px,100%)] items-center gap-4 rounded-[20px] p-4 pr-5"
           >
             <span className="grid size-10 shrink-0 place-items-center rounded-full text-white" style={{ background: status === "credited" ? "var(--low)" : state.refunded && !state.attack.reverted ? REFUND_COLOR : "var(--danger)" }}>

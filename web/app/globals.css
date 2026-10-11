@@ -134,7 +134,7 @@ body {
   width: 0;
   height: 0;
   display: block;
-  transition: opacity 160ms ease;
+  transition: opacity 180ms ease;
 }
 .globe-label-connector {
   position: absolute;
@@ -163,15 +163,16 @@ body {
   transform: translate(calc(-50% + var(--globe-label-shift-x)), calc(-100% - 18px));
   white-space: nowrap;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.01em;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 999px;
-  padding: 4px 9px;
+  padding: 5px 10px;
   color: rgba(0, 0, 0, 0.78);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, 0.2);
+  background: #ffffff;
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.28);
+  transition: transform 180ms ease-out;
 }
 .globe-label.below .globe-label-pill {
   transform: translate(calc(-50% + var(--globe-label-shift-x)), 18px);
@@ -181,10 +182,12 @@ body {
   max-width: 132px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
+  color: #0a0a0a;
 }
 .globe-label-city {
   flex: 0 0 auto;
-  color: rgba(0, 0, 0, 0.44);
+  color: rgba(0, 0, 0, 0.5);
 }
 .globe-live {
   display: inline-flex;
@@ -218,11 +221,6 @@ body {
 
 .globe-marker {
   pointer-events: none;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 .globe-marker .badge {
@@ -237,6 +235,10 @@ body {
   animation: marker-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .globe-marker .caption {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 11px;
   font-weight: 500;
   color: currentColor;
