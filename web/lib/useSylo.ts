@@ -43,7 +43,7 @@ function hookReducer(state: ViewState, action: HookAction): ViewState {
 
 const offlineNotice = "Engine offline: replaying recorded events";
 
-export function useSylo() {
+export function useSylo(onSourceEvent?: (event: SyloEvent) => void) {
   const [state, dispatch] = useReducer(hookReducer, initialState);
   const [scenarioStartedVersion, setScenarioStartedVersion] = useState(0);
   const [sourceKind, setSourceKindState] = useState<SourceKind>(
@@ -94,6 +94,7 @@ export function useSylo() {
           setScenarioStartedVersion(scenarioStartedCount.current);
         }
         dispatch(event);
+        onSourceEvent?.(event);
         scheduleBacklogCheck();
       },
       onStatus(status) {
@@ -132,7 +133,7 @@ export function useSylo() {
       source.stop();
       if (sourceRef.current === source) sourceRef.current = null;
     };
-  }, [sourceKind, setConnectionStatus]);
+  }, [onSourceEvent, sourceKind, setConnectionStatus]);
 
   const setSpeed = useCallback((nextSpeed: 1 | 2) => {
     setSpeedState(nextSpeed);

@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import type { SyloEvent } from "@/lib/events";
 import { loadGeo, type Institution } from "@/lib/geo";
 import { riskModeForSource } from "@/lib/store";
 import { useSylo } from "@/lib/useSylo";
@@ -24,18 +25,19 @@ const noopSubscribe = () => () => undefined;
 const readUrlView = () => new URLSearchParams(window.location.search).get("view");
 
 export default function SyloApp() {
-  const sylo = useSylo();
+  const [incidentOpen, setIncidentOpen] = useState(false);
+  const closeIncidentOnBoundary = useCallback((event: SyloEvent) => {
+    if (event.type === "session.reset" || event.type === "scenario.started") {
+      setIncidentOpen(false);
+    }
+  }, []);
+  const sylo = useSylo(closeIncidentOnBoundary);
   const urlView = useSyncExternalStore(noopSubscribe, readUrlView, () => null);
   const [picked, setViewState] = useState<DemoView | null>(null);
   const [decisionsUserOpen, setDecisionsUserOpen] = useState(false);
   const [decisionsClosedAtStart, setDecisionsClosedAtStart] = useState<number | null>(null);
   const [feedUserOpen, setFeedUserOpen] = useState(false);
   const [feedClosedAtStart, setFeedClosedAtStart] = useState<number | null>(null);
-  const [incidentOpen, setIncidentOpen] = useState(false);
-  useEffect(() => {
-    const lastEvent = sylo.state.lastEvent;
-    if (lastEvent?.type === "session.reset" || lastEvent?.type === "scenario.started") setIncidentOpen(false);
-  }, [sylo.state.lastEvent]);
   const view: DemoView = picked ?? (urlView === "nodes" ? "nodes" : "globe");
   const [geo, setGeo] = useState<{ institutions: Record<string, Institution>; chainAltitude: number } | null>(null);
   const [geoLoadFailed, setGeoLoadFailed] = useState(false);
@@ -199,7 +201,13 @@ export default function SyloApp() {
       <IncidentDrawer incident={sylo.state.incident} open={incidentOpen} onClose={() => setIncidentOpen(false)} />
       <DemoControls
         state={sylo.state}
-        actions={sylo.actions}
+        actions={{
+          ...sylo.actions,
+          reset: () => {
+            setIncidentOpen(false);
+            void sylo.actions.reset();
+          },
+        }}
         available={sylo.available}
         speed={sylo.speed}
         setSpeed={sylo.setSpeed}

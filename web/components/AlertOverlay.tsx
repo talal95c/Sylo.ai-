@@ -6,7 +6,7 @@ import type { ViewState } from "@/lib/store";
 import { paymentStatusView } from "@/lib/paymentStatus";
 import { CSS_REFUND_COLOR, CSS_TIER_COLORS } from "@/lib/colors";
 import { revertMessage } from "@/lib/revert";
-import { buildQuote, pct, secondsBetween } from "@/lib/routeQuote";
+import { buildQuote, secondsBetween } from "@/lib/routeQuote";
 import { MarketCompare } from "./MarketCompare";
 import { Savings } from "./RouteQuote";
 import { ease, euros, LockIcon, Spinner } from "./ui";
@@ -199,7 +199,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
                 {status === "credited"
-                  ? creditedDetail(state)
+                  ? creditedHeadline(state) ?? creditedDetail(state)
                   : state.attack.reverted
                     ? revertMessage(state.attack.reason)
                     : state.stopped?.detail}
@@ -219,7 +219,7 @@ export function AlertOverlay({ state, onClose }: { state: ViewState; onClose: ()
   );
 }
 
-function creditedHeadline(state: ViewState) {
+function creditedHeadline(state: ViewState): string | undefined {
   const quote = buildQuote(state);
   const reroutedFromAvalanche = quote?.rows.some(
     (row) => row.routeId === "R3" && row.excludedBy === "RAIL_DOWN",
@@ -228,11 +228,7 @@ function creditedHeadline(state: ViewState) {
     const cost = state.credited?.routeCostEur ?? quote.cost;
     return `Rerouted to SWIFT: Avalanche rail was down${cost !== undefined ? ` · ${euros(cost)} all-in` : ""}`;
   }
-  if (quote?.savedEur !== undefined && quote.savedEur > 0) {
-    return `Credited · saved ${euros(quote.savedEur)} vs SWIFT${quote.savedPct !== undefined ? ` (${pct(quote.savedPct)})` : ""}`;
-  }
-  const cost = state.credited?.cashCostEur ?? state.credited?.routeCostEur;
-  return cost !== undefined ? `Credited · ${euros(cost)} ${state.credited?.cashCostEur !== undefined ? "fees + FX" : "all-in"}` : "Credited";
+  return undefined;
 }
 
 function creditedDetail(state: ViewState) {
